@@ -1,0 +1,23 @@
+=== nord Theme Sample ===
+
+Text Colors:
+  Primary  Secondary  Muted
+
+Status Colors:
+  Success  Warning  Error
+
+Priority Colors:
+  P0  P1  P2  P3  P4
+
+Type Colors:
+  bug  feature  task  epic  chore
+
+Button Styles:
+    Primary      Secondary      Danger  
+
+Borders:
+  ╭─────────╮
+│ Default │
+╰─────────╯  ╭───────────╮
+│ Highlight │
+╰───────────╯

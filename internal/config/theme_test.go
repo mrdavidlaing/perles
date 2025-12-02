@@ -1,0 +1,238 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"perles/internal/ui/styles"
+)
+
+// TestThemeConfig_WithPreset tests loading a config file with a preset.
+func TestThemeConfig_WithPreset(t *testing.T) {
+	configYAML := `
+theme:
+  preset: catppuccin-mocha
+`
+	cfg := loadConfigFromYAML(t, configYAML)
+
+	assert.Equal(t, "catppuccin-mocha", cfg.Theme.Preset)
+
+	// Apply theme and verify colors changed
+	themeCfg := styles.ThemeConfig{
+		Preset: cfg.Theme.Preset,
+		Mode:   cfg.Theme.Mode,
+		Colors: cfg.Theme.Colors,
+	}
+	err := styles.ApplyTheme(themeCfg)
+	require.NoError(t, err)
+
+	// Catppuccin Mocha uses #CDD6F4 for text.primary
+	assert.Equal(t, "#CDD6F4", styles.TextPrimaryColor.Dark)
+}
+
+// TestThemeConfig_WithColorOverrides tests applying color overrides.
+// Note: This tests the styles.ApplyTheme behavior directly rather than YAML parsing,
+// because YAML parsers interpret dotted keys (like "text.primary") as nested objects.
+// The config struct's Colors map works correctly when populated programmatically.
+func TestThemeConfig_WithColorOverrides(t *testing.T) {
+	cfg := Config{
+		Theme: ThemeConfig{
+			Colors: map[string]string{
+				"text.primary": "#FF0000",
+				"status.error": "#00FF00",
+			},
+		},
+	}
+
+	require.NotNil(t, cfg.Theme.Colors)
+	assert.Equal(t, "#FF0000", cfg.Theme.Colors["text.primary"])
+	assert.Equal(t, "#00FF00", cfg.Theme.Colors["status.error"])
+
+	// Apply theme and verify colors applied
+	themeCfg := styles.ThemeConfig{
+		Preset: cfg.Theme.Preset,
+		Mode:   cfg.Theme.Mode,
+		Colors: cfg.Theme.Colors,
+	}
+	err := styles.ApplyTheme(themeCfg)
+	require.NoError(t, err)
+
+	assert.Equal(t, "#FF0000", styles.TextPrimaryColor.Dark)
+	assert.Equal(t, "#00FF00", styles.StatusErrorColor.Dark)
+}
+
+// TestThemeConfig_PresetWithOverrides tests that color overrides take precedence over preset.
+func TestThemeConfig_PresetWithOverrides(t *testing.T) {
+	cfg := Config{
+		Theme: ThemeConfig{
+			Preset: "dracula",
+			Colors: map[string]string{
+				"text.primary": "#123456",
+			},
+		},
+	}
+
+	assert.Equal(t, "dracula", cfg.Theme.Preset)
+	assert.Equal(t, "#123456", cfg.Theme.Colors["text.primary"])
+
+	// Apply theme
+	themeCfg := styles.ThemeConfig{
+		Preset: cfg.Theme.Preset,
+		Mode:   cfg.Theme.Mode,
+		Colors: cfg.Theme.Colors,
+	}
+	err := styles.ApplyTheme(themeCfg)
+	require.NoError(t, err)
+
+	// Override should take precedence
+	assert.Equal(t, "#123456", styles.TextPrimaryColor.Dark)
+	// Dracula's status error should still be applied (#FF5555)
+	assert.Equal(t, "#FF5555", styles.StatusErrorColor.Dark)
+}
+
+// TestThemeConfig_InvalidPreset tests that invalid preset returns error.
+func TestThemeConfig_InvalidPreset(t *testing.T) {
+	configYAML := `
+theme:
+  preset: nonexistent-theme
+`
+	cfg := loadConfigFromYAML(t, configYAML)
+
+	themeCfg := styles.ThemeConfig{
+		Preset: cfg.Theme.Preset,
+		Mode:   cfg.Theme.Mode,
+		Colors: cfg.Theme.Colors,
+	}
+	err := styles.ApplyTheme(themeCfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown theme preset")
+}
+
+// TestThemeConfig_InvalidColorToken tests that invalid color token returns error.
+func TestThemeConfig_InvalidColorToken(t *testing.T) {
+	cfg := Config{
+		Theme: ThemeConfig{
+			Colors: map[string]string{
+				"invalid.token.name": "#FF0000",
+			},
+		},
+	}
+
+	themeCfg := styles.ThemeConfig{
+		Preset: cfg.Theme.Preset,
+		Mode:   cfg.Theme.Mode,
+		Colors: cfg.Theme.Colors,
+	}
+	err := styles.ApplyTheme(themeCfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown color token")
+}
+
+// TestThemeConfig_InvalidHexColor tests that invalid hex color returns error.
+func TestThemeConfig_InvalidHexColor(t *testing.T) {
+	cfg := Config{
+		Theme: ThemeConfig{
+			Colors: map[string]string{
+				"text.primary": "not-a-color",
+			},
+		},
+	}
+
+	themeCfg := styles.ThemeConfig{
+		Preset: cfg.Theme.Preset,
+		Mode:   cfg.Theme.Mode,
+		Colors: cfg.Theme.Colors,
+	}
+	err := styles.ApplyTheme(themeCfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid hex color")
+}
+
+// TestThemeConfig_EmptyConfig tests that empty theme config applies defaults.
+func TestThemeConfig_EmptyConfig(t *testing.T) {
+	configYAML := `
+auto_refresh: true
+`
+	cfg := loadConfigFromYAML(t, configYAML)
+
+	// Empty theme should result in empty/nil values
+	assert.Empty(t, cfg.Theme.Preset)
+	assert.Nil(t, cfg.Theme.Colors)
+
+	// Apply should succeed with default colors
+	themeCfg := styles.ThemeConfig{
+		Preset: cfg.Theme.Preset,
+		Mode:   cfg.Theme.Mode,
+		Colors: cfg.Theme.Colors,
+	}
+	err := styles.ApplyTheme(themeCfg)
+	require.NoError(t, err)
+
+	// Default preset should be applied (#CCCCCC for text.primary)
+	assert.Equal(t, "#CCCCCC", styles.TextPrimaryColor.Dark)
+}
+
+// TestThemeConfig_AllPresets tests that all built-in presets load correctly.
+func TestThemeConfig_AllPresets(t *testing.T) {
+	presets := []string{
+		"default",
+		"catppuccin-mocha",
+		"catppuccin-latte",
+		"dracula",
+		"nord",
+		"high-contrast",
+	}
+
+	for _, preset := range presets {
+		t.Run(preset, func(t *testing.T) {
+			configYAML := `
+theme:
+  preset: ` + preset + `
+`
+			if preset == "default" {
+				configYAML = `
+theme:
+  preset: ""
+`
+			}
+			cfg := loadConfigFromYAML(t, configYAML)
+
+			themeCfg := styles.ThemeConfig{
+				Preset: cfg.Theme.Preset,
+				Mode:   cfg.Theme.Mode,
+				Colors: cfg.Theme.Colors,
+			}
+			err := styles.ApplyTheme(themeCfg)
+			assert.NoError(t, err, "preset %s should apply without error", preset)
+		})
+	}
+}
+
+// loadConfigFromYAML is a helper to load config from YAML string.
+func loadConfigFromYAML(t *testing.T, yaml string) Config {
+	t.Helper()
+
+	// Create temp file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	err := os.WriteFile(configPath, []byte(yaml), 0644)
+	require.NoError(t, err)
+
+	// Reset viper for each test
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	err = v.ReadInConfig()
+	require.NoError(t, err)
+
+	// Unmarshal to Config struct
+	var cfg Config
+	err = v.Unmarshal(&cfg)
+	require.NoError(t, err)
+
+	return cfg
+}

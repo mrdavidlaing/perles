@@ -1,0 +1,18 @@
+# Minimal Override Example
+# Start with a preset and customize just a few colors.
+#
+# This is the recommended approach - use a preset as your base,
+# then override only the specific colors you want to change.
+
+theme:
+  # Start with Dracula as the base theme
+  preset: dracula
+
+  # Override specific colors (optional)
+  # Color tokens use dot notation: category.name
+  colors:
+    # Make critical priority stand out more
+    "priority.critical": "#FF0000"
+
+    # Use a different accent for focus states
+    "border.focus": "#00FFFF"

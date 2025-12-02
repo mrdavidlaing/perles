@@ -1,0 +1,80 @@
+# Custom Dark Theme Example
+# Build a completely custom theme by specifying all colors.
+#
+# This example shows a custom dark theme with purple accents.
+# Use this as a starting point for your own color scheme.
+
+theme:
+  # No preset - we're defining everything ourselves
+  # preset: ""  # Optional, empty string or omit entirely
+
+  # Custom color definitions
+  # All tokens are optional - unspecified tokens use default values
+  colors:
+    # Text hierarchy
+    "text.primary": "#E0E0E0"
+    "text.secondary": "#B0B0B0"
+    "text.muted": "#707070"
+    "text.description": "#909090"
+    "text.placeholder": "#606060"
+
+    # Borders
+    "border.default": "#505050"
+    "border.focus": "#9B59B6"
+    "border.highlight": "#8E44AD"
+
+    # Status indicators
+    "status.success": "#2ECC71"
+    "status.warning": "#F39C12"
+    "status.error": "#E74C3C"
+
+    # Priority colors (P0 through P4)
+    "priority.critical": "#E74C3C"
+    "priority.high": "#E67E22"
+    "priority.medium": "#F1C40F"
+    "priority.low": "#95A5A6"
+    "priority.backlog": "#7F8C8D"
+
+    # Issue type colors
+    "type.bug": "#E74C3C"
+    "type.feature": "#2ECC71"
+    "type.task": "#3498DB"
+    "type.epic": "#9B59B6"
+    "type.chore": "#95A5A6"
+
+    # BQL syntax highlighting
+    "bql.keyword": "#9B59B6"
+    "bql.operator": "#E74C3C"
+    "bql.field": "#1ABC9C"
+    "bql.string": "#F1C40F"
+    "bql.literal": "#E67E22"
+    "bql.paren": "#3498DB"
+    "bql.comma": "#7F8C8D"
+
+    # Buttons
+    "button.text": "#FFFFFF"
+    "button.primary.bg": "#8E44AD"
+    "button.primary.focus": "#9B59B6"
+    "button.secondary.bg": "#34495E"
+    "button.secondary.focus": "#4A6278"
+    "button.danger.bg": "#C0392B"
+    "button.danger.focus": "#E74C3C"
+
+    # Toast notifications
+    "toast.success": "#2ECC71"
+    "toast.error": "#E74C3C"
+    "toast.info": "#3498DB"
+    "toast.warn": "#F39C12"
+
+    # Misc
+    "spinner": "#9B59B6"
+
+# Tips for creating custom themes:
+#
+# 1. Start with a preset you like, then examine the colors
+# 2. Use a color palette tool to ensure colors work together
+# 3. Test in both dark and light terminal backgrounds
+# 4. Ensure sufficient contrast for readability
+# 5. Use semantic colors (red=danger, green=success, etc.)
+#
+# Color format: Use hex colors (#RRGGBB or #RGB)
