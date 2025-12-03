@@ -258,6 +258,38 @@ func TestBoard_CycleViewPrev_SingleView(t *testing.T) {
 	assert.Equal(t, "OnlyView", m.CurrentViewName())
 }
 
+func TestBoard_SetCurrentViewName(t *testing.T) {
+	views := []config.ViewConfig{
+		{Name: "View0", Columns: []config.ColumnConfig{{Name: "C0", Query: "q"}}},
+		{Name: "View1", Columns: []config.ColumnConfig{{Name: "C1", Query: "q"}}},
+	}
+
+	m := NewFromViews(views, nil)
+	assert.Equal(t, "View0", m.CurrentViewName())
+
+	m = m.SetCurrentViewName("Renamed")
+	assert.Equal(t, "Renamed", m.CurrentViewName())
+	assert.Equal(t, 0, m.CurrentViewIndex())
+}
+
+func TestBoard_SetCurrentViewName_PreservesOtherViews(t *testing.T) {
+	views := []config.ViewConfig{
+		{Name: "View0", Columns: []config.ColumnConfig{{Name: "C0", Query: "q"}}},
+		{Name: "View1", Columns: []config.ColumnConfig{{Name: "C1", Query: "q"}}},
+	}
+
+	m := NewFromViews(views, nil)
+	m = m.SetCurrentViewName("Renamed")
+
+	// Switch to View1 and verify it's unchanged
+	m, _ = m.CycleViewNext()
+	assert.Equal(t, "View1", m.CurrentViewName())
+
+	// Switch back and verify rename persisted
+	m, _ = m.CycleViewPrev()
+	assert.Equal(t, "Renamed", m.CurrentViewName())
+}
+
 func TestBoard_ViewSwitchChangesColumns(t *testing.T) {
 	views := []config.ViewConfig{
 		{

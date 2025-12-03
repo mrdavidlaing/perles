@@ -782,12 +782,8 @@ func (m Model) renameCurrentView(newName string) (Model, tea.Cmd) {
 		return m, scheduleErrorClear()
 	}
 
-	// Update in-memory config
 	m.services.Config.Views[viewIndex].Name = newName
-
-	// Rebuild board to reflect the new name
-	m.rebuildBoard()
-	m.board, _ = m.board.SwitchToView(viewIndex)
+	m.board = m.board.SetCurrentViewName(newName)
 
 	m.view = ViewBoard
 	m.toaster = m.toaster.Show("Renamed view to: "+newName, toaster.StyleSuccess)

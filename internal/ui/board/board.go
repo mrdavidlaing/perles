@@ -234,6 +234,14 @@ func (m Model) ViewCount() int {
 	return len(m.views)
 }
 
+// SetCurrentViewName updates the name of the current view.
+func (m Model) SetCurrentViewName(name string) Model {
+	if m.currentView < len(m.views) {
+		m.views[m.currentView].name = name
+	}
+	return m
+}
+
 // CurrentViewIndex returns the 0-based index of the current view.
 func (m Model) CurrentViewIndex() int {
 	return m.currentView
