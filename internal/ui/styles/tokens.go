@@ -39,7 +39,7 @@ const (
 
 	// Forms
 	TokenFormBorder      ColorToken = "form.border"
-	TokenFormBorderFocus ColorToken = "form.border.focus"
+	TokenFormBorderFocus ColorToken = "form.border.focus" //nolint:gosec // UI color token, not credentials
 	TokenFormLabel       ColorToken = "form.label"
 	TokenFormLabelFocus  ColorToken = "form.label.focus"
 
@@ -54,9 +54,9 @@ const (
 	TokenToastWarn    ColorToken = "toast.warn"
 
 	// Issue status
-	TokenIssueOpen       ColorToken = "issue.status.open"
+	TokenIssueOpen       ColorToken = "issue.status.open" //nolint:gosec // UI color token, not credentials
 	TokenIssueInProgress ColorToken = "issue.status.in_progress"
-	TokenIssueClosed     ColorToken = "issue.status.closed"
+	TokenIssueClosed     ColorToken = "issue.status.closed" //nolint:gosec // UI color token, not credentials
 
 	// Issue priority
 	TokenPriorityCritical ColorToken = "priority.critical"
@@ -73,12 +73,12 @@ const (
 	TokenTypeFeature ColorToken = "type.feature"
 
 	// BQL syntax highlighting
-	TokenBQLKeyword  ColorToken = "bql.keyword"
+	TokenBQLKeyword  ColorToken = "bql.keyword" //nolint:gosec // UI color token, not credentials
 	TokenBQLOperator ColorToken = "bql.operator"
 	TokenBQLField    ColorToken = "bql.field"
 	TokenBQLString   ColorToken = "bql.string"
 	TokenBQLLiteral  ColorToken = "bql.literal"
-	TokenBQLParen    ColorToken = "bql.paren"
+	TokenBQLParen    ColorToken = "bql.paren" //nolint:gosec // UI color token, not credentials
 	TokenBQLComma    ColorToken = "bql.comma"
 
 	// Misc

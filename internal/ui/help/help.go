@@ -369,13 +369,7 @@ func (m Model) renderSearchContent() string {
 	keybindingsWidth := lipgloss.Width(keybindingColumns)
 	bqlWidth := lipgloss.Width(bqlColumns)
 	examplesWidth := lipgloss.Width(examplesCol.String())
-	columnsWidth := keybindingsWidth
-	if bqlWidth > columnsWidth {
-		columnsWidth = bqlWidth
-	}
-	if examplesWidth > columnsWidth {
-		columnsWidth = examplesWidth
-	}
+	columnsWidth := max(keybindingsWidth, bqlWidth, examplesWidth)
 	boxWidth := columnsWidth + 4 // Add horizontal padding (2 each side)
 
 	// Build body content with padding

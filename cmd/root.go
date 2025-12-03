@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,7 +78,8 @@ func initConfig() {
 
 	if err := viper.ReadInConfig(); err != nil {
 		// No config file found anywhere - create default at .perles/config.yaml
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+		var configNotFound viper.ConfigFileNotFoundError
+		if errors.As(err, &configNotFound) {
 			defaultPath := ".perles/config.yaml"
 			if writeErr := config.WriteDefaultConfig(defaultPath); writeErr == nil {
 				viper.SetConfigFile(defaultPath)

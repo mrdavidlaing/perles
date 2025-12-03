@@ -8,7 +8,7 @@ import (
 // SQLBuilder converts a BQL AST to SQL.
 type SQLBuilder struct {
 	query  *Query
-	params []interface{}
+	params []any
 }
 
 // NewSQLBuilder creates a builder for the query.
@@ -17,7 +17,7 @@ func NewSQLBuilder(query *Query) *SQLBuilder {
 }
 
 // Build generates the SQL WHERE clause and ORDER BY.
-func (b *SQLBuilder) Build() (whereClause string, orderBy string, params []interface{}) {
+func (b *SQLBuilder) Build() (whereClause string, orderBy string, params []any) {
 	if b.query.Filter != nil {
 		whereClause = b.buildExpr(b.query.Filter)
 	}

@@ -754,10 +754,7 @@ func (m Model) deleteCurrentView() (Model, tea.Cmd) {
 	m.services.Config.Views = append(m.services.Config.Views[:viewIndex], m.services.Config.Views[viewIndex+1:]...)
 
 	// Determine which view to switch to
-	newViewIndex := viewIndex - 1
-	if newViewIndex < 0 {
-		newViewIndex = 0
-	}
+	newViewIndex := max(viewIndex-1, 0)
 
 	// Rebuild board with updated views
 	m.view = ViewBoard

@@ -122,11 +122,7 @@ func (m Model) SetSize(width, height int) Model {
 	// Calculate actual header height based on title wrapping
 	headerHeight := m.calculateHeaderHeight(leftColWidth)
 	footerHeight := 1 // Footer is a single line
-	viewportHeight := height - headerHeight - footerHeight
-
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
+	viewportHeight := max(height-headerHeight-footerHeight, 1)
 
 	// Initialize or update markdown renderer (uses left column width)
 	if m.mdRenderer == nil || m.mdRenderer.Width() != leftColWidth {
@@ -165,10 +161,7 @@ func (m Model) useTwoColumnLayout() bool {
 // Uses fixed widths when there's enough space, otherwise falls back to percentage-based.
 func (m Model) calculateColumnWidths() (leftWidth, rightWidth int) {
 	// Content width accounts for modal padding and borders
-	availableWidth := m.width
-	if availableWidth < 10 {
-		availableWidth = 10
-	}
+	availableWidth := max(m.width, 10)
 
 	// Total fixed width needed for two-column layout
 	totalFixedWidth := contentColWidth + metadataColWidth + columnGap
@@ -403,7 +396,7 @@ func (m Model) View() string {
 		// Render vertical divider with consistent spacing per line
 		dividerStyle := lipgloss.NewStyle().Foreground(styles.BorderDefaultColor)
 		var dividerLines []string
-		for i := 0; i < dividerHeight; i++ {
+		for range dividerHeight {
 			dividerLines = append(dividerLines, " │ ")
 		}
 		verticalDivider := dividerStyle.Render(strings.Join(dividerLines, "\n"))
@@ -418,10 +411,7 @@ func (m Model) View() string {
 
 		// Calculate left padding to center the content
 		contentWidth := leftWidth + 3 + rightWidth // 3 for " │ "
-		leftPadding := (m.width - contentWidth) / 2
-		if leftPadding < 0 {
-			leftPadding = 0
-		}
+		leftPadding := max((m.width-contentWidth)/2, 0)
 
 		contentStyle := lipgloss.NewStyle().PaddingLeft(leftPadding)
 

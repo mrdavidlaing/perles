@@ -3,6 +3,9 @@ package styles
 
 import (
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -33,10 +36,7 @@ type ThemeConfig struct {
 // 4. Rebuild all Style objects
 func ApplyTheme(cfg ThemeConfig) error {
 	// Step 1: Start with default preset
-	colors := make(map[ColorToken]string)
-	for token, color := range DefaultPreset.Colors {
-		colors[token] = color
-	}
+	colors := maps.Clone(DefaultPreset.Colors)
 
 	// Step 2: Apply preset if specified
 	if cfg.Preset != "" && cfg.Preset != "default" {
@@ -44,9 +44,7 @@ func ApplyTheme(cfg ThemeConfig) error {
 		if !ok {
 			return fmt.Errorf("unknown theme preset: %s", cfg.Preset)
 		}
-		for token, color := range preset.Colors {
-			colors[token] = color
-		}
+		maps.Copy(colors, preset.Colors)
 	}
 
 	// Step 3: Apply individual color overrides
@@ -329,12 +327,7 @@ func rebuildStyles() {
 }
 
 func isValidToken(token ColorToken) bool {
-	for _, t := range AllTokens() {
-		if t == token {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(AllTokens(), token)
 }
 
 func isValidHexColor(s string) bool {
@@ -345,10 +338,6 @@ func isValidHexColor(s string) bool {
 	if len(hex) != 3 && len(hex) != 6 {
 		return false
 	}
-	for _, c := range hex {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-			return false
-		}
-	}
-	return true
+	_, err := strconv.ParseUint(hex, 16, 64)
+	return err == nil
 }

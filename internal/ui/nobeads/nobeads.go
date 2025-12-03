@@ -181,11 +181,11 @@ func buildChainArt(
 ) string {
 	// Broken link is 6 lines, regular links are 4 lines
 	// Add 1 empty line at top and 1 at bottom of regular links for alignment
-	paddedLink1 := padLines(link1Lines, 6)
-	paddedLink2 := padLines(link2Lines, 6)
-	paddedLink4 := padLines(link4Lines, 6)
-	paddedLink5 := padLines(link5Lines, 6)
-	paddedConnector := padLines(connectorLines, 6)
+	paddedLink1 := padLines(link1Lines)
+	paddedLink2 := padLines(link2Lines)
+	paddedLink4 := padLines(link4Lines)
+	paddedLink5 := padLines(link5Lines)
+	paddedConnector := padLines(connectorLines)
 
 	// Render each piece with its style
 	link1Rendered := renderLines(paddedLink1, link1Style)
@@ -213,8 +213,9 @@ func buildChainArt(
 	)
 }
 
-// padLines adds empty lines to center the content vertically within targetHeight.
-func padLines(lines []string, targetHeight int) []string {
+// padLines adds empty lines to center the content vertically within 6 lines.
+func padLines(lines []string) []string {
+	const targetHeight = 6
 	if len(lines) >= targetHeight {
 		return lines
 	}
@@ -236,7 +237,7 @@ func padLines(lines []string, targetHeight int) []string {
 	result := make([]string, 0, targetHeight)
 
 	// Add top padding
-	for i := 0; i < topPad; i++ {
+	for range topPad {
 		result = append(result, emptyLine)
 	}
 
@@ -244,7 +245,7 @@ func padLines(lines []string, targetHeight int) []string {
 	result = append(result, lines...)
 
 	// Add bottom padding
-	for i := 0; i < bottomPad; i++ {
+	for range bottomPad {
 		result = append(result, emptyLine)
 	}
 

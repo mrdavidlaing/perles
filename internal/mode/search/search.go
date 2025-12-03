@@ -145,21 +145,12 @@ func (m Model) SetSize(width, height int) Model {
 	rightWidth := width - leftWidth - 1 // -1 for divider
 
 	// Update input width
-	inputWidth := leftWidth - 4 // Padding
-	if inputWidth < 1 {
-		inputWidth = 1
-	}
+	inputWidth := max(leftWidth-4, 1) // Padding
 	m.input.SetWidth(inputWidth)
 
 	// Update results list
-	listHeight := height - 5 // Input row + header + status + borders
-	if listHeight < 1 {
-		listHeight = 1
-	}
-	listWidth := leftWidth - 2
-	if listWidth < 1 {
-		listWidth = 1
-	}
+	listHeight := max(height-5, 1) // Input row + header + status + borders
+	listWidth := max(leftWidth-2, 1)
 	m.resultsList.SetSize(listWidth, listHeight)
 
 	// Update details panel (height-2 accounts for top/bottom border)
@@ -1283,7 +1274,7 @@ func (m Model) getIssuesByIds(ids []string) map[string]*beads.Issue {
 }
 
 // handleModalSubmit processes modal confirmation.
-func (m Model) handleModalSubmit(msg modal.SubmitMsg) (Model, tea.Cmd) {
+func (m Model) handleModalSubmit(_ modal.SubmitMsg) (Model, tea.Cmd) {
 	if m.view == ViewDeleteConfirm {
 		if m.selectedIssue != nil {
 			issueID := m.selectedIssue.ID

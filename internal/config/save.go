@@ -14,7 +14,7 @@ import (
 // This preserves comments and formatting in other sections by using yaml.Node.
 func SaveViews(configPath string, views []ViewConfig) error {
 	// Read existing file content
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) //nolint:gosec // G304: configPath is from user's config dir, not user input
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reading config: %w", err)
 	}
@@ -28,10 +28,7 @@ func SaveViews(configPath string, views []ViewConfig) error {
 	}
 
 	// Build the new views node
-	viewsNode, err := buildViewsNode(views)
-	if err != nil {
-		return fmt.Errorf("building views node: %w", err)
-	}
+	viewsNode := buildViewsNode(views)
 
 	// Update or create the views section
 	if doc.Kind == 0 {
@@ -80,7 +77,7 @@ func SaveViews(configPath string, views []ViewConfig) error {
 
 	// Write atomically (write to temp, then rename)
 	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
@@ -142,7 +139,7 @@ func SaveColumnsForView(configPath string, viewIndex int, columns []ColumnConfig
 }
 
 // buildViewsNode creates a yaml.Node representing the views array.
-func buildViewsNode(views []ViewConfig) (*yaml.Node, error) {
+func buildViewsNode(views []ViewConfig) *yaml.Node {
 	node := &yaml.Node{
 		Kind:    yaml.SequenceNode,
 		Content: make([]*yaml.Node, 0, len(views)),
@@ -161,10 +158,7 @@ func buildViewsNode(views []ViewConfig) (*yaml.Node, error) {
 		)
 
 		// Add columns
-		columnsNode, err := buildColumnsNode(view.Columns)
-		if err != nil {
-			return nil, err
-		}
+		columnsNode := buildColumnsNode(view.Columns)
 		viewNode.Content = append(viewNode.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Value: "columns"},
 			columnsNode,
@@ -173,11 +167,11 @@ func buildViewsNode(views []ViewConfig) (*yaml.Node, error) {
 		node.Content = append(node.Content, viewNode)
 	}
 
-	return node, nil
+	return node
 }
 
 // buildColumnsNode creates a yaml.Node representing the columns array.
-func buildColumnsNode(columns []ColumnConfig) (*yaml.Node, error) {
+func buildColumnsNode(columns []ColumnConfig) *yaml.Node {
 	node := &yaml.Node{
 		Kind:    yaml.SequenceNode,
 		Content: make([]*yaml.Node, 0, len(columns)),
@@ -211,7 +205,7 @@ func buildColumnsNode(columns []ColumnConfig) (*yaml.Node, error) {
 		node.Content = append(node.Content, colNode)
 	}
 
-	return node, nil
+	return node
 }
 
 // UpdateColumn updates a single column in the config and saves.

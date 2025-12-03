@@ -409,10 +409,7 @@ func (m Model) View() string {
 	var cols []string
 
 	// Use height as-is - caller should account for status bar
-	contentHeight := m.height
-	if contentHeight < 3 {
-		contentHeight = 3
-	}
+	contentHeight := max(m.height, 3)
 
 	for i, col := range m.columns {
 		isFocused := i == m.focused

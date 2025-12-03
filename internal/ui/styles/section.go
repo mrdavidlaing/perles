@@ -22,10 +22,7 @@ func RenderFormSection(content []string, title, hint string, width int, focused 
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(titleColor)
 	hintStyle := lipgloss.NewStyle().Foreground(TextMutedColor)
 
-	innerWidth := width - 2 // Account for left/right borders
-	if innerWidth < 1 {
-		innerWidth = 1
-	}
+	innerWidth := max(width-2, 1) // Account for left/right borders
 
 	// Build top border with inline title: ╭─ Title (hint) ──────╮
 	var topBorder string
@@ -37,10 +34,7 @@ func RenderFormSection(content []string, title, hint string, width int, focused 
 		if hint != "" {
 			titleLen = lipgloss.Width(title + " (" + hint + ")")
 		}
-		dashesAfter := innerWidth - titleLen - 3 // -3 for "─ " before and " " after title
-		if dashesAfter < 0 {
-			dashesAfter = 0
-		}
+		dashesAfter := max(innerWidth-titleLen-3, 0) // -3 for "─ " before and " " after title
 
 		// Build: ╭─ Title (hint) ──────╮
 		topBorder = borderStyle.Render(borderTopLeft+borderHorizontal+" ") + titleStyle.Render(title)

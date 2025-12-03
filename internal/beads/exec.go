@@ -9,6 +9,7 @@ import (
 
 // UpdateStatus changes an issue's status via bd CLI.
 func UpdateStatus(issueID string, status Status) error {
+	//nolint:gosec // G204: issueID comes from bd database, not user input
 	cmd := exec.Command("bd", "update", issueID,
 		"--status", string(status), "--json")
 
@@ -26,6 +27,7 @@ func UpdateStatus(issueID string, status Status) error {
 
 // UpdatePriority changes an issue's priority via bd CLI.
 func UpdatePriority(issueID string, priority Priority) error {
+	//nolint:gosec // G204: issueID comes from bd database, not user input
 	cmd := exec.Command("bd", "update", issueID,
 		"--priority", fmt.Sprintf("%d", priority), "--json")
 
@@ -43,6 +45,7 @@ func UpdatePriority(issueID string, priority Priority) error {
 
 // UpdateType changes an issue's type via bd CLI.
 func UpdateType(issueID string, issueType IssueType) error {
+	//nolint:gosec // G204: issueID comes from bd database, not user input
 	cmd := exec.Command("bd", "update", issueID,
 		"--type", string(issueType), "--json")
 
@@ -77,6 +80,7 @@ func CloseIssue(issueID, reason string) error {
 
 // ReopenIssue reopens a closed issue via bd CLI.
 func ReopenIssue(issueID string) error {
+	//nolint:gosec // G204: issueID comes from bd database, not user input
 	cmd := exec.Command("bd", "update", issueID,
 		"--status", string(StatusOpen), "--json")
 
@@ -127,6 +131,7 @@ func DeleteIssueCascade(issueID string) error {
 // SetLabels replaces all labels on an issue via bd CLI.
 // Pass an empty slice to remove all labels.
 func SetLabels(issueID string, labels []string) error {
+	//nolint:gosec // G204: issueID and labels come from bd database, not user input
 	cmd := exec.Command("bd", "update", issueID,
 		"--set-labels", strings.Join(labels, ","), "--json")
 

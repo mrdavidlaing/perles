@@ -263,12 +263,12 @@ views:
 func WriteDefaultConfig(configPath string) error {
 	// Create parent directory if needed
 	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
 	// Write the template
-	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate()), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate()), 0600); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 

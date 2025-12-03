@@ -1,0 +1,36 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  default: 'none'
+  enable:
+    - errcheck
+    - errname
+    - errorlint
+    - modernize
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - paralleltest
+    - staticcheck
+    - spancheck
+    - tagliatelle
+    - thelper
+    - testifylint
+    - unconvert
+    - unparam
+    - unused
+
+  settings:
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+          yaml: snake
+          mapstructure: snake
+          env: upperSnake
+          envconfig: upperSnake

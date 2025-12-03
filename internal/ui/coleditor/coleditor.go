@@ -198,10 +198,7 @@ func (m Model) SetSize(width, height int) Model {
 	// Calculate input width based on fixed left panel width
 	// leftPanelWidth=75, sectionWidth=75-2=73, innerWidth=73-4 (borders)=69
 	const leftPanelWidth = 75
-	inputWidth := leftPanelWidth - 6 // Account for borders and padding
-	if inputWidth < 20 {
-		inputWidth = 20
-	}
+	inputWidth := max(leftPanelWidth-6, 20) // Account for borders and padding
 	m.nameInput.Width = inputWidth
 	m.queryInput.SetWidth(inputWidth)
 
@@ -493,10 +490,7 @@ func (m Model) View() string {
 	// Create vertical divider
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(styles.BorderDefaultColor)
-	dividerHeight := m.height - 3 // Account for header
-	if dividerHeight < 1 {
-		dividerHeight = 1
-	}
+	dividerHeight := max(m.height-3, 1) // Account for header
 	divider := dividerStyle.Render(strings.Repeat("│\n", dividerHeight))
 
 	// Join panels horizontally
@@ -546,10 +540,7 @@ func (m Model) renderHeader(width int) string {
 	help := helpStyle.Render("[Esc] Cancel  [↑/↓] Navigate")
 
 	// Spread title and help across width
-	gap := width - lipgloss.Width(title) - lipgloss.Width(help) - 4
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(width-lipgloss.Width(title)-lipgloss.Width(help)-4, 1)
 
 	headerStyle := lipgloss.NewStyle().
 		BorderBottom(true).

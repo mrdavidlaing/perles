@@ -56,6 +56,7 @@ func (c *Client) ListIssuesByIds(ids []string) ([]Issue, error) {
 	}
 
 	// Query using same pattern as bql/executor.go
+	//nolint:gosec // G202: placeholders are literal "?" strings, values passed as args
 	query := `
 		SELECT
 			i.id, i.title, i.description, i.status,

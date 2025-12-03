@@ -276,15 +276,9 @@ func (c Column) SetSize(width, height int) Column {
 	c.height = height
 
 	// Size list to fit inside borders (2 chars for left/right borders)
-	listWidth := width - 2
-	if listWidth < 1 {
-		listWidth = 1
-	}
+	listWidth := max(width-2, 1)
 	// Account for top/bottom borders and bubbles list internal chrome
-	listHeight := height - 5
-	if listHeight < 1 {
-		listHeight = 1
-	}
+	listHeight := max(height-5, 1)
 	c.list.SetSize(listWidth, listHeight)
 	return c
 }

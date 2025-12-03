@@ -32,10 +32,7 @@ func RenderWithTitleBorder(content, title string, width, height int, focused boo
 	titleStyle := lipgloss.NewStyle().Foreground(titleColor)
 
 	// Calculate inner width (excluding border characters)
-	innerWidth := width - 2 // -2 for left and right border
-	if innerWidth < 1 {
-		innerWidth = 1
-	}
+	innerWidth := max(width-2, 1) // -2 for left and right border
 
 	// Build top border with embedded title
 	// Format: ╭─ Title ─────────╮
@@ -45,10 +42,7 @@ func RenderWithTitleBorder(content, title string, width, height int, focused boo
 	bottomBorder := borderStyle.Render(borderBottomLeft + strings.Repeat(borderHorizontal, innerWidth) + borderBottomRight)
 
 	// Calculate content height (excluding top and bottom borders)
-	contentHeight := height - 2
-	if contentHeight < 1 {
-		contentHeight = 1
-	}
+	contentHeight := max(height-2, 1)
 
 	// Use lipgloss to constrain content width (handles wrapping/truncation properly)
 	contentStyle := lipgloss.NewStyle().Width(innerWidth).Height(contentHeight)
@@ -58,7 +52,7 @@ func RenderWithTitleBorder(content, title string, width, height int, focused boo
 	contentLines := strings.Split(constrainedContent, "\n")
 	paddedLines := make([]string, contentHeight)
 
-	for i := 0; i < contentHeight; i++ {
+	for i := range contentHeight {
 		var line string
 		if i < len(contentLines) {
 			line = contentLines[i]
@@ -123,10 +117,7 @@ func buildTopBorder(title string, innerWidth int, borderStyle, titleStyle lipglo
 	// Inner: "─ " (2) + title + " " (1) + dashes = innerWidth
 	// So: dashes = innerWidth - 3 - titleTextWidth
 	titleTextWidth := lipgloss.Width(displayTitle)
-	remainingWidth := innerWidth - 3 - titleTextWidth
-	if remainingWidth < 0 {
-		remainingWidth = 0
-	}
+	remainingWidth := max(innerWidth-3-titleTextWidth, 0)
 
 	// Build: ╭─ Title ──────╮
 	// Border parts use borderStyle, title text uses titleStyle

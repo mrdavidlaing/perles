@@ -258,10 +258,7 @@ func (m Model) prevField() Model {
 // View renders the modal content (without overlay).
 func (m Model) View() string {
 	// Calculate box width (content width + padding for content area)
-	minWidth := 40
-	if m.config.MinWidth > minWidth {
-		minWidth = m.config.MinWidth
-	}
+	minWidth := max(40, m.config.MinWidth)
 	contentWidth := minWidth
 	titleLen := lipgloss.Width(m.config.Title)
 	if titleLen > contentWidth {
