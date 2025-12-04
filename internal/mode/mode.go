@@ -2,11 +2,12 @@
 package mode
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
+
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
-
-	tea "github.com/charmbracelet/bubbletea"
+	"perles/internal/ui/toaster"
 )
 
 // AppMode identifies the current application mode.
@@ -39,4 +40,12 @@ type Services struct {
 	Config     *config.Config
 	ConfigPath string
 	DBPath     string
+}
+
+// ShowToastMsg requests displaying a toast notification.
+// Modes return this message instead of managing toasters directly.
+// The app handles this message and manages the centralized toaster.
+type ShowToastMsg struct {
+	Message string
+	Style   toaster.Style
 }

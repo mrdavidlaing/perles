@@ -4,6 +4,14 @@ package kanban
 import (
 	"fmt"
 	"os/exec"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
 	"perles/internal/beads"
 	"perles/internal/config"
 	"perles/internal/mode"
@@ -19,13 +27,6 @@ import (
 	"perles/internal/ui/styles"
 	"perles/internal/ui/toaster"
 	"perles/internal/ui/viewmenu"
-	"runtime"
-	"strings"
-	"time"
-
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // ViewMode determines which view is active within the kanban mode.
@@ -84,9 +85,6 @@ type Model struct {
 
 	// Pending cursor restoration after refresh
 	pendingCursor *cursorState
-
-	// Toaster notification overlay
-	toaster toaster.Model
 
 	// Refresh state tracking
 	autoRefreshed   bool // Set when refresh triggered by file watcher
@@ -281,10 +279,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.errContext = ""
 		return m, nil
 
-	case toaster.DismissMsg:
-		m.toaster = m.toaster.Hide()
-		return m, nil
-
 	case clearRefreshIndicatorMsg:
 		m.autoRefreshed = false
 		m.manualRefreshed = false
@@ -387,10 +381,6 @@ func (m Model) View() string {
 			} else {
 				view += m.renderStatusBar()
 			}
-		}
-		// Overlay toaster if visible (works even when status bar is hidden)
-		if m.toaster.Visible() {
-			view = m.toaster.Overlay(view, m.width, m.height)
 		}
 		return view
 	}
@@ -662,8 +652,10 @@ func (m Model) deleteColumn() (Model, tea.Cmd) {
 
 	m.view = ViewBoard
 	m.loading = true
-	m.toaster = m.toaster.Show("Column deleted", toaster.StyleSuccess)
-	cmds := []tea.Cmd{m.spinner.Tick, toaster.ScheduleDismiss(2 * time.Second)}
+	cmds := []tea.Cmd{
+		m.spinner.Tick,
+		func() tea.Msg { return mode.ShowToastMsg{Message: "Column deleted", Style: toaster.StyleSuccess} },
+	}
 	if loadCmd := m.loadBoardCmd(); loadCmd != nil {
 		cmds = append(cmds, loadCmd)
 	}
@@ -689,9 +681,10 @@ func (m Model) handleViewMenuSelect(msg viewmenu.SelectMsg) (Model, tea.Cmd) {
 	case viewmenu.OptionDelete:
 		// Prevent deletion of last view
 		if len(m.services.Config.Views) <= 1 {
-			m.toaster = m.toaster.Show("Cannot delete the only view", toaster.StyleError)
 			m.view = ViewBoard
-			return m, toaster.ScheduleDismiss(3 * time.Second)
+			return m, func() tea.Msg {
+				return mode.ShowToastMsg{Message: "Cannot delete the only view", Style: toaster.StyleError}
+			}
 		}
 
 		viewName := m.board.CurrentViewName()
@@ -781,8 +774,12 @@ func (m Model) createNewView(viewName string) (Model, tea.Cmd) {
 
 	m.view = ViewBoard
 	m.loading = true
-	m.toaster = m.toaster.Show("Created view: "+viewName, toaster.StyleSuccess)
-	cmds := []tea.Cmd{m.spinner.Tick, toaster.ScheduleDismiss(2 * time.Second)}
+	cmds := []tea.Cmd{
+		m.spinner.Tick,
+		func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Created view: " + viewName, Style: toaster.StyleSuccess}
+		},
+	}
 	if loadCmd := m.board.LoadCurrentViewCmd(); loadCmd != nil {
 		cmds = append(cmds, loadCmd)
 	}
@@ -814,8 +811,12 @@ func (m Model) deleteCurrentView() (Model, tea.Cmd) {
 	m.board, _ = m.board.SwitchToView(newViewIndex)
 
 	m.loading = true
-	m.toaster = m.toaster.Show("Deleted view: "+viewName, toaster.StyleSuccess)
-	cmds := []tea.Cmd{m.spinner.Tick, toaster.ScheduleDismiss(2 * time.Second)}
+	cmds := []tea.Cmd{
+		m.spinner.Tick,
+		func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Deleted view: " + viewName, Style: toaster.StyleSuccess}
+		},
+	}
 	if loadCmd := m.board.LoadCurrentViewCmd(); loadCmd != nil {
 		cmds = append(cmds, loadCmd)
 	}
@@ -838,8 +839,9 @@ func (m Model) renameCurrentView(newName string) (Model, tea.Cmd) {
 	m.board = m.board.SetCurrentViewName(newName)
 
 	m.view = ViewBoard
-	m.toaster = m.toaster.Show("Renamed view to: "+newName, toaster.StyleSuccess)
-	return m, toaster.ScheduleDismiss(2 * time.Second)
+	return m, func() tea.Msg {
+		return mode.ShowToastMsg{Message: "Renamed view to: " + newName, Style: toaster.StyleSuccess}
+	}
 }
 
 // copyToClipboard copies text to the system clipboard.

@@ -2,15 +2,18 @@
 package app
 
 import (
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
 	"perles/internal/mode"
 	"perles/internal/mode/kanban"
 	"perles/internal/mode/search"
+	"perles/internal/ui/toaster"
 	"perles/internal/watcher"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // DBChangedMsg signals that the database has changed.
@@ -30,6 +33,9 @@ type Model struct {
 	// Global state
 	width  int
 	height int
+
+	// Centralized toaster - owned by app, not individual modes
+	toaster toaster.Model
 
 	// File watcher for auto-refresh
 	dbWatcher     <-chan struct{}
@@ -100,9 +106,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Pass size to both modes
+		// Pass size to both modes and toaster
 		m.kanban = m.kanban.SetSize(msg.Width, msg.Height)
 		m.search = m.search.SetSize(msg.Width, msg.Height)
+		m.toaster = m.toaster.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -144,6 +151,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.search, modeCmd = m.search.HandleDBChanged()
 		}
 		return m, tea.Batch(modeCmd, m.watchDatabase())
+
+	case mode.ShowToastMsg:
+		m.toaster = m.toaster.Show(msg.Message, msg.Style)
+		return m, toaster.ScheduleDismiss(3 * time.Second)
+
+	case toaster.DismissMsg:
+		m.toaster = m.toaster.Hide()
+		return m, nil
 	}
 
 	// Delegate all messages to active mode controller
@@ -241,12 +256,19 @@ func (m Model) handleSaveSearchToNewView(msg search.SaveSearchToNewViewMsg) (tea
 
 // View implements tea.Model.
 func (m Model) View() string {
+	var view string
 	switch m.currentMode {
 	case mode.ModeSearch:
-		return m.search.View()
+		view = m.search.View()
 	default:
-		return m.kanban.View()
+		view = m.kanban.View()
 	}
+
+	// Overlay toaster on top of active mode's view
+	if m.toaster.Visible() {
+		view = m.toaster.Overlay(view, m.width, m.height)
+	}
+	return view
 }
 
 // watchDatabase returns a command that waits for database changes.

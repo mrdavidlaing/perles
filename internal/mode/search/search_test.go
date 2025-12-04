@@ -317,8 +317,7 @@ func TestSearch_PriorityChanged_Success(t *testing.T) {
 	m, cmd := m.handlePriorityChanged(msg)
 
 	assert.Nil(t, m.selectedIssue, "expected selected issue to be cleared")
-	assert.True(t, m.toaster.Visible(), "expected toaster to show success")
-	assert.NotNil(t, cmd, "expected dismiss command")
+	assert.NotNil(t, cmd, "expected ShowToastMsg command for success")
 	// Check that results list was updated
 	assert.Equal(t, beads.Priority(0), m.results[0].Priority, "expected priority updated in results")
 }
@@ -331,8 +330,7 @@ func TestSearch_PriorityChanged_Error(t *testing.T) {
 	m, cmd := m.handlePriorityChanged(msg)
 
 	assert.Nil(t, m.selectedIssue, "expected selected issue to be cleared")
-	assert.True(t, m.toaster.Visible(), "expected toaster to show error")
-	assert.NotNil(t, cmd, "expected dismiss command")
+	assert.NotNil(t, cmd, "expected ShowToastMsg command for error")
 }
 
 func TestSearch_StatusChanged_Success(t *testing.T) {
@@ -343,8 +341,7 @@ func TestSearch_StatusChanged_Success(t *testing.T) {
 	m, cmd := m.handleStatusChanged(msg)
 
 	assert.Nil(t, m.selectedIssue, "expected selected issue to be cleared")
-	assert.True(t, m.toaster.Visible(), "expected toaster to show success")
-	assert.NotNil(t, cmd, "expected dismiss command")
+	assert.NotNil(t, cmd, "expected ShowToastMsg command for success")
 	// Check that results list was updated
 	assert.Equal(t, beads.StatusClosed, m.results[0].Status, "expected status updated in results")
 }
@@ -357,8 +354,7 @@ func TestSearch_StatusChanged_Error(t *testing.T) {
 	m, cmd := m.handleStatusChanged(msg)
 
 	assert.Nil(t, m.selectedIssue, "expected selected issue to be cleared")
-	assert.True(t, m.toaster.Visible(), "expected toaster to show error")
-	assert.NotNil(t, cmd, "expected dismiss command")
+	assert.NotNil(t, cmd, "expected ShowToastMsg command for error")
 }
 
 func TestSearch_View_NotPanics(t *testing.T) {
@@ -449,10 +445,10 @@ func TestCtrlS_RequiresQuery(t *testing.T) {
 	m.focus = FocusResults
 	m.input.SetValue("") // Empty query
 
-	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlS})
 
 	assert.NotEqual(t, ViewSaveColumn, m.view, "should not open view selector with empty query")
-	assert.True(t, m.toaster.Visible(), "should show warning toast")
+	assert.NotNil(t, cmd, "expected ShowToastMsg command for warning")
 }
 
 func TestViewSelector_EscReturnToSearch(t *testing.T) {
@@ -479,12 +475,7 @@ func TestViewSelector_SaveBubblesUp(t *testing.T) {
 	m, cmd := m.Update(saveMsg)
 
 	assert.Equal(t, ViewSearch, m.view, "expected to return to search view")
-	assert.True(t, m.toaster.Visible(), "expected success toast")
-	assert.NotNil(t, cmd, "expected command to be returned")
-
-	// Execute the batch command to find SaveSearchAsColumnMsg
-	// The cmd is a tea.BatchMsg, so we need to handle it differently
-	// Just verify that the model state is correct
+	assert.NotNil(t, cmd, "expected batch command with ShowToastMsg")
 }
 
 // createTestModelWithViews creates a Model with views configured for viewselector tests.
@@ -579,8 +570,7 @@ func TestNewViewModal_Save(t *testing.T) {
 	m, cmd := m.Update(saveMsg)
 
 	assert.Equal(t, ViewSearch, m.view, "expected to return to search")
-	assert.True(t, m.toaster.Visible(), "expected success toast")
-	assert.NotNil(t, cmd, "expected command to be returned")
+	assert.NotNil(t, cmd, "expected batch command with ShowToastMsg")
 }
 
 func TestNewViewModal_Cancel(t *testing.T) {

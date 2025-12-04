@@ -2,17 +2,17 @@ package kanban
 
 import (
 	"fmt"
-	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"perles/internal/beads"
 	"perles/internal/config"
+	"perles/internal/mode"
 	"perles/internal/ui/coleditor"
 	"perles/internal/ui/details"
 	"perles/internal/ui/modal"
 	"perles/internal/ui/toaster"
 	"perles/internal/ui/viewmenu"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // handleKey routes key messages to the appropriate handler based on view mode.
@@ -95,8 +95,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.errContext = "copying to clipboard"
 				return m, scheduleErrorClear()
 			}
-			m.toaster = m.toaster.Show("Copied: "+issue.ID, toaster.StyleSuccess)
-			return m, toaster.ScheduleDismiss(2 * time.Second)
+			return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Copied: " + issue.ID, Style: toaster.StyleSuccess} }
 		}
 		return m, nil
 
@@ -203,11 +202,12 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				viewName := m.board.CurrentViewName()
 				viewNum := m.board.CurrentViewIndex() + 1
 				viewTotal := m.board.ViewCount()
-				m.toaster = m.toaster.Show(
-					fmt.Sprintf("View: %s (%d/%d)", viewName, viewNum, viewTotal),
-					toaster.StyleInfo,
-				)
-				toastCmd = toaster.ScheduleDismiss(2 * time.Second)
+				toastCmd = func() tea.Msg {
+					return mode.ShowToastMsg{
+						Message: fmt.Sprintf("View: %s (%d/%d)", viewName, viewNum, viewTotal),
+						Style:   toaster.StyleInfo,
+					}
+				}
 			}
 
 			if cmd != nil {
@@ -233,11 +233,12 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				viewName := m.board.CurrentViewName()
 				viewNum := m.board.CurrentViewIndex() + 1
 				viewTotal := m.board.ViewCount()
-				m.toaster = m.toaster.Show(
-					fmt.Sprintf("View: %s (%d/%d)", viewName, viewNum, viewTotal),
-					toaster.StyleInfo,
-				)
-				toastCmd = toaster.ScheduleDismiss(2 * time.Second)
+				toastCmd = func() tea.Msg {
+					return mode.ShowToastMsg{
+						Message: fmt.Sprintf("View: %s (%d/%d)", viewName, viewNum, viewTotal),
+						Style:   toaster.StyleInfo,
+					}
+				}
 			}
 
 			if cmd != nil {
@@ -496,9 +497,8 @@ func (m Model) handleColumnLoaded(msg tea.Msg) (Model, tea.Cmd) {
 		// Auto sync is silent, manual refresh shows toaster
 		m.autoRefreshed = false
 		if m.manualRefreshed {
-			m.toaster = m.toaster.Show("refreshed issues", toaster.StyleSuccess)
 			m.manualRefreshed = false
-			return m, toaster.ScheduleDismiss(2 * time.Second)
+			return m, func() tea.Msg { return mode.ShowToastMsg{Message: "refreshed issues", Style: toaster.StyleSuccess} }
 		}
 	}
 	return m, nil
@@ -570,10 +570,9 @@ func (m Model) handleIssueDeleted(msg issueDeletedMsg) (Model, tea.Cmd) {
 	m.selectedIssue = nil
 	m.loading = true
 	m.board = m.board.InvalidateViews()
-	m.toaster = m.toaster.Show("Issue deleted", toaster.StyleSuccess)
 	return m, tea.Batch(
 		m.board.LoadAllColumns(),
-		toaster.ScheduleDismiss(2*time.Second),
+		func() tea.Msg { return mode.ShowToastMsg{Message: "Issue deleted", Style: toaster.StyleSuccess} },
 	)
 }
 
@@ -586,8 +585,7 @@ func (m Model) handleLabelsChanged(msg labelsChangedMsg) (Model, tea.Cmd) {
 	}
 	// Update details view to show new labels
 	m.details = m.details.UpdateLabels(msg.labels)
-	m.toaster = m.toaster.Show("Labels updated", toaster.StyleSuccess)
-	return m, toaster.ScheduleDismiss(2 * time.Second)
+	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Labels updated", Style: toaster.StyleSuccess} }
 }
 
 // handleErrMsg processes error messages.
@@ -596,8 +594,10 @@ func (m Model) handleErrMsg(msg errMsg) (Model, tea.Cmd) {
 	m.errContext = msg.context
 	// Show error toaster for loading failures
 	if msg.context == "loading issues" {
-		m.toaster = m.toaster.Show("failed to load issues", toaster.StyleError)
-		return m, tea.Batch(scheduleErrorClear(), toaster.ScheduleDismiss(3*time.Second))
+		return m, tea.Batch(
+			scheduleErrorClear(),
+			func() tea.Msg { return mode.ShowToastMsg{Message: "failed to load issues", Style: toaster.StyleError} },
+		)
 	}
 	return m, scheduleErrorClear()
 }
@@ -652,8 +652,10 @@ func (m Model) handleColEditorSave(msg coleditor.SaveMsg) (Model, tea.Cmd) {
 
 	m.view = ViewBoard
 	m.loading = true
-	m.toaster = m.toaster.Show("Column saved", toaster.StyleSuccess)
-	cmds := []tea.Cmd{m.spinner.Tick, toaster.ScheduleDismiss(2 * time.Second)}
+	cmds := []tea.Cmd{
+		m.spinner.Tick,
+		func() tea.Msg { return mode.ShowToastMsg{Message: "Column saved", Style: toaster.StyleSuccess} },
+	}
 	if loadCmd := m.loadBoardCmd(); loadCmd != nil {
 		cmds = append(cmds, loadCmd)
 	}
@@ -681,8 +683,10 @@ func (m Model) handleColEditorDelete(msg coleditor.DeleteMsg) (Model, tea.Cmd) {
 
 	m.view = ViewBoard
 	m.loading = true
-	m.toaster = m.toaster.Show("Column deleted", toaster.StyleSuccess)
-	cmds := []tea.Cmd{m.spinner.Tick, toaster.ScheduleDismiss(2 * time.Second)}
+	cmds := []tea.Cmd{
+		m.spinner.Tick,
+		func() tea.Msg { return mode.ShowToastMsg{Message: "Column deleted", Style: toaster.StyleSuccess} },
+	}
 	if loadCmd := m.loadBoardCmd(); loadCmd != nil {
 		cmds = append(cmds, loadCmd)
 	}
@@ -721,8 +725,10 @@ func (m Model) handleColEditorAdd(msg coleditor.AddMsg) (Model, tea.Cmd) {
 
 	m.view = ViewBoard
 	m.loading = true
-	m.toaster = m.toaster.Show("Column added", toaster.StyleSuccess)
-	cmds := []tea.Cmd{m.spinner.Tick, toaster.ScheduleDismiss(2 * time.Second)}
+	cmds := []tea.Cmd{
+		m.spinner.Tick,
+		func() tea.Msg { return mode.ShowToastMsg{Message: "Column added", Style: toaster.StyleSuccess} },
+	}
 	if loadCmd := m.loadBoardCmd(); loadCmd != nil {
 		cmds = append(cmds, loadCmd)
 	}

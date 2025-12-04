@@ -10,7 +10,6 @@ import (
 	"perles/internal/mode"
 	"perles/internal/ui/details"
 	"perles/internal/ui/modal"
-	"perles/internal/ui/toaster"
 )
 
 // createTestModel creates a minimal Model for testing state transitions.
@@ -26,7 +25,6 @@ func createTestModel() Model {
 		width:    100,
 		height:   40,
 		view:     ViewBoard,
-		toaster:  toaster.Model{},
 	}
 }
 
@@ -78,10 +76,11 @@ func TestDeleteFlow_IssueDeletedMsgReturnsToBoard(t *testing.T) {
 		issueID: "test-123",
 		err:     nil,
 	}
-	m, _ = m.handleIssueDeleted(msg)
+	m, cmd := m.handleIssueDeleted(msg)
 
 	assert.Equal(t, ViewBoard, m.view, "expected ViewBoard after successful delete")
-	assert.True(t, m.toaster.Visible(), "expected toaster to show success message")
+	// The command should include a ShowToastMsg emission (app now owns toaster)
+	assert.NotNil(t, cmd, "expected command for toast message")
 }
 
 func TestDeleteFlow_IssueDeletedMsgWithErrorShowsError(t *testing.T) {

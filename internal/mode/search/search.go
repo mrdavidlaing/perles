@@ -5,6 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
 	"perles/internal/beads"
 	"perles/internal/mode"
 	"perles/internal/ui/board"
@@ -21,13 +29,6 @@ import (
 	"perles/internal/ui/styles"
 	"perles/internal/ui/toaster"
 	"perles/internal/ui/viewselector"
-	"runtime"
-	"strings"
-	"time"
-
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // FocusPane represents which pane has focus in the search mode.
@@ -76,7 +77,6 @@ type Model struct {
 	view          ViewMode
 	help          help.Model
 	picker        picker.Model
-	toaster       toaster.Model
 	selectedIssue *beads.Issue // Issue being edited in picker
 	viewSelector  viewselector.Model
 	actionPicker  saveactionpicker.Model
@@ -117,7 +117,6 @@ func New(services mode.Services) Model {
 		focus:       FocusSearch,
 		view:        ViewSearch,
 		help:        help.NewSearch(),
-		toaster:     toaster.New(),
 	}
 }
 
@@ -198,10 +197,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case toaster.DismissMsg:
-		m.toaster = m.toaster.Hide()
-		return m, nil
-
 	case viewselector.CancelMsg:
 		m.view = ViewSearch
 		return m, nil
@@ -228,7 +223,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if count == 1 {
 			toastMsg = "Column added to 1 view"
 		}
-		m.toaster = m.toaster.Show(toastMsg, toaster.StyleSuccess)
 		return m, tea.Batch(
 			func() tea.Msg {
 				return SaveSearchAsColumnMsg{
@@ -238,7 +232,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					ViewIndices: msg.ViewIndices,
 				}
 			},
-			toaster.ScheduleDismiss(3*time.Second),
+			func() tea.Msg { return mode.ShowToastMsg{Message: toastMsg, Style: toaster.StyleSuccess} },
 		)
 
 	case saveactionpicker.SelectMsg:
@@ -263,7 +257,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case newviewmodal.SaveMsg:
 		m.view = ViewSearch
-		m.toaster = m.toaster.Show(fmt.Sprintf("Created view '%s'", msg.ViewName), toaster.StyleSuccess)
 		return m, tea.Batch(
 			func() tea.Msg {
 				return SaveSearchToNewViewMsg{
@@ -273,7 +266,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					Query:      msg.Query,
 				}
 			},
-			toaster.ScheduleDismiss(3*time.Second),
+			func() tea.Msg {
+				return mode.ShowToastMsg{Message: fmt.Sprintf("Created view '%s'", msg.ViewName), Style: toaster.StyleSuccess}
+			},
 		)
 
 	case newviewmodal.CancelMsg:
@@ -348,12 +343,8 @@ func (m Model) View() string {
 		return m.editMenu.Overlay(m.renderMainView())
 	}
 
-	// Main view with potential toaster
-	view := m.renderMainView()
-	if m.toaster.Visible() {
-		view = m.toaster.Overlay(view, m.width, m.height)
-	}
-	return view
+	// Main view - toaster is now overlaid at app level
+	return m.renderMainView()
 }
 
 // handleKey processes keyboard input.
@@ -447,8 +438,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			// Save current query as column (works even while typing)
 			query := m.input.Value()
 			if query == "" {
-				m.toaster = m.toaster.Show("Enter a query first", toaster.StyleWarn)
-				return m, toaster.ScheduleDismiss(2 * time.Second)
+				return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Enter a query first", Style: toaster.StyleWarn} }
 			}
 			// Show action picker to choose between existing view or new view
 			m.actionPicker = saveactionpicker.New(query)
@@ -505,8 +495,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		// Save current query as column
 		query := m.input.Value()
 		if query == "" {
-			m.toaster = m.toaster.Show("Enter a query first", toaster.StyleWarn)
-			return m, toaster.ScheduleDismiss(2 * time.Second)
+			return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Enter a query first", Style: toaster.StyleWarn} }
 		}
 		// Show action picker to choose between existing view or new view
 		m.actionPicker = saveactionpicker.New(query)
@@ -862,8 +851,9 @@ func (m Model) navigateToDependency(issueID string) (Model, tea.Cmd) {
 	// Load the issue by ID
 	issues, err := m.services.Client.ListIssuesByIds([]string{issueID})
 	if err != nil || len(issues) == 0 {
-		m.toaster = m.toaster.Show("Issue not found: "+issueID, toaster.StyleError)
-		return m, toaster.ScheduleDismiss(2 * time.Second)
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Issue not found: " + issueID, Style: toaster.StyleError}
+		}
 	}
 
 	issue := issues[0]
@@ -1100,8 +1090,9 @@ func (m Model) HandleDBChanged() (Model, tea.Cmd) {
 func (m Model) handlePriorityChanged(msg priorityChangedMsg) (Model, tea.Cmd) {
 	m.selectedIssue = nil
 	if msg.err != nil {
-		m.toaster = m.toaster.Show("Error: "+msg.err.Error(), toaster.StyleError)
-		return m, toaster.ScheduleDismiss(3 * time.Second)
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Error: " + msg.err.Error(), Style: toaster.StyleError}
+		}
 	}
 
 	// Update the details panel to show new priority
@@ -1121,16 +1112,16 @@ func (m Model) handlePriorityChanged(msg priorityChangedMsg) (Model, tea.Cmd) {
 	}
 	m.resultsList.SetItems(items)
 
-	m.toaster = m.toaster.Show("Priority updated", toaster.StyleSuccess)
-	return m, toaster.ScheduleDismiss(2 * time.Second)
+	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Priority updated", Style: toaster.StyleSuccess} }
 }
 
 // handleStatusChanged processes status change results.
 func (m Model) handleStatusChanged(msg statusChangedMsg) (Model, tea.Cmd) {
 	m.selectedIssue = nil
 	if msg.err != nil {
-		m.toaster = m.toaster.Show("Error: "+msg.err.Error(), toaster.StyleError)
-		return m, toaster.ScheduleDismiss(3 * time.Second)
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Error: " + msg.err.Error(), Style: toaster.StyleError}
+		}
 	}
 
 	// Update the details panel to show new status
@@ -1150,25 +1141,23 @@ func (m Model) handleStatusChanged(msg statusChangedMsg) (Model, tea.Cmd) {
 	}
 	m.resultsList.SetItems(items)
 
-	m.toaster = m.toaster.Show("Status updated", toaster.StyleSuccess)
-	return m, toaster.ScheduleDismiss(2 * time.Second)
+	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Status updated", Style: toaster.StyleSuccess} }
 }
 
 // yankIssueID copies the selected issue ID to clipboard.
 func (m Model) yankIssueID() (Model, tea.Cmd) {
 	if m.selectedIdx < 0 || m.selectedIdx >= len(m.results) {
-		m.toaster = m.toaster.Show("No issue selected", toaster.StyleError)
-		return m, toaster.ScheduleDismiss(2 * time.Second)
+		return m, func() tea.Msg { return mode.ShowToastMsg{Message: "No issue selected", Style: toaster.StyleError} }
 	}
 
 	issue := m.results[m.selectedIdx]
 	if err := copyToClipboard(issue.ID); err != nil {
-		m.toaster = m.toaster.Show("Clipboard error: "+err.Error(), toaster.StyleError)
-		return m, toaster.ScheduleDismiss(3 * time.Second)
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Clipboard error: " + err.Error(), Style: toaster.StyleError}
+		}
 	}
 
-	m.toaster = m.toaster.Show("Copied: "+issue.ID, toaster.StyleSuccess)
-	return m, toaster.ScheduleDismiss(2 * time.Second)
+	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Copied: " + issue.ID, Style: toaster.StyleSuccess} }
 }
 
 // copyToClipboard copies text to the system clipboard.
@@ -1387,27 +1376,28 @@ func (m Model) handleModalCancel() (Model, tea.Cmd) {
 // handleIssueDeleted processes issue deletion results.
 func (m Model) handleIssueDeleted(msg issueDeletedMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
-		m.toaster = m.toaster.Show("Error: "+msg.err.Error(), toaster.StyleError)
 		m.view = ViewSearch
 		m.selectedIssue = nil
-		return m, toaster.ScheduleDismiss(3 * time.Second)
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Error: " + msg.err.Error(), Style: toaster.StyleError}
+		}
 	}
 
 	// Return to search, refresh results to remove deleted issue
 	m.view = ViewSearch
 	m.selectedIssue = nil
-	m.toaster = m.toaster.Show("Issue deleted", toaster.StyleSuccess)
 	return m, tea.Batch(
 		m.executeSearch(),
-		toaster.ScheduleDismiss(2*time.Second),
+		func() tea.Msg { return mode.ShowToastMsg{Message: "Issue deleted", Style: toaster.StyleSuccess} },
 	)
 }
 
 // handleLabelsChanged processes label change results.
 func (m Model) handleLabelsChanged(msg labelsChangedMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
-		m.toaster = m.toaster.Show("Error: "+msg.err.Error(), toaster.StyleError)
-		return m, toaster.ScheduleDismiss(3 * time.Second)
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Error: " + msg.err.Error(), Style: toaster.StyleError}
+		}
 	}
 
 	// Update details view to show new labels
@@ -1421,8 +1411,7 @@ func (m Model) handleLabelsChanged(msg labelsChangedMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	m.toaster = m.toaster.Show("Labels updated", toaster.StyleSuccess)
-	return m, toaster.ScheduleDismiss(2 * time.Second)
+	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Labels updated", Style: toaster.StyleSuccess} }
 }
 
 // Message types for delete and label operations
