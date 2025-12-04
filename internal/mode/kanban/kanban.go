@@ -11,6 +11,7 @@ import (
 	"perles/internal/ui/coleditor"
 	"perles/internal/ui/colorpicker"
 	"perles/internal/ui/details"
+	"perles/internal/ui/editmenu"
 	"perles/internal/ui/help"
 	"perles/internal/ui/labeleditor"
 	"perles/internal/ui/modal"
@@ -44,6 +45,7 @@ const (
 	ViewViewMenu
 	ViewDeleteColumnModal
 	ViewRenameViewModal
+	ViewDetailsEditMenu
 )
 
 // cursorState tracks the current selection for restoration after refresh.
@@ -64,6 +66,7 @@ type Model struct {
 	modal       modal.Model
 	labelEditor labeleditor.Model
 	viewMenu    viewmenu.Model
+	editMenu    editmenu.Model
 	spinner     spinner.Model
 	view        ViewMode
 	width       int
@@ -246,6 +249,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.view = ViewLabelEditor
 		return m, m.labelEditor.Init()
 
+	case details.OpenEditMenuMsg:
+		m.editMenu = editmenu.New().SetSize(m.width, m.height)
+		m.selectedIssue = m.getIssueByID(msg.IssueID)
+		m.view = ViewDetailsEditMenu
+		return m, nil
+
+	case editmenu.SelectMsg:
+		return m.handleEditMenuSelect(msg)
+
+	case editmenu.CancelMsg:
+		m.view = ViewDetails
+		return m, nil
+
 	case labeleditor.SaveMsg:
 		m.view = ViewDetails
 		return m, setLabelsCmd(msg.IssueID, msg.Labels)
@@ -344,6 +360,9 @@ func (m Model) View() string {
 	case ViewLabelEditor:
 		// Render label editor overlay on top of details view
 		return m.labelEditor.Overlay(m.details.View())
+	case ViewDetailsEditMenu:
+		// Render edit menu overlay on top of details view
+		return m.editMenu.Overlay(m.details.View())
 	case ViewViewMenu:
 		// Render view menu overlay on top of board
 		bg := m.board.View()
@@ -701,6 +720,39 @@ func (m Model) handleViewMenuSelect(msg viewmenu.SelectMsg) (Model, tea.Cmd) {
 	}
 
 	m.view = ViewBoard
+	return m, nil
+}
+
+// handleEditMenuSelect routes edit menu selections to appropriate actions.
+func (m Model) handleEditMenuSelect(msg editmenu.SelectMsg) (Model, tea.Cmd) {
+	if m.selectedIssue == nil {
+		m.view = ViewDetails
+		return m, nil
+	}
+
+	switch msg.Option {
+	case editmenu.OptionLabels:
+		m.labelEditor = labeleditor.New(m.selectedIssue.ID, m.selectedIssue.Labels).
+			SetSize(m.width, m.height)
+		m.view = ViewLabelEditor
+		return m, m.labelEditor.Init()
+
+	case editmenu.OptionPriority:
+		m.picker = picker.New("Priority", priorityOptions()).
+			SetSize(m.width, m.height).
+			SetSelected(int(m.selectedIssue.Priority))
+		m.view = ViewDetailsPriorityPicker
+		return m, nil
+
+	case editmenu.OptionStatus:
+		m.picker = picker.New("Status", statusOptions()).
+			SetSize(m.width, m.height).
+			SetSelected(picker.FindIndexByValue(statusOptions(), string(m.selectedIssue.Status)))
+		m.view = ViewDetailsStatusPicker
+		return m, nil
+	}
+
+	m.view = ViewDetails
 	return m, nil
 }
 

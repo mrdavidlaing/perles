@@ -456,285 +456,118 @@ func TestDetails_TerminalResize(t *testing.T) {
 	assert.Contains(t, narrowView, "[T]", "expected narrow view to contain type indicator")
 }
 
-// Tests for inline metadata editing
+// Tests for scrolling behavior
 
-func TestDetails_FocusPane_InitiallyContent(t *testing.T) {
+func TestDetails_JKScrollsViewport(t *testing.T) {
 	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
+		ID:              "test-1",
+		TitleText:       "Test Issue",
+		DescriptionText: strings.Repeat("Long content line\n", 100),
+		CreatedAt:       time.Now(),
 	}
 	m := New(issue, nil)
-	assert.Equal(t, FocusContent, m.focusPane, "expected initial focus on content pane")
+	m = m.SetSize(100, 20)
+
+	initialOffset := m.viewport.YOffset
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	assert.Greater(t, m.viewport.YOffset, initialOffset, "expected viewport to scroll down on 'j'")
+
+	// Scroll back up
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	assert.Equal(t, initialOffset, m.viewport.YOffset, "expected viewport to scroll back up on 'k'")
 }
 
-func TestDetails_FocusPane_SwitchToMetadata(t *testing.T) {
+func TestDetails_DependencyNavigation_LToFocusDeps(t *testing.T) {
 	issue := beads.Issue{
 		ID:        "test-1",
 		TitleText: "Test Issue",
+		BlockedBy: []string{"dep-1", "dep-2", "dep-3"},
 		CreatedAt: time.Now(),
 	}
 	m := New(issue, nil)
 	m = m.SetSize(100, 40)
 
-	// Press 'l' to switch to metadata pane
+	// Initially on content pane
+	assert.Equal(t, FocusContent, m.focusPane, "expected content pane initially")
+
+	// Press 'l' to focus dependencies
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	assert.Equal(t, FocusMetadata, m.focusPane, "expected focus on metadata pane after 'l'")
+	assert.Equal(t, FocusMetadata, m.focusPane, "expected metadata pane after 'l'")
+	assert.Equal(t, 0, m.selectedDependency, "expected first dependency selected")
+
+	// Press 'j' to navigate to next dependency
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	assert.Equal(t, 1, m.selectedDependency, "expected second dependency")
+
+	// Press 'k' to go back
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	assert.Equal(t, 0, m.selectedDependency, "expected first dependency")
+
+	// Wrap around with 'k'
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	assert.Equal(t, 2, m.selectedDependency, "expected wrap to last dependency")
+
+	// Press 'h' to return to content
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	assert.Equal(t, FocusContent, m.focusPane, "expected content pane after 'h'")
 }
 
-func TestDetails_FocusPane_SwitchBackToContent(t *testing.T) {
+func TestDetails_DependencyNavigation_EnterNavigates(t *testing.T) {
 	issue := beads.Issue{
 		ID:        "test-1",
 		TitleText: "Test Issue",
+		BlockedBy: []string{"target-dep"},
 		CreatedAt: time.Now(),
 	}
 	m := New(issue, nil)
 	m = m.SetSize(100, 40)
 
-	// Switch to metadata
+	// Focus dependencies with 'l'
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	assert.Equal(t, FocusMetadata, m.focusPane)
+	assert.Equal(t, 0, m.selectedDependency)
 
-	// Press 'h' to switch back to content pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
-	assert.Equal(t, FocusContent, m.focusPane, "expected focus on content pane after 'h'")
-}
-
-func TestDetails_FocusPane_LDoesNothingOnMetadata(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	// Press 'l' again - should stay on metadata (no further pane to the right)
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	assert.Equal(t, FocusMetadata, m.focusPane, "expected to stay on metadata pane")
-}
-
-func TestDetails_FocusPane_HDoesNothingOnContent(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Press 'h' while on content - should stay on content (no further pane to the left)
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
-	assert.Equal(t, FocusContent, m.focusPane, "expected to stay on content pane")
-}
-
-func TestDetails_FieldNavigation_InitiallyPriority(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	assert.Equal(t, FieldPriority, m.selectedField, "expected initial selection on Priority field")
-}
-
-func TestDetails_FieldNavigation_Down(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	assert.Equal(t, FieldPriority, m.selectedField, "expected initial selection on Priority")
-
-	// Press 'j' to move down to Status
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldStatus, m.selectedField, "expected selection on Status field after 'j'")
-}
-
-func TestDetails_FieldNavigation_Up(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-
-	// Move down to Status
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldStatus, m.selectedField, "expected Status field")
-
-	// Press 'k' to move up to Priority
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	assert.Equal(t, FieldPriority, m.selectedField, "expected selection on Priority field after 'k'")
-}
-
-func TestDetails_FieldNavigation_WrapAroundDown(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-
-	// Move down 2 times (Priority -> Status -> Priority)
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldPriority, m.selectedField, "expected wrap-around to Priority field")
-}
-
-func TestDetails_FieldNavigation_WrapAroundUp(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-
-	// Press 'k' while on Priority (should wrap to Status)
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	assert.Equal(t, FieldStatus, m.selectedField, "expected wrap-around to Status field")
-}
-
-func TestDetails_FieldNavigation_JKScrollsViewportWhenContentFocused(t *testing.T) {
-	issue := beads.Issue{
-		ID:              "test-1",
-		TitleText:       "Test Issue",
-		DescriptionText: strings.Repeat("Long content line\n", 100),
-		CreatedAt:       time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 20)
-
-	// Ensure we're on content pane (default)
-	assert.Equal(t, FocusContent, m.focusPane)
-
-	initialOffset := m.viewport.YOffset
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Greater(t, m.viewport.YOffset, initialOffset, "expected viewport to scroll when content focused")
-}
-
-func TestDetails_FieldNavigation_JKDoesNotScrollWhenMetadataFocused(t *testing.T) {
-	issue := beads.Issue{
-		ID:              "test-1",
-		TitleText:       "Test Issue",
-		DescriptionText: strings.Repeat("Long content line\n", 100),
-		CreatedAt:       time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 20)
-
-	// Switch to metadata pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-
-	initialOffset := m.viewport.YOffset
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, initialOffset, m.viewport.YOffset, "expected viewport NOT to scroll when metadata focused")
-}
-
-func TestDetails_OpenPicker_Priority(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Priority:  beads.PriorityHigh, // P1
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-
-	// Press Enter on Priority field
+	// Press Enter
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-
-	// Should return a command that produces OpenPriorityPickerMsg
-	msg := cmd()
-	priorityMsg, ok := msg.(OpenPriorityPickerMsg)
-	assert.True(t, ok, "expected OpenPriorityPickerMsg")
-	assert.Equal(t, "test-1", priorityMsg.IssueID)
-	assert.Equal(t, beads.PriorityHigh, priorityMsg.Current, "expected current priority P1")
-}
-
-func TestDetails_OpenPicker_Status(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Status:    beads.StatusOpen,
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane and move to Status field (one j from Priority)
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-
-	// Press Enter on Status field
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	assert.NotNil(t, cmd, "expected command from Enter on dependency")
 
 	msg := cmd()
-	statusMsg, ok := msg.(OpenStatusPickerMsg)
-	assert.True(t, ok, "expected OpenStatusPickerMsg")
-	assert.Equal(t, "test-1", statusMsg.IssueID)
-	assert.Equal(t, beads.StatusOpen, statusMsg.Current, "expected current status open")
+	navMsg, ok := msg.(NavigateToDependencyMsg)
+	assert.True(t, ok, "expected NavigateToDependencyMsg")
+	assert.Equal(t, "target-dep", navMsg.IssueID)
 }
 
-func TestDetails_EnterDoesNothingOnContentPane(t *testing.T) {
+func TestDetails_DependencyNavigation_EnterNoOpOnContentPane(t *testing.T) {
 	issue := beads.Issue{
 		ID:        "test-1",
 		TitleText: "Test Issue",
+		BlockedBy: []string{"dep-1"},
 		CreatedAt: time.Now(),
 	}
 	m := New(issue, nil)
 	m = m.SetSize(100, 40)
 
-	// Ensure on content pane
+	// Stay on content pane (don't press 'l')
 	assert.Equal(t, FocusContent, m.focusPane)
 
 	// Press Enter - should return nil command
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	assert.Nil(t, cmd, "expected nil command when Enter pressed on content pane")
+	assert.Nil(t, cmd, "expected nil command when on content pane")
 }
 
-func TestDetails_MetadataColumnShowsSelectionIndicator(t *testing.T) {
+func TestDetails_DependencyNavigation_LNoOpWithoutDeps(t *testing.T) {
 	issue := beads.Issue{
 		ID:        "test-1",
 		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityHigh,
-		Status:    beads.StatusOpen,
+		// No dependencies
 		CreatedAt: time.Now(),
 	}
 	m := New(issue, nil)
 	m = m.SetSize(100, 40)
 
-	// When content focused, no selection indicator
-	view := m.View()
-	assert.NotContains(t, view, "> Priority", "expected no selection indicator when content focused")
-
-	// Switch to metadata pane
+	// Press 'l' - should stay on content (no deps to focus)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	view = m.View()
-	assert.Contains(t, view, ">", "expected selection indicator when metadata focused")
+	assert.Equal(t, FocusContent, m.focusPane, "expected to stay on content when no deps")
 }
 
 func TestDetails_DeleteKey_EmitsDeleteIssueMsg(t *testing.T) {
@@ -808,9 +641,6 @@ func TestDetails_View_Golden(t *testing.T) {
 	}
 	m := New(issue, nil).SetSize(120, 30)
 
-	// Switch to metadata pane so we see the selection indicator
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
 }
@@ -832,9 +662,6 @@ func TestDetails_View_Golden_WithDependencies(t *testing.T) {
 		UpdatedAt:       time.Date(2024, 2, 15, 16, 30, 0, 0, time.UTC),
 	}
 	m := New(issue, nil).SetSize(120, 30)
-
-	// Switch to metadata pane so we see the selection indicator
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
@@ -884,9 +711,6 @@ func TestDetails_View_Golden_WithLoadedDependencies(t *testing.T) {
 	}
 	m := New(issue, loader).SetSize(120, 30)
 
-	// Switch to metadata pane so we see the selection indicator
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
 }
@@ -926,152 +750,4 @@ func TestDetails_View_Golden_WrappingTitle(t *testing.T) {
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
-}
-
-// Tests for dependency navigation (Phase 3 & 4)
-
-func TestDetails_DependencyNavigation_JFromStatusToDependency(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		BlockedBy: []string{"dep-1", "dep-2"},
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	assert.Equal(t, FocusMetadata, m.focusPane)
-	assert.Equal(t, FieldPriority, m.selectedField)
-
-	// Move down to Status
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldStatus, m.selectedField)
-
-	// Move down to Dependencies
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldDependency, m.selectedField)
-	assert.Equal(t, 0, m.selectedDependency, "expected first dependency selected")
-}
-
-func TestDetails_DependencyNavigation_CycleThroughDependencies(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		BlockedBy: []string{"dep-1", "dep-2", "dep-3"},
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Navigate to FieldDependency
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}) // Priority -> Status
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}) // Status -> Dependency[0]
-	assert.Equal(t, FieldDependency, m.selectedField)
-	assert.Equal(t, 0, m.selectedDependency)
-
-	// Cycle through dependencies
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, 1, m.selectedDependency)
-
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, 2, m.selectedDependency)
-
-	// Wrap around to Priority
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldPriority, m.selectedField)
-}
-
-func TestDetails_DependencyNavigation_KFromDependencyToStatus(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		BlockedBy: []string{"dep-1"},
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Navigate to FieldDependency
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}) // Priority -> Status
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}) // Status -> Dependency[0]
-	assert.Equal(t, FieldDependency, m.selectedField)
-
-	// k should go back to Status
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
-	assert.Equal(t, FieldStatus, m.selectedField)
-}
-
-func TestDetails_DependencyNavigation_NoDependencies(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Navigate through metadata
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	assert.Equal(t, FieldPriority, m.selectedField)
-
-	// j should go Status -> Priority (wrap, no dependencies)
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldStatus, m.selectedField)
-
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	assert.Equal(t, FieldPriority, m.selectedField, "expected wrap to Priority when no dependencies")
-}
-
-func TestDetails_EnterOnDependency_EmitsNavigateMsg(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		BlockedBy: []string{"target-dep"},
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Navigate to FieldDependency
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}) // Priority -> Status
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}) // Status -> Dependency[0]
-	assert.Equal(t, FieldDependency, m.selectedField)
-
-	// Press Enter
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	assert.NotNil(t, cmd, "expected command from Enter on dependency")
-
-	msg := cmd()
-	navMsg, ok := msg.(NavigateToDependencyMsg)
-	assert.True(t, ok, "expected NavigateToDependencyMsg")
-	assert.Equal(t, "target-dep", navMsg.IssueID)
-}
-
-func TestDetails_EnterOnPriorityStillOpensPicker(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Priority:  beads.PriorityHigh,
-		BlockedBy: []string{"dep-1"}, // Has dependencies but we're on Priority
-		CreatedAt: time.Now(),
-	}
-	m := New(issue, nil)
-	m = m.SetSize(100, 40)
-
-	// Switch to metadata pane, stay on Priority
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	assert.Equal(t, FieldPriority, m.selectedField)
-
-	// Press Enter - should open priority picker, not navigate
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	assert.NotNil(t, cmd)
-
-	msg := cmd()
-	_, ok := msg.(OpenPriorityPickerMsg)
-	assert.True(t, ok, "expected OpenPriorityPickerMsg when Enter on Priority field")
 }

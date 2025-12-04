@@ -36,23 +36,6 @@ type DependencyItem struct {
 	Category string       // "blocked_by", "blocks", or "related"
 }
 
-// FocusPane represents which pane has focus in the details view.
-type FocusPane int
-
-const (
-	FocusContent  FocusPane = iota // Left column (markdown viewport)
-	FocusMetadata                  // Right column (editable fields)
-)
-
-// MetadataField represents selectable (editable) fields in the metadata column.
-type MetadataField int
-
-const (
-	FieldPriority MetadataField = iota
-	FieldStatus
-	FieldDependency // When focused, selectedDependency index applies
-)
-
 // Messages emitted by the details view for the app to handle.
 
 // OpenPriorityPickerMsg requests opening the priority picker.
@@ -84,6 +67,22 @@ type OpenLabelEditorMsg struct {
 	Labels  []string
 }
 
+// OpenEditMenuMsg requests opening the edit menu.
+type OpenEditMenuMsg struct {
+	IssueID  string
+	Labels   []string
+	Priority beads.Priority
+	Status   beads.Status
+}
+
+// FocusPane represents which pane has focus in the details view.
+type FocusPane int
+
+const (
+	FocusContent  FocusPane = iota // Left column (markdown viewport)
+	FocusMetadata                  // Right column (dependencies)
+)
+
 // Model holds the detail view state.
 type Model struct {
 	issue              beads.Issue
@@ -92,10 +91,9 @@ type Model struct {
 	width              int
 	height             int
 	ready              bool
-	focusPane          FocusPane     // Which pane has focus
-	selectedField      MetadataField // Which metadata field is selected (when FocusMetadata)
+	focusPane          FocusPane // Which pane has focus
 	dependencies       []DependencyItem
-	selectedDependency int // Index into dependencies slice (when FieldDependency)
+	selectedDependency int // Index into dependencies slice
 	loader             DependencyLoader
 }
 
@@ -226,52 +224,30 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 			return m, nil
 		case "l":
-			// Move focus right (to metadata pane)
-			if m.focusPane == FocusContent {
+			// Move focus right (to metadata/dependencies pane) - only if there are dependencies
+			if m.focusPane == FocusContent && len(m.dependencies) > 0 {
 				m.focusPane = FocusMetadata
+				if m.selectedDependency < 0 {
+					m.selectedDependency = 0 // Select first dependency
+				}
 			}
 			return m, nil
 		case "j", "down", "ctrl+n":
-			if m.focusPane == FocusMetadata {
-				switch m.selectedField {
-				case FieldPriority:
-					m.selectedField = FieldStatus
-				case FieldStatus:
-					if len(m.dependencies) > 0 {
-						m.selectedField = FieldDependency
-						m.selectedDependency = 0
-					} else {
-						m.selectedField = FieldPriority // wrap around
-					}
-				case FieldDependency:
-					if m.selectedDependency < len(m.dependencies)-1 {
-						m.selectedDependency++
-					} else {
-						m.selectedField = FieldPriority // wrap to top
-						m.selectedDependency = 0
-					}
+			if m.focusPane == FocusMetadata && len(m.dependencies) > 0 {
+				// Navigate dependencies
+				m.selectedDependency++
+				if m.selectedDependency >= len(m.dependencies) {
+					m.selectedDependency = 0 // wrap around
 				}
 				return m, nil
 			}
 			m.viewport.ScrollDown(1)
 		case "k", "up", "ctrl+p":
-			if m.focusPane == FocusMetadata {
-				switch m.selectedField {
-				case FieldPriority:
-					if len(m.dependencies) > 0 {
-						m.selectedField = FieldDependency
-						m.selectedDependency = len(m.dependencies) - 1 // wrap to last dep
-					} else {
-						m.selectedField = FieldStatus // wrap around
-					}
-				case FieldStatus:
-					m.selectedField = FieldPriority
-				case FieldDependency:
-					if m.selectedDependency > 0 {
-						m.selectedDependency--
-					} else {
-						m.selectedField = FieldStatus // back to Status
-					}
+			if m.focusPane == FocusMetadata && len(m.dependencies) > 0 {
+				// Navigate dependencies
+				m.selectedDependency--
+				if m.selectedDependency < 0 {
+					m.selectedDependency = len(m.dependencies) - 1 // wrap around
 				}
 				return m, nil
 			}
@@ -281,17 +257,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "G":
 			m.viewport.GotoBottom()
 		case "enter":
-			if m.focusPane == FocusMetadata {
-				// Check if on a dependency - emit navigation message
-				if m.selectedField == FieldDependency && len(m.dependencies) > 0 {
-					dep := m.dependencies[m.selectedDependency]
-					return m, func() tea.Msg {
-						return NavigateToDependencyMsg{IssueID: dep.ID}
-					}
+			// Navigate to selected dependency (only when metadata focused)
+			if m.focusPane == FocusMetadata && m.selectedDependency >= 0 && m.selectedDependency < len(m.dependencies) {
+				dep := m.dependencies[m.selectedDependency]
+				return m, func() tea.Msg {
+					return NavigateToDependencyMsg{IssueID: dep.ID}
 				}
-				// Otherwise open field picker for Priority/Status
-				return m, m.openFieldPicker()
 			}
+			return m, nil
 		case "d":
 			return m, func() tea.Msg {
 				return DeleteIssueMsg{
@@ -299,12 +272,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					IssueType: m.issue.Type,
 				}
 			}
-		case "L":
-			// Open label editor (shift+l to avoid conflict with 'l' column navigation)
+		case "e":
+			// Open edit menu
 			return m, func() tea.Msg {
-				return OpenLabelEditorMsg{
-					IssueID: m.issue.ID,
-					Labels:  m.issue.Labels,
+				return OpenEditMenuMsg{
+					IssueID:  m.issue.ID,
+					Labels:   m.issue.Labels,
+					Priority: m.issue.Priority,
+					Status:   m.issue.Status,
 				}
 			}
 		}
@@ -332,29 +307,9 @@ func (m Model) UpdatePriority(priority beads.Priority) Model {
 	return m
 }
 
-// IsOnLeftEdge returns true if focus is on the leftmost column (content pane).
+// IsOnLeftEdge returns true if focus is on the leftmost position (content pane or no deps).
 func (m Model) IsOnLeftEdge() bool {
-	return m.focusPane == FocusContent
-}
-
-// IsOnRightEdge returns true if focus is on the rightmost column (metadata pane).
-func (m Model) IsOnRightEdge() bool {
-	return m.focusPane == FocusMetadata
-}
-
-// openFieldPicker returns a command to open a picker for the currently selected field.
-func (m Model) openFieldPicker() tea.Cmd {
-	switch m.selectedField {
-	case FieldPriority:
-		return func() tea.Msg {
-			return OpenPriorityPickerMsg{IssueID: m.issue.ID, Current: m.issue.Priority}
-		}
-	case FieldStatus:
-		return func() tea.Msg {
-			return OpenStatusPickerMsg{IssueID: m.issue.ID, Current: m.issue.Status}
-		}
-	}
-	return nil
+	return m.focusPane == FocusContent || len(m.dependencies) == 0
 }
 
 // View renders the detail view.
@@ -521,7 +476,7 @@ func (m Model) renderMetadataColumn() string {
 	indent := " "
 	indentedDivider := indent + divider
 
-	// Type (read-only, shown at top)
+	// Type (read-only)
 	sb.WriteString(indent)
 	sb.WriteString(labelStyle.Render("Type"))
 	sb.WriteString(getTypeStyle(issue.Type).Render(formatType(issue.Type)))
@@ -529,22 +484,14 @@ func (m Model) renderMetadataColumn() string {
 	sb.WriteString(indentedDivider)
 	sb.WriteString("\n")
 
-	// Helper to get selection prefix for editable fields
-	prefix := func(field MetadataField) string {
-		if m.focusPane == FocusMetadata && m.selectedField == field {
-			return styles.SelectionIndicatorStyle.Render(">")
-		}
-		return " "
-	}
-
-	// Priority (editable)
-	sb.WriteString(prefix(FieldPriority))
+	// Priority (read-only display, edit via e)
+	sb.WriteString(indent)
 	sb.WriteString(labelStyle.Render("Priority"))
 	sb.WriteString(getPriorityStyle(issue.Priority).Render(fmt.Sprintf("P%d", issue.Priority)))
 	sb.WriteString("\n")
 
-	// Status (editable)
-	sb.WriteString(prefix(FieldStatus))
+	// Status (read-only display, edit via e)
+	sb.WriteString(indent)
 	sb.WriteString(labelStyle.Render("Status"))
 	sb.WriteString(getStatusStyle(issue.Status).Render(formatStatus(issue.Status)))
 	sb.WriteString("\n")
@@ -606,12 +553,10 @@ func (m Model) renderDescription() string {
 // Format: [T][P2][id] (compact, no title to avoid overlap)
 // The selected parameter controls the ">" prefix for navigation.
 func (m Model) renderDependencyItem(item DependencyItem, selected bool) string {
-	// Indent like labels: "  " normally, " >" when selected
 	prefix := "  "
-	if selected && m.focusPane == FocusMetadata && m.selectedField == FieldDependency {
+	if selected && m.focusPane == FocusMetadata {
 		prefix = " " + styles.SelectionIndicatorStyle.Render(">")
 	}
-
 	idStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
 
 	if item.Issue == nil {
@@ -721,7 +666,7 @@ func (m Model) renderFooter() string {
 		scrollPercent = fmt.Sprintf(" %3.0f%%", m.viewport.ScrollPercent()*100)
 	}
 
-	return footerStyle.Render("[j/k] Scroll  [Shift+L] Edit Labels  [d] Delete Issue  [Esc] Back" + scrollPercent)
+	return footerStyle.Render("[j/k] Scroll  [e] Edit Issue  [d] Delete Issue  [Esc] Back" + scrollPercent)
 }
 
 // getTypeStyle returns the style for an issue type.

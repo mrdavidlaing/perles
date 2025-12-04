@@ -11,6 +11,7 @@ import (
 	"perles/internal/ui/bqlinput"
 	"perles/internal/ui/colorpicker"
 	"perles/internal/ui/details"
+	"perles/internal/ui/editmenu"
 	"perles/internal/ui/help"
 	"perles/internal/ui/labeleditor"
 	"perles/internal/ui/modal"
@@ -47,10 +48,11 @@ const (
 	ViewPriorityPicker
 	ViewStatusPicker
 	ViewSaveColumn
-	ViewSaveAction    // Action picker: existing vs new view
-	ViewNewView       // New view modal
-	ViewDeleteConfirm // Delete issue confirmation modal
-	ViewLabelEditor   // Label editor modal
+	ViewSaveAction      // Action picker: existing vs new view
+	ViewNewView         // New view modal
+	ViewDeleteConfirm   // Delete issue confirmation modal
+	ViewLabelEditor     // Label editor modal
+	ViewDetailsEditMenu // Edit menu overlay on details
 )
 
 // Model holds the search mode state.
@@ -81,6 +83,7 @@ type Model struct {
 	newViewModal  newviewmodal.Model
 	modal         modal.Model
 	labelEditor   labeleditor.Model
+	editMenu      editmenu.Model
 
 	// Delete operation state
 	deleteIsCascade bool // True if deleting an epic with children
@@ -286,6 +289,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.view = ViewLabelEditor
 		return m, m.labelEditor.Init()
 
+	case details.OpenEditMenuMsg:
+		m.editMenu = editmenu.New().SetSize(m.width, m.height)
+		m.selectedIssue = m.getSelectedIssue()
+		m.view = ViewDetailsEditMenu
+		return m, nil
+
+	case editmenu.SelectMsg:
+		return m.handleEditMenuSelect(msg)
+
+	case editmenu.CancelMsg:
+		m.view = ViewSearch
+		return m, nil
+
 	case modal.SubmitMsg:
 		return m.handleModalSubmit(msg)
 
@@ -328,6 +344,8 @@ func (m Model) View() string {
 		return m.modal.Overlay(m.renderMainView())
 	case ViewLabelEditor:
 		return m.labelEditor.Overlay(m.renderMainView())
+	case ViewDetailsEditMenu:
+		return m.editMenu.Overlay(m.renderMainView())
 	}
 
 	// Main view with potential toaster
@@ -383,6 +401,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		// Delegate to label editor
 		var cmd tea.Cmd
 		m.labelEditor, cmd = m.labelEditor.Update(msg)
+		return m, cmd
+
+	case ViewDetailsEditMenu:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		// Delegate to edit menu
+		var cmd tea.Cmd
+		m.editMenu, cmd = m.editMenu.Update(msg)
 		return m, cmd
 	}
 
@@ -494,7 +521,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				// Already on left edge of details, move to results
 				m.focus = FocusResults
 			} else {
-				// Delegate to details (move from metadata to content)
+				// Delegate to details (move from deps pane to content)
 				var cmd tea.Cmd
 				m.details, cmd = m.details.Update(msg)
 				return m, cmd
@@ -508,7 +535,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		case FocusResults:
 			m.focus = FocusDetails
 		case FocusDetails:
-			// Delegate to details (move from content to metadata)
+			// Delegate to details (move from content to deps pane)
 			var cmd tea.Cmd
 			m.details, cmd = m.details.Update(msg)
 			return m, cmd
@@ -730,6 +757,48 @@ func (m *Model) updateDetailPanel() {
 		m.details = details.New(issue, m.services.Client).SetSize(rightWidth-2, m.height-2)
 		m.hasDetail = true
 	}
+}
+
+// getSelectedIssue returns a pointer to the currently selected issue, or nil if none.
+func (m Model) getSelectedIssue() *beads.Issue {
+	if m.selectedIdx >= 0 && m.selectedIdx < len(m.results) {
+		issue := m.results[m.selectedIdx]
+		return &issue
+	}
+	return nil
+}
+
+// handleEditMenuSelect routes edit menu selections to the appropriate picker/editor.
+func (m Model) handleEditMenuSelect(msg editmenu.SelectMsg) (Model, tea.Cmd) {
+	if m.selectedIssue == nil {
+		m.view = ViewSearch
+		return m, nil
+	}
+
+	switch msg.Option {
+	case editmenu.OptionLabels:
+		m.labelEditor = labeleditor.New(m.selectedIssue.ID, m.selectedIssue.Labels).
+			SetSize(m.width, m.height)
+		m.view = ViewLabelEditor
+		return m, m.labelEditor.Init()
+
+	case editmenu.OptionPriority:
+		m.picker = picker.New("Priority", priorityOptions()).
+			SetSize(m.width, m.height).
+			SetSelected(int(m.selectedIssue.Priority))
+		m.view = ViewPriorityPicker
+		return m, nil
+
+	case editmenu.OptionStatus:
+		m.picker = picker.New("Status", statusOptions()).
+			SetSize(m.width, m.height).
+			SetSelected(picker.FindIndexByValue(statusOptions(), string(m.selectedIssue.Status)))
+		m.view = ViewStatusPicker
+		return m, nil
+	}
+
+	m.view = ViewSearch
+	return m, nil
 }
 
 // executeSearch runs the BQL query and returns results.

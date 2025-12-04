@@ -51,6 +51,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.handleDeleteColumnModalKey(msg)
 	case ViewRenameViewModal:
 		return m.handleRenameViewModalKey(msg)
+	case ViewDetailsEditMenu:
+		return m.handleDetailsEditMenuKey(msg)
 	}
 	return m, nil
 }
@@ -430,6 +432,18 @@ func (m Model) handleViewMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Delegate to view menu
 	var cmd tea.Cmd
 	m.viewMenu, cmd = m.viewMenu.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleDetailsEditMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	}
+
+	// Delegate to edit menu
+	var cmd tea.Cmd
+	m.editMenu, cmd = m.editMenu.Update(msg)
 	return m, cmd
 }
 

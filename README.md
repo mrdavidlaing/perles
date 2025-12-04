@@ -179,9 +179,16 @@ perles
 |-----|--------|
 | `r` | Refresh issues |
 | `y` | Copy issue ID to clipboard |
-| `s` | Change status (in detail view) |
-| `p` | Change priority (in detail view) |
 | `w` | Toggle status bar |
+
+### Details View
+
+| Key | Action |
+|-----|--------|
+| `e` | Open edit menu (labels, priority, status) |
+| `d` | Delete issue |
+| `j` / `k` | Scroll content |
+| `Esc` | Back to kanban board |
 
 ### Search Mode
 
