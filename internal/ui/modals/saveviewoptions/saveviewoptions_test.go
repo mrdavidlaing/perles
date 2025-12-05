@@ -1,4 +1,4 @@
-package saveactionpicker
+package saveviewoptions
 
 import (
 	"testing"
@@ -140,7 +140,7 @@ func TestView_Stability(t *testing.T) {
 }
 
 // TestView_Golden uses teatest golden file comparison.
-// Run with -update flag to update golden files: go test -update ./internal/ui/saveactionpicker/...
+// Run with -update flag to update golden files: go test -update ./internal/ui/modals/saveviewoptions/...
 func TestView_Golden(t *testing.T) {
 	m := New("status:open").SetSize(80, 24)
 	view := m.View()

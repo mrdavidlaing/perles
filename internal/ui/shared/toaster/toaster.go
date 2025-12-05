@@ -2,7 +2,7 @@
 package toaster
 
 import (
-	"perles/internal/ui/overlay"
+	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"time"
 

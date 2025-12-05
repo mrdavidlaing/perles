@@ -17,16 +17,16 @@ import (
 	"perles/internal/mode"
 	"perles/internal/ui/board"
 	"perles/internal/ui/coleditor"
-	"perles/internal/ui/colorpicker"
 	"perles/internal/ui/details"
-	"perles/internal/ui/editmenu"
-	"perles/internal/ui/help"
-	"perles/internal/ui/labeleditor"
-	"perles/internal/ui/modal"
-	"perles/internal/ui/picker"
+	"perles/internal/ui/modals/editissue"
+	"perles/internal/ui/modals/help"
+	"perles/internal/ui/modals/labeleditor"
+	"perles/internal/ui/modals/viewmenu"
+	"perles/internal/ui/shared/colorpicker"
+	"perles/internal/ui/shared/modal"
+	"perles/internal/ui/shared/picker"
+	"perles/internal/ui/shared/toaster"
 	"perles/internal/ui/styles"
-	"perles/internal/ui/toaster"
-	"perles/internal/ui/viewmenu"
 )
 
 // ViewMode determines which view is active within the kanban mode.
@@ -67,7 +67,7 @@ type Model struct {
 	modal       modal.Model
 	labelEditor labeleditor.Model
 	viewMenu    viewmenu.Model
-	editMenu    editmenu.Model
+	editMenu    editissue.Model
 	spinner     spinner.Model
 	view        ViewMode
 	width       int
@@ -248,15 +248,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, m.labelEditor.Init()
 
 	case details.OpenEditMenuMsg:
-		m.editMenu = editmenu.New().SetSize(m.width, m.height)
+		m.editMenu = editissue.New().SetSize(m.width, m.height)
 		m.selectedIssue = m.getIssueByID(msg.IssueID)
 		m.view = ViewDetailsEditMenu
 		return m, nil
 
-	case editmenu.SelectMsg:
+	case editissue.SelectMsg:
 		return m.handleEditMenuSelect(msg)
 
-	case editmenu.CancelMsg:
+	case editissue.CancelMsg:
 		m.view = ViewDetails
 		return m, nil
 
@@ -717,27 +717,27 @@ func (m Model) handleViewMenuSelect(msg viewmenu.SelectMsg) (Model, tea.Cmd) {
 }
 
 // handleEditMenuSelect routes edit menu selections to appropriate actions.
-func (m Model) handleEditMenuSelect(msg editmenu.SelectMsg) (Model, tea.Cmd) {
+func (m Model) handleEditMenuSelect(msg editissue.SelectMsg) (Model, tea.Cmd) {
 	if m.selectedIssue == nil {
 		m.view = ViewDetails
 		return m, nil
 	}
 
 	switch msg.Option {
-	case editmenu.OptionLabels:
+	case editissue.OptionLabels:
 		m.labelEditor = labeleditor.New(m.selectedIssue.ID, m.selectedIssue.Labels).
 			SetSize(m.width, m.height)
 		m.view = ViewLabelEditor
 		return m, m.labelEditor.Init()
 
-	case editmenu.OptionPriority:
+	case editissue.OptionPriority:
 		m.picker = picker.New("Priority", priorityOptions()).
 			SetSize(m.width, m.height).
 			SetSelected(int(m.selectedIssue.Priority))
 		m.view = ViewDetailsPriorityPicker
 		return m, nil
 
-	case editmenu.OptionStatus:
+	case editissue.OptionStatus:
 		m.picker = picker.New("Status", statusOptions()).
 			SetSize(m.width, m.height).
 			SetSelected(picker.FindIndexByValue(statusOptions(), string(m.selectedIssue.Status)))

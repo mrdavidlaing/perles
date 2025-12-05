@@ -1,8 +1,8 @@
-// Package editmenu provides a menu component for issue editing operations.
-package editmenu
+// Package editissue provides a menu component for issue editing operations.
+package editissue
 
 import (
-	"perles/internal/ui/overlay"
+	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"strings"
 

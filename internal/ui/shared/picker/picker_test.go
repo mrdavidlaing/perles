@@ -184,7 +184,7 @@ func TestPicker_View_Stability(t *testing.T) {
 }
 
 // TestPicker_View_Golden uses teatest golden file comparison
-// Run with -update flag to update golden files: go test -update perles/internal/ui/picker
+// Run with -update flag to update golden files: go test -update perles/internal/ui/shared/picker
 func TestPicker_View_Golden(t *testing.T) {
 	options := testOptions()
 	m := New("Select Option", options).SetSize(80, 24)

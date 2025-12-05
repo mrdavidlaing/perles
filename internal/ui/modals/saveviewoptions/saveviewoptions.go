@@ -1,8 +1,8 @@
-// Package saveactionpicker provides a picker to choose between saving to an existing view or creating a new view.
-package saveactionpicker
+// Package saveviewoptions provides a picker to choose between saving to an existing view or creating a new view.
+package saveviewoptions
 
 import (
-	"perles/internal/ui/overlay"
+	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"strings"
 

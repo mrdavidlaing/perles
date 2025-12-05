@@ -9,7 +9,7 @@ import (
 	"perles/internal/config"
 	"perles/internal/mode"
 	"perles/internal/ui/details"
-	"perles/internal/ui/modal"
+	"perles/internal/ui/shared/modal"
 )
 
 // createTestModel creates a minimal Model for testing state transitions.

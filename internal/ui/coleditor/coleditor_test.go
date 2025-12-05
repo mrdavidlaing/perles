@@ -3,8 +3,8 @@ package coleditor
 import (
 	"perles/internal/beads"
 	"perles/internal/config"
-	"perles/internal/ui/colorpicker"
-	"perles/internal/ui/modal"
+	"perles/internal/ui/shared/colorpicker"
+	"perles/internal/ui/shared/modal"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"

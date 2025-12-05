@@ -1,10 +1,10 @@
-// Package viewselector provides a modal for selecting views to add a column to.
-package viewselector
+// Package updateview provides a modal for selecting views to add a column to.
+package updateview
 
 import (
 	"perles/internal/config"
-	"perles/internal/ui/colorpicker"
-	"perles/internal/ui/overlay"
+	"perles/internal/ui/shared/colorpicker"
+	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"strings"
 

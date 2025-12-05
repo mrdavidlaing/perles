@@ -1,4 +1,4 @@
-package editmenu
+package editissue
 
 import (
 	"testing"

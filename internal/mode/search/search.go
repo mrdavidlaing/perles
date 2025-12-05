@@ -16,19 +16,19 @@ import (
 	"perles/internal/beads"
 	"perles/internal/mode"
 	"perles/internal/ui/board"
-	"perles/internal/ui/bqlinput"
-	"perles/internal/ui/colorpicker"
 	"perles/internal/ui/details"
-	"perles/internal/ui/editmenu"
-	"perles/internal/ui/help"
-	"perles/internal/ui/labeleditor"
-	"perles/internal/ui/modal"
-	"perles/internal/ui/newviewmodal"
-	"perles/internal/ui/picker"
-	"perles/internal/ui/saveactionpicker"
+	"perles/internal/ui/forms/bqlinput"
+	"perles/internal/ui/modals/createview"
+	"perles/internal/ui/modals/editissue"
+	"perles/internal/ui/modals/help"
+	"perles/internal/ui/modals/labeleditor"
+	"perles/internal/ui/modals/saveviewoptions"
+	"perles/internal/ui/modals/updateview"
+	"perles/internal/ui/shared/colorpicker"
+	"perles/internal/ui/shared/modal"
+	"perles/internal/ui/shared/picker"
+	"perles/internal/ui/shared/toaster"
 	"perles/internal/ui/styles"
-	"perles/internal/ui/toaster"
-	"perles/internal/ui/viewselector"
 )
 
 // FocusPane represents which pane has focus in the search mode.
@@ -78,12 +78,12 @@ type Model struct {
 	help          help.Model
 	picker        picker.Model
 	selectedIssue *beads.Issue // Issue being edited in picker
-	viewSelector  viewselector.Model
-	actionPicker  saveactionpicker.Model
-	newViewModal  newviewmodal.Model
+	viewSelector  updateview.Model
+	actionPicker  saveviewoptions.Model
+	newViewModal  createview.Model
 	modal         modal.Model
 	labelEditor   labeleditor.Model
-	editMenu      editmenu.Model
+	editMenu      editissue.Model
 
 	// Delete operation state
 	deleteIsCascade bool // True if deleting an epic with children
@@ -197,7 +197,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case viewselector.CancelMsg:
+	case updateview.CancelMsg:
 		m.view = ViewSearch
 		return m, nil
 
@@ -215,7 +215,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case viewselector.SaveMsg:
+	case updateview.SaveMsg:
 		m.view = ViewSearch
 		// Show success toast
 		count := len(msg.ViewIndices)
@@ -235,27 +235,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			func() tea.Msg { return mode.ShowToastMsg{Message: toastMsg, Style: toaster.StyleSuccess} },
 		)
 
-	case saveactionpicker.SelectMsg:
+	case saveviewoptions.SelectMsg:
 		switch msg.Action {
-		case saveactionpicker.ActionExistingView:
+		case saveviewoptions.ActionExistingView:
 			// Transition to existing view selector
-			m.viewSelector = viewselector.New(msg.Query, m.services.Config.Views)
+			m.viewSelector = updateview.New(msg.Query, m.services.Config.Views)
 			m.viewSelector = m.viewSelector.SetSize(m.width, m.height)
 			m.view = ViewSaveColumn
-		case saveactionpicker.ActionNewView:
+		case saveviewoptions.ActionNewView:
 			// Transition to new view modal
-			m.newViewModal = newviewmodal.New(msg.Query).
+			m.newViewModal = createview.New(msg.Query).
 				SetSize(m.width, m.height).
 				SetExistingViews(m.services.Config.Views)
 			m.view = ViewNewView
 		}
 		return m, nil
 
-	case saveactionpicker.CancelMsg:
+	case saveviewoptions.CancelMsg:
 		m.view = ViewSearch
 		return m, nil
 
-	case newviewmodal.SaveMsg:
+	case createview.SaveMsg:
 		m.view = ViewSearch
 		return m, tea.Batch(
 			func() tea.Msg {
@@ -271,7 +271,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			},
 		)
 
-	case newviewmodal.CancelMsg:
+	case createview.CancelMsg:
 		m.view = ViewSearch
 		return m, nil
 
@@ -285,15 +285,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, m.labelEditor.Init()
 
 	case details.OpenEditMenuMsg:
-		m.editMenu = editmenu.New().SetSize(m.width, m.height)
+		m.editMenu = editissue.New().SetSize(m.width, m.height)
 		m.selectedIssue = m.getSelectedIssue()
 		m.view = ViewDetailsEditMenu
 		return m, nil
 
-	case editmenu.SelectMsg:
+	case editissue.SelectMsg:
 		return m.handleEditMenuSelect(msg)
 
-	case editmenu.CancelMsg:
+	case editissue.CancelMsg:
 		m.view = ViewSearch
 		return m, nil
 
@@ -441,7 +441,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Enter a query first", Style: toaster.StyleWarn} }
 			}
 			// Show action picker to choose between existing view or new view
-			m.actionPicker = saveactionpicker.New(query)
+			m.actionPicker = saveviewoptions.New(query)
 			m.actionPicker = m.actionPicker.SetSize(m.width, m.height)
 			m.view = ViewSaveAction
 			return m, nil
@@ -498,7 +498,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Enter a query first", Style: toaster.StyleWarn} }
 		}
 		// Show action picker to choose between existing view or new view
-		m.actionPicker = saveactionpicker.New(query)
+		m.actionPicker = saveviewoptions.New(query)
 		m.actionPicker = m.actionPicker.SetSize(m.width, m.height)
 		m.view = ViewSaveAction
 		return m, nil
@@ -765,27 +765,27 @@ func (m Model) getSelectedIssue() *beads.Issue {
 }
 
 // handleEditMenuSelect routes edit menu selections to the appropriate picker/editor.
-func (m Model) handleEditMenuSelect(msg editmenu.SelectMsg) (Model, tea.Cmd) {
+func (m Model) handleEditMenuSelect(msg editissue.SelectMsg) (Model, tea.Cmd) {
 	if m.selectedIssue == nil {
 		m.view = ViewSearch
 		return m, nil
 	}
 
 	switch msg.Option {
-	case editmenu.OptionLabels:
+	case editissue.OptionLabels:
 		m.labelEditor = labeleditor.New(m.selectedIssue.ID, m.selectedIssue.Labels).
 			SetSize(m.width, m.height)
 		m.view = ViewLabelEditor
 		return m, m.labelEditor.Init()
 
-	case editmenu.OptionPriority:
+	case editissue.OptionPriority:
 		m.picker = picker.New("Priority", priorityOptions()).
 			SetSize(m.width, m.height).
 			SetSelected(int(m.selectedIssue.Priority))
 		m.view = ViewPriorityPicker
 		return m, nil
 
-	case editmenu.OptionStatus:
+	case editissue.OptionStatus:
 		m.picker = picker.New("Status", statusOptions()).
 			SetSize(m.width, m.height).
 			SetSelected(picker.FindIndexByValue(statusOptions(), string(m.selectedIssue.Status)))

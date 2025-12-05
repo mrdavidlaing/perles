@@ -1,4 +1,4 @@
-package viewselector
+package updateview
 
 import (
 	"testing"

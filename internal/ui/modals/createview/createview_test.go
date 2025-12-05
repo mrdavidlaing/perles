@@ -1,10 +1,10 @@
-package newviewmodal
+package createview
 
 import (
 	"testing"
 
 	"perles/internal/config"
-	"perles/internal/ui/colorpicker"
+	"perles/internal/ui/shared/colorpicker"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"

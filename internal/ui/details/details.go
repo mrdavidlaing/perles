@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"perles/internal/beads"
 	"perles/internal/ui/board"
-	"perles/internal/ui/markdown"
+	"perles/internal/ui/shared/markdown"
 	"perles/internal/ui/styles"
 	"strings"
 

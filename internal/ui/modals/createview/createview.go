@@ -1,11 +1,11 @@
-// Package newviewmodal provides a modal for creating a new view from a search query.
-package newviewmodal
+// Package createview provides a modal for creating a new view from a search query.
+package createview
 
 import (
 	"fmt"
 	"perles/internal/config"
-	"perles/internal/ui/colorpicker"
-	"perles/internal/ui/overlay"
+	"perles/internal/ui/shared/colorpicker"
+	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"strings"
 

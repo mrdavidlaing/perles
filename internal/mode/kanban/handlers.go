@@ -10,9 +10,9 @@ import (
 	"perles/internal/mode"
 	"perles/internal/ui/coleditor"
 	"perles/internal/ui/details"
-	"perles/internal/ui/modal"
-	"perles/internal/ui/toaster"
-	"perles/internal/ui/viewmenu"
+	"perles/internal/ui/modals/viewmenu"
+	"perles/internal/ui/shared/modal"
+	"perles/internal/ui/shared/toaster"
 )
 
 // handleKey routes key messages to the appropriate handler based on view mode.

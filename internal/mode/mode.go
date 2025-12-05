@@ -7,7 +7,7 @@ import (
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
-	"perles/internal/ui/toaster"
+	"perles/internal/ui/shared/toaster"
 )
 
 // AppMode identifies the current application mode.

@@ -12,7 +12,7 @@ import (
 	"perles/internal/mode"
 	"perles/internal/mode/kanban"
 	"perles/internal/mode/search"
-	"perles/internal/ui/toaster"
+	"perles/internal/ui/shared/toaster"
 	"perles/internal/watcher"
 )
 

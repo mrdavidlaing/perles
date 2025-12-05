@@ -11,9 +11,9 @@ import (
 	"perles/internal/config"
 	"perles/internal/mode"
 	"perles/internal/ui/details"
-	"perles/internal/ui/newviewmodal"
-	"perles/internal/ui/saveactionpicker"
-	"perles/internal/ui/viewselector"
+	"perles/internal/ui/modals/createview"
+	"perles/internal/ui/modals/saveviewoptions"
+	"perles/internal/ui/modals/updateview"
 )
 
 // createTestModel creates a minimal Model for testing state transitions.
@@ -456,7 +456,7 @@ func TestViewSelector_EscReturnToSearch(t *testing.T) {
 	m.view = ViewSaveColumn
 
 	// Simulate CancelMsg from viewselector
-	m, _ = m.Update(viewselector.CancelMsg{})
+	m, _ = m.Update(updateview.CancelMsg{})
 
 	assert.Equal(t, ViewSearch, m.view, "expected to return to search view")
 }
@@ -466,7 +466,7 @@ func TestViewSelector_SaveBubblesUp(t *testing.T) {
 	m.view = ViewSaveColumn
 
 	// Simulate SaveMsg from viewselector
-	saveMsg := viewselector.SaveMsg{
+	saveMsg := updateview.SaveMsg{
 		ColumnName:  "Test Column",
 		Color:       "#73F59F",
 		Query:       "status = open",
@@ -527,8 +527,8 @@ func TestActionPicker_SelectExistingView(t *testing.T) {
 	m.view = ViewSaveAction
 
 	// Simulate selecting "existing view" from action picker
-	m, _ = m.Update(saveactionpicker.SelectMsg{
-		Action: saveactionpicker.ActionExistingView,
+	m, _ = m.Update(saveviewoptions.SelectMsg{
+		Action: saveviewoptions.ActionExistingView,
 		Query:  "status = open",
 	})
 
@@ -540,8 +540,8 @@ func TestActionPicker_SelectNewView(t *testing.T) {
 	m.view = ViewSaveAction
 
 	// Simulate selecting "new view" from action picker
-	m, _ = m.Update(saveactionpicker.SelectMsg{
-		Action: saveactionpicker.ActionNewView,
+	m, _ = m.Update(saveviewoptions.SelectMsg{
+		Action: saveviewoptions.ActionNewView,
 		Query:  "status = open",
 	})
 
@@ -552,7 +552,7 @@ func TestActionPicker_Cancel(t *testing.T) {
 	m := createTestModelWithViews()
 	m.view = ViewSaveAction
 
-	m, _ = m.Update(saveactionpicker.CancelMsg{})
+	m, _ = m.Update(saveviewoptions.CancelMsg{})
 
 	assert.Equal(t, ViewSearch, m.view, "expected to return to search")
 }
@@ -561,7 +561,7 @@ func TestNewViewModal_Save(t *testing.T) {
 	m := createTestModelWithViews()
 	m.view = ViewNewView
 
-	saveMsg := newviewmodal.SaveMsg{
+	saveMsg := createview.SaveMsg{
 		ViewName:   "My Bugs",
 		ColumnName: "Open Bugs",
 		Color:      "#FF8787",
@@ -577,7 +577,7 @@ func TestNewViewModal_Cancel(t *testing.T) {
 	m := createTestModelWithViews()
 	m.view = ViewNewView
 
-	m, _ = m.Update(newviewmodal.CancelMsg{})
+	m, _ = m.Update(createview.CancelMsg{})
 
 	assert.Equal(t, ViewSearch, m.view, "expected to return to search")
 }

@@ -3,7 +3,7 @@ package help
 
 import (
 	"perles/internal/keys"
-	"perles/internal/ui/overlay"
+	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"strings"
 
