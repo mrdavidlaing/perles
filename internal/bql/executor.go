@@ -3,9 +3,10 @@ package bql
 import (
 	"database/sql"
 	"fmt"
+	"strings"
+
 	"perles/internal/beads"
 	"perles/internal/log"
-	"strings"
 )
 
 // Executor runs BQL queries against the database.
@@ -67,24 +68,45 @@ func (e *Executor) executeBaseQuery(query *Query) ([]beads.Issue, error) {
 	// Construct full query
 	sqlQuery := `
 		SELECT
-			i.id, i.title, i.description, i.status,
-			i.priority, i.issue_type, i.assignee, i.created_at, i.updated_at,
+			i.id, 
+			i.title, 
+			i.description, 
+			i.status,
+			i.priority, 
+			i.issue_type, 
+			i.assignee, 
+			i.created_at, 
+			i.updated_at,
+			COALESCE((
+				SELECT d.depends_on_id
+				FROM dependencies d
+				WHERE d.issue_id = i.id AND d.type = 'parent-child'
+				LIMIT 1
+			), '') as parent_id,
 			COALESCE((
 				SELECT GROUP_CONCAT(d.depends_on_id)
 				FROM dependencies d
 				JOIN issues blocker ON d.depends_on_id = blocker.id
 				WHERE d.issue_id = i.id
 					AND d.type = 'blocks'
-					AND blocker.status IN ('open', 'in_progress', 'blocked')
+				    AND blocker.status != 'deleted'
 			), '') as blocker_ids,
 			COALESCE((
 				SELECT GROUP_CONCAT(d.issue_id)
 				FROM dependencies d
 				JOIN issues child ON d.issue_id = child.id
 				WHERE d.depends_on_id = i.id
-					AND d.type IN ('blocks', 'parent-child')
+					AND d.type = 'blocks'
 					AND child.status != 'deleted'
 			), '') as blocks_ids,
+			COALESCE((
+				SELECT GROUP_CONCAT(d.issue_id)
+				FROM dependencies d
+				JOIN issues child ON d.issue_id = child.id
+				WHERE d.depends_on_id = i.id
+					AND d.type = 'parent-child'
+					AND child.status != 'deleted'
+			), '') as children_ids,
 			COALESCE((
 				SELECT GROUP_CONCAT(l.label)
 				FROM labels l
@@ -120,18 +142,32 @@ func (e *Executor) executeBaseQuery(query *Query) ([]beads.Issue, error) {
 func (e *Executor) scanIssues(rows *sql.Rows) ([]beads.Issue, error) {
 	var issues []beads.Issue
 	for rows.Next() {
-		var issue beads.Issue
-		var description sql.NullString
-		var assignee sql.NullString
-		var blockerIDs string
-		var blocksIDs string
-		var labelsStr string
+		var (
+			issue       beads.Issue
+			description sql.NullString
+			assignee    sql.NullString
+			parentId    string
+			childrenIDs string
+			blockerIDs  string
+			blocksIDs   string
+			labelsStr   string
+		)
 
 		err := rows.Scan(
-			&issue.ID, &issue.TitleText, &description,
-			&issue.Status, &issue.Priority, &issue.Type,
-			&assignee, &issue.CreatedAt, &issue.UpdatedAt,
-			&blockerIDs, &blocksIDs, &labelsStr,
+			&issue.ID,
+			&issue.TitleText,
+			&description,
+			&issue.Status,
+			&issue.Priority,
+			&issue.Type,
+			&assignee,
+			&issue.CreatedAt,
+			&issue.UpdatedAt,
+			&parentId,
+			&blockerIDs,
+			&blocksIDs,
+			&childrenIDs,
+			&labelsStr,
 		)
 		if err != nil {
 			log.ErrorErr(log.CatDB, "Scan failed", err)
@@ -145,6 +181,10 @@ func (e *Executor) scanIssues(rows *sql.Rows) ([]beads.Issue, error) {
 			issue.Assignee = assignee.String
 		}
 
+		if parentId != "" {
+			issue.ParentID = parentId
+		}
+
 		// Parse blocker IDs from comma-separated string (issues that block this one)
 		if blockerIDs != "" {
 			issue.BlockedBy = strings.Split(blockerIDs, ",")
@@ -153,6 +193,10 @@ func (e *Executor) scanIssues(rows *sql.Rows) ([]beads.Issue, error) {
 		// Parse blocks IDs from comma-separated string (issues this one blocks)
 		if blocksIDs != "" {
 			issue.Blocks = strings.Split(blocksIDs, ",")
+		}
+
+		if childrenIDs != "" {
+			issue.Children = strings.Split(childrenIDs, ",")
 		}
 
 		// Parse labels from comma-separated string
@@ -368,24 +412,45 @@ func (e *Executor) fetchIssuesByIDs(ids []string) ([]beads.Issue, error) {
 	//nolint:gosec // G201 - inClause contains only safe ? placeholders, not user input
 	sqlQuery := fmt.Sprintf(`
 		SELECT
-			i.id, i.title, i.description, i.status,
-			i.priority, i.issue_type, i.assignee, i.created_at, i.updated_at,
+			i.id, 
+			i.title, 
+			i.description, 
+			i.status,
+			i.priority, 
+			i.issue_type, 
+			i.assignee, 
+			i.created_at, 
+			i.updated_at,
+			COALESCE((
+				SELECT d.depends_on_id
+				FROM dependencies d
+				WHERE d.issue_id = i.id AND d.type = 'parent-child'
+				LIMIT 1
+			), '') as parent_id,
 			COALESCE((
 				SELECT GROUP_CONCAT(d.depends_on_id)
 				FROM dependencies d
 				JOIN issues blocker ON d.depends_on_id = blocker.id
 				WHERE d.issue_id = i.id
 					AND d.type = 'blocks'
-					AND blocker.status IN ('open', 'in_progress', 'blocked')
+				    AND blocker.status != 'deleted'
 			), '') as blocker_ids,
 			COALESCE((
 				SELECT GROUP_CONCAT(d.issue_id)
 				FROM dependencies d
 				JOIN issues child ON d.issue_id = child.id
 				WHERE d.depends_on_id = i.id
-					AND d.type IN ('blocks', 'parent-child')
+					AND d.type = 'blocks'
 					AND child.status != 'deleted'
 			), '') as blocks_ids,
+			COALESCE((
+				SELECT GROUP_CONCAT(d.issue_id)
+				FROM dependencies d
+				JOIN issues child ON d.issue_id = child.id
+				WHERE d.depends_on_id = i.id
+					AND d.type = 'parent-child'
+					AND child.status != 'deleted'
+			), '') as children_ids,
 			COALESCE((
 				SELECT GROUP_CONCAT(l.label)
 				FROM labels l

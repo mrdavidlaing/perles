@@ -2,9 +2,10 @@ package bql
 
 import (
 	"database/sql"
-	"perles/internal/beads"
 	"testing"
 	"time"
+
+	"perles/internal/beads"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/embed"
@@ -403,7 +404,7 @@ func TestExecutor_LoadsBlocks(t *testing.T) {
 	require.Contains(t, issues[0].Blocks, "test-3", "test-1 should show test-3 in Blocks")
 }
 
-func TestExecutor_LoadsBlocksForEpicWithChildren(t *testing.T) {
+func TestExecutor_LoadsChildrenForEpicWithChildren(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
@@ -414,7 +415,7 @@ func TestExecutor_LoadsBlocksForEpicWithChildren(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, issues, 1)
-	require.Contains(t, issues[0].Blocks, "test-2", "epic should show child in Blocks")
+	require.Contains(t, issues[0].Children, "test-2", "epic should show child in Blocks")
 }
 
 func TestIsBQLQuery(t *testing.T) {

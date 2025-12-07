@@ -35,19 +35,19 @@ test-v:
 test-update:
 	@echo "Updating golden files in packages with teatest..."
 	@go test ./internal/ui/board/... \
-		./internal/ui/bqlinput/... \
 		./internal/ui/coleditor/... \
-		./internal/ui/colorpicker/... \
 		./internal/ui/details/... \
-		./internal/ui/help/... \
-		./internal/ui/labeleditor/... \
-		./internal/ui/modal/... \
-		./internal/ui/overlay/... \
-		./internal/ui/picker/... \
-		./internal/ui/saveactionpicker/... \
-		./internal/ui/toaster/... \
-		./internal/ui/viewmenu/... \
-		./internal/ui/viewselector/... \
+		./internal/ui/forms/bqlinput/... \
+		./internal/ui/modals/help/... \
+		./internal/ui/modals/labeleditor/... \
+		./internal/ui/nobeads/... \
+		./internal/ui/shared/colorpicker/... \
+		./internal/ui/shared/logoverlay/... \
+		./internal/ui/shared/modal/... \
+		./internal/ui/shared/overlay/... \
+		./internal/ui/shared/picker/... \
+		./internal/ui/shared/toaster/... \
+		./internal/ui/styles/... \
 		./internal/mode/search/... \
 		-update
 

@@ -3,11 +3,12 @@ package details
 
 import (
 	"fmt"
+	"strings"
+
 	"perles/internal/beads"
 	"perles/internal/ui/board"
 	"perles/internal/ui/shared/markdown"
 	"perles/internal/ui/styles"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -659,9 +660,11 @@ func (m Model) renderDependenciesSection() string {
 	indentedDivider := indent + divider
 
 	// Group by category
-	var blockedBy, blocks, related []DependencyItem
+	var children, blockedBy, blocks, related []DependencyItem
 	for _, dep := range m.dependencies {
 		switch dep.Category {
+		case "children":
+			children = append(children, dep)
 		case "blocked_by":
 			blockedBy = append(blockedBy, dep)
 		case "blocks":
@@ -676,9 +679,8 @@ func (m Model) renderDependenciesSection() string {
 	if len(blockedBy) > 0 {
 		sb.WriteString(indentedDivider)
 		sb.WriteString("\n")
-		blockedStyle := lipgloss.NewStyle().Foreground(styles.StatusErrorColor)
 		sb.WriteString(indent)
-		sb.WriteString(blockedStyle.Render("Blocked by"))
+		sb.WriteString(labelStyle.Render("Blocked by"))
 		sb.WriteString("\n")
 		for _, dep := range blockedBy {
 			sb.WriteString(m.renderDependencyItem(dep, depIndex == m.selectedDependency))
@@ -690,11 +692,23 @@ func (m Model) renderDependenciesSection() string {
 	if len(blocks) > 0 {
 		sb.WriteString(indentedDivider)
 		sb.WriteString("\n")
-		blocksStyle := lipgloss.NewStyle().Foreground(styles.PriorityHighColor)
 		sb.WriteString(indent)
-		sb.WriteString(blocksStyle.Render("Blocks"))
+		sb.WriteString(labelStyle.Render("Blocks"))
 		sb.WriteString("\n")
 		for _, dep := range blocks {
+			sb.WriteString(m.renderDependencyItem(dep, depIndex == m.selectedDependency))
+			sb.WriteString("\n")
+			depIndex++
+		}
+	}
+
+	if len(children) > 0 {
+		sb.WriteString(indentedDivider)
+		sb.WriteString("\n")
+		sb.WriteString(indent)
+		sb.WriteString(labelStyle.Render("Children"))
+		sb.WriteString("\n")
+		for _, dep := range children {
 			sb.WriteString(m.renderDependencyItem(dep, depIndex == m.selectedDependency))
 			sb.WriteString("\n")
 			depIndex++
@@ -823,6 +837,9 @@ func (m Model) IssueID() string {
 func (m *Model) loadDependencies() {
 	// Collect all dependency IDs with their categories
 	var items []DependencyItem
+	for _, id := range m.issue.Children {
+		items = append(items, DependencyItem{ID: id, Category: "children"})
+	}
 	for _, id := range m.issue.BlockedBy {
 		items = append(items, DependencyItem{ID: id, Category: "blocked_by"})
 	}

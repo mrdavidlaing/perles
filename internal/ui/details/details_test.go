@@ -724,6 +724,7 @@ func TestDetails_View_Golden_WithLoadedDependencies(t *testing.T) {
 		Status:          beads.StatusOpen,
 		BlockedBy:       []string{"bug-101"},
 		Blocks:          []string{"task-201", "feature-301"},
+		Children:        []string{"task-201", "feature-301"},
 		CreatedAt:       time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC),
 	}
 	m := New(issue, loader, nil).SetSize(120, 30)

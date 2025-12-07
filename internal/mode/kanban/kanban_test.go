@@ -138,7 +138,7 @@ func TestCreateDeleteModal_EpicWithChildren(t *testing.T) {
 		ID:        "epic-1",
 		TitleText: "Epic With Children",
 		Type:      beads.TypeEpic,
-		Blocks:    []string{"task-1", "task-2", "task-3"},
+		Children:  []string{"task-1", "task-2", "task-3"},
 	}
 
 	modal, isCascade := shared.CreateDeleteModal(issue, m.services.Client)
