@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"perles/internal/beads"
+	"perles/internal/bql"
 	"perles/internal/config"
 	"perles/internal/mode"
 	"perles/internal/mode/shared"
@@ -256,7 +257,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if issue == nil {
 			return m, nil
 		}
-		m.modal, m.deleteIsCascade = shared.CreateDeleteModal(issue, m.services.Client)
+		m.modal, m.deleteIsCascade = shared.CreateDeleteModal(issue, m.services.Executor)
 		m.modal.SetSize(m.width, m.height)
 		m.selectedIssue = issue
 		m.view = ViewDeleteConfirm
@@ -267,8 +268,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if issue == nil {
 			return m, nil
 		}
-		// Create new details view for the dependency (pass client for deps and comments)
-		m.details = details.New(*issue, m.services.Client, m.services.Client).SetSize(m.width, m.height)
+		// Create new details view for the dependency (pass executor for deps, client for comments)
+		m.details = details.New(*issue, m.services.Executor, m.services.Client).SetSize(m.width, m.height)
 		return m, nil
 
 	case openDetailsMsg:
@@ -276,7 +277,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if issue == nil {
 			return m, nil
 		}
-		m.details = details.New(*issue, m.services.Client, m.services.Client).SetSize(m.width, m.height)
+		m.details = details.New(*issue, m.services.Executor, m.services.Client).SetSize(m.width, m.height)
 		m.view = ViewDetails
 		return m, nil
 
@@ -642,8 +643,9 @@ func (m Model) getIssueByID(id string) *beads.Issue {
 		return issue
 	}
 
-	if m.services.Client != nil {
-		issues, err := m.services.Client.ListIssuesByIds([]string{id})
+	if m.services.Executor != nil {
+		query := bql.BuildIDQuery([]string{id})
+		issues, err := m.services.Executor.Execute(query)
 		if err == nil && len(issues) == 1 {
 			return &issues[0]
 		}

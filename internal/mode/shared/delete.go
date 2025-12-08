@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"perles/internal/beads"
+	"perles/internal/bql"
 	"perles/internal/ui/board"
 	"perles/internal/ui/shared/modal"
 	"perles/internal/ui/styles"
@@ -15,7 +16,7 @@ import (
 
 // IssueLoader provides the ability to fetch issues by their IDs.
 type IssueLoader interface {
-	ListIssuesByIds(ids []string) ([]beads.Issue, error)
+	Execute(query string) ([]beads.Issue, error)
 }
 
 // isNilInterface checks if an interface value is nil or contains a nil pointer.
@@ -37,7 +38,11 @@ func GetIssuesByIds(loader IssueLoader, ids []string) map[string]*beads.Issue {
 	if len(ids) == 0 || isNilInterface(loader) {
 		return result
 	}
-	issues, err := loader.ListIssuesByIds(ids)
+	query := bql.BuildIDQuery(ids)
+	if query == "" {
+		return result
+	}
+	issues, err := loader.Execute(query)
 	if err != nil {
 		return result
 	}

@@ -111,7 +111,7 @@ func TestCreateDeleteModal_RegularIssue(t *testing.T) {
 		Type:      beads.TypeTask,
 	}
 
-	modal, isCascade := shared.CreateDeleteModal(issue, m.services.Client)
+	modal, isCascade := shared.CreateDeleteModal(issue, m.services.Executor)
 
 	require.NotNil(t, modal)
 	require.False(t, isCascade, "expected non-cascade for regular task")
@@ -127,7 +127,7 @@ func TestCreateDeleteModal_EpicWithoutChildren(t *testing.T) {
 		Blocks:    []string{}, // No children
 	}
 
-	modal, isCascade := shared.CreateDeleteModal(issue, m.services.Client)
+	modal, isCascade := shared.CreateDeleteModal(issue, m.services.Executor)
 
 	require.NotNil(t, modal)
 	require.False(t, isCascade, "expected non-cascade for epic without children")
@@ -143,7 +143,7 @@ func TestCreateDeleteModal_EpicWithChildren(t *testing.T) {
 		Children:  []string{"task-1", "task-2", "task-3"},
 	}
 
-	modal, isCascade := shared.CreateDeleteModal(issue, m.services.Client)
+	modal, isCascade := shared.CreateDeleteModal(issue, m.services.Executor)
 
 	require.NotNil(t, modal)
 	require.True(t, isCascade, "expected cascade for epic with children")

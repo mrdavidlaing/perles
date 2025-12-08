@@ -1341,6 +1341,65 @@ func TestExecutor_ExpandCircularDepsStandalone(t *testing.T) {
 	require.True(t, ids["circular-b"])
 }
 
+// =============================================================================
+// BuildIDQuery Tests
+// =============================================================================
+
+func TestBuildIDQuery_Empty(t *testing.T) {
+	// nil slice returns empty string
+	require.Equal(t, "", BuildIDQuery(nil))
+	// empty slice returns empty string
+	require.Equal(t, "", BuildIDQuery([]string{}))
+}
+
+func TestBuildIDQuery_Single(t *testing.T) {
+	result := BuildIDQuery([]string{"bd-123"})
+	require.Equal(t, `id = "bd-123"`, result)
+}
+
+func TestBuildIDQuery_Multiple(t *testing.T) {
+	result := BuildIDQuery([]string{"bd-1", "bd-2", "bd-3"})
+	require.Equal(t, `id in ("bd-1", "bd-2", "bd-3")`, result)
+}
+
+func TestBuildIDQuery_SpecialCharacters(t *testing.T) {
+	// IDs with hyphens, dots, and other characters
+	result := BuildIDQuery([]string{"ms-8tn.1", "pd-j39"})
+	require.Equal(t, `id in ("ms-8tn.1", "pd-j39")`, result)
+}
+
+func TestExecutor_IDIn_NonExistent(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	executor := NewExecutor(db)
+
+	// Query for non-existent IDs should return empty slice, no error
+	issues, err := executor.Execute(`id in ("nonexistent-1", "nonexistent-2")`)
+	require.NoError(t, err)
+	require.Empty(t, issues)
+}
+
+func TestExecutor_IDIn_Mixed(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	executor := NewExecutor(db)
+
+	// Query with mix of existing and non-existent IDs returns only existing
+	issues, err := executor.Execute(`id in ("test-1", "nonexistent", "test-3")`)
+	require.NoError(t, err)
+	require.Len(t, issues, 2)
+
+	ids := make(map[string]bool)
+	for _, issue := range issues {
+		ids[issue.ID] = true
+	}
+	require.True(t, ids["test-1"])
+	require.True(t, ids["test-3"])
+	require.False(t, ids["nonexistent"])
+}
+
 func TestExecutor_ExpandLargeFanout(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	require.NoError(t, err)

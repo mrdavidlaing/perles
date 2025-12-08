@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"perles/internal/beads"
+	"perles/internal/bql"
 	"perles/internal/ui/board"
 	"perles/internal/ui/shared/markdown"
 	"perles/internal/ui/styles"
@@ -28,7 +29,7 @@ const (
 // DependencyLoader provides the ability to load issue data for dependencies.
 // This interface allows for mocking in tests.
 type DependencyLoader interface {
-	ListIssuesByIds(ids []string) ([]beads.Issue, error)
+	Execute(query string) ([]beads.Issue, error)
 }
 
 // CommentLoader provides the ability to load comments for an issue.
@@ -862,22 +863,25 @@ func (m *Model) loadDependencies() {
 			ids[i] = item.ID
 		}
 
-		issues, err := m.loader.ListIssuesByIds(ids)
-		if err == nil {
-			// Build a lookup map
-			issueMap := make(map[string]*beads.Issue)
-			for i := range issues {
-				issueMap[issues[i].ID] = &issues[i]
-			}
+		query := bql.BuildIDQuery(ids)
+		if query != "" {
+			issues, err := m.loader.Execute(query)
+			if err == nil {
+				// Build a lookup map
+				issueMap := make(map[string]*beads.Issue)
+				for i := range issues {
+					issueMap[issues[i].ID] = &issues[i]
+				}
 
-			// Populate Issue field for each item
-			for i := range items {
-				if issue, ok := issueMap[items[i].ID]; ok {
-					items[i].Issue = issue
+				// Populate Issue field for each item
+				for i := range items {
+					if issue, ok := issueMap[items[i].ID]; ok {
+						items[i].Issue = issue
+					}
 				}
 			}
+			// On error, we keep items with nil Issue (fallback to ID display)
 		}
-		// On error, we keep items with nil Issue (fallback to ID display)
 	}
 
 	m.dependencies = items

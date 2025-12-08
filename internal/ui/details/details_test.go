@@ -27,12 +27,11 @@ type mockLoader struct {
 	issues map[string]beads.Issue
 }
 
-func (m *mockLoader) ListIssuesByIds(ids []string) ([]beads.Issue, error) {
+func (m *mockLoader) Execute(query string) ([]beads.Issue, error) {
+	// Return all issues from the mock - the real executor filters by query
 	var result []beads.Issue
-	for _, id := range ids {
-		if issue, ok := m.issues[id]; ok {
-			result = append(result, issue)
-		}
+	for _, issue := range m.issues {
+		result = append(result, issue)
 	}
 	return result, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"perles/internal/beads"
+	"perles/internal/bql"
 	"perles/internal/config"
 	"perles/internal/mode"
 	"perles/internal/mode/shared"
@@ -1071,11 +1072,13 @@ func (m *Model) updateDetailPanel() {
 		issue := m.results[m.selectedIdx]
 		rightWidth := m.width - (m.width / 2) - 1
 		// rightWidth-2 for left/right border, height-2 for top/bottom border
-		// Pass nil for loaders if Client is nil to avoid interface nil vs typed-nil issues
+		// Pass nil for loaders if Executor/Client is nil to avoid interface nil vs typed-nil issues
 		var depLoader details.DependencyLoader
 		var commentLoader details.CommentLoader
+		if m.services.Executor != nil {
+			depLoader = m.services.Executor
+		}
 		if m.services.Client != nil {
-			depLoader = m.services.Client
 			commentLoader = m.services.Client
 		}
 		m.details = details.New(issue, depLoader, commentLoader).SetSize(rightWidth-2, m.height-2)
@@ -1094,11 +1097,13 @@ func (m *Model) updateDetailFromTree() {
 	}
 	rightWidth := m.width - (m.width / 2) - 1
 	// rightWidth-2 for left/right border, height-2 for top/bottom border
-	// Pass nil for loaders if Client is nil to avoid interface nil vs typed-nil issues
+	// Pass nil for loaders if Executor/Client is nil to avoid interface nil vs typed-nil issues
 	var depLoader details.DependencyLoader
 	var commentLoader details.CommentLoader
+	if m.services.Executor != nil {
+		depLoader = m.services.Executor
+	}
 	if m.services.Client != nil {
-		depLoader = m.services.Client
 		commentLoader = m.services.Client
 	}
 	m.details = details.New(node.Issue, depLoader, commentLoader).SetSize(rightWidth-2, m.height-2)
@@ -1396,12 +1401,13 @@ func (m Model) handleTreeLoaded(msg treeLoadedMsg) (Model, tea.Cmd) {
 
 // navigateToDependency loads and displays a dependency issue in the details panel.
 func (m Model) navigateToDependency(issueID string) (Model, tea.Cmd) {
-	if m.services.Client == nil {
+	if m.services.Executor == nil {
 		return m, nil
 	}
 
-	// Load the issue by ID
-	issues, err := m.services.Client.ListIssuesByIds([]string{issueID})
+	// Load the issue by ID using BQL executor
+	query := bql.BuildIDQuery([]string{issueID})
+	issues, err := m.services.Executor.Execute(query)
 	if err != nil || len(issues) == 0 {
 		return m, func() tea.Msg {
 			return mode.ShowToastMsg{Message: "Issue not found: " + issueID, Style: toaster.StyleError}
@@ -1413,11 +1419,13 @@ func (m Model) navigateToDependency(issueID string) (Model, tea.Cmd) {
 	// Update the details panel with this issue
 	rightWidth := m.width - (m.width / 2) - 1
 	// rightWidth-2 for left/right border, height-2 for top/bottom border
-	// Pass nil for loaders if Client is nil to avoid interface nil vs typed-nil issues
+	// Pass nil for loaders if Executor/Client is nil to avoid interface nil vs typed-nil issues
 	var depLoader details.DependencyLoader
 	var commentLoader details.CommentLoader
+	if m.services.Executor != nil {
+		depLoader = m.services.Executor
+	}
 	if m.services.Client != nil {
-		depLoader = m.services.Client
 		commentLoader = m.services.Client
 	}
 	m.details = details.New(issue, depLoader, commentLoader).SetSize(rightWidth-2, m.height-2)
@@ -1906,9 +1914,10 @@ func (m Model) openDeleteConfirm(msg details.DeleteIssueMsg) (Model, tea.Cmd) {
 		}
 	}
 	if issue == nil {
-		// Try loading from client
-		if m.services.Client != nil {
-			issues, err := m.services.Client.ListIssuesByIds([]string{msg.IssueID})
+		// Try loading from executor
+		if m.services.Executor != nil {
+			query := bql.BuildIDQuery([]string{msg.IssueID})
+			issues, err := m.services.Executor.Execute(query)
 			if err == nil && len(issues) == 1 {
 				issue = &issues[0]
 			}
@@ -1918,7 +1927,7 @@ func (m Model) openDeleteConfirm(msg details.DeleteIssueMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.modal, m.deleteIsCascade = shared.CreateDeleteModal(issue, m.services.Client)
+	m.modal, m.deleteIsCascade = shared.CreateDeleteModal(issue, m.services.Executor)
 	m.modal.SetSize(m.width, m.height)
 	m.selectedIssue = issue
 	m.view = ViewDeleteConfirm

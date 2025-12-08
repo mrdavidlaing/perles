@@ -462,6 +462,23 @@ func (e *Executor) fetchIssuesByIDs(ids []string) ([]beads.Issue, error) {
 	return e.scanIssues(rows)
 }
 
+// BuildIDQuery constructs a BQL query to fetch issues by their IDs.
+// Returns empty string if ids is empty.
+func BuildIDQuery(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	if len(ids) == 1 {
+		return fmt.Sprintf(`id = %q`, ids[0])
+	}
+
+	quoted := make([]string, len(ids))
+	for i, id := range ids {
+		quoted[i] = fmt.Sprintf("%q", id)
+	}
+	return fmt.Sprintf("id in (%s)", strings.Join(quoted, ", "))
+}
+
 // IsBQLQuery returns true if the input looks like a BQL query.
 // This is used to determine whether to use BQL or simple text search.
 func IsBQLQuery(input string) bool {
