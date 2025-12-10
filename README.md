@@ -49,7 +49,7 @@ A terminal-based search and kanban board for [beads](https://github.com/steveyeg
 
 ### Kanban Board
 - Four-column default layout: Blocked, Ready, In Progress, Closed
-- Fully customizable columns with BQL queries
+- Fully customizable columns with BQL queries or view an issues dependency tree
 - Multi-view support - create unlimited board views
 - Real-time auto-refresh when database changes
 - Column management: add, edit, reorder, delete
@@ -448,29 +448,43 @@ views:
   - name: Default
     columns:
       - name: Blocked
+        type: bql
         query: "status = open and blocked = true"
         color: "#FF8787"
       - name: Ready
         query: "status = open and ready = true"
         color: "#73F59F"
       - name: In Progress
+        type: bql
         query: "status = in_progress"
         color: "#54A0FF"
       - name: Closed
+        type: bql
         query: "status = closed"
         color: "#BBBBBB"
 
   - name: Bugs Only
     columns:
       - name: Open Bugs
+        type: bql
         query: "type = bug and status = open"
         color: "#EF4444"
       - name: In Progress
+        type: bql
         query: "type = bug and status = in_progress"
         color: "#F59E0B"
       - name: Fixed
+        type: bql
         query: "type = bug and status = closed"
         color: "#10B981"
+
+  - name: Work
+    columns:
+      - name: Current
+        type: tree
+        issue_id: bd-123
+        tree_mode: child
+        color: "#EF4444"
 ```
 
 ## Theming

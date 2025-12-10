@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"perles/internal/log"
 	"time"
+
+	"perles/internal/log"
 )
 
 // ColumnConfig defines a single kanban column.
@@ -240,18 +241,22 @@ views:
   - name: Default
     columns:
       - name: Blocked
+        type: bql
         query: "status = open and blocked = true"
         color: "#FF8787"
 
       - name: Ready
+        type: bql
         query: "status = open and ready = true"
         color: "#73F59F"
 
       - name: In Progress
+        type: bql
         query: "status = in_progress"
         color: "#54A0FF"
 
       - name: Closed
+        type: bql
         query: "status = closed"
         color: "#BBBBBB"
 
@@ -261,7 +266,10 @@ views:
 #
 # Column options:
 #   name: Display name (required)
-#   query: BQL query (required) - see BQL syntax below
+#   type: bql or tree
+#   query: BQL query (required when type is bql) - see BQL syntax below
+#   issue_id: Issue Id (required when type is tree)
+#   tree_mode: deps or child (optional when type is tree)
 #   color: Hex color for column header
 #
 # BQL Query Syntax:
@@ -283,13 +291,13 @@ func WriteDefaultConfig(configPath string) error {
 
 	// Create parent directory if needed
 	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0750); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		log.ErrorErr(log.CatConfig, "Failed to create config directory", err, "dir", dir)
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
 	// Write the template
-	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate()), 0600); err != nil {
+	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate()), 0o600); err != nil {
 		log.ErrorErr(log.CatConfig, "Failed to write config file", err, "path", configPath)
 		return fmt.Errorf("writing config file: %w", err)
 	}
