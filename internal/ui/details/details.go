@@ -673,11 +673,12 @@ func (m Model) renderDependencyItem(item DependencyItem, selected bool) string {
 	priorityText := fmt.Sprintf("[P%d]", item.Issue.Priority)
 	priorityStyle := styles.GetPriorityStyle(item.Issue.Priority)
 
-	return fmt.Sprintf("%s%s%s%s",
+	return fmt.Sprintf("%s%s%s%s %s",
 		prefix,
 		typeStyle.Render(typeText),
 		priorityStyle.Render(priorityText),
 		idStyle.Render("["+item.ID+"]"),
+		renderStatusIndicator(item.Issue.Status),
 	)
 }
 
@@ -832,6 +833,22 @@ func getStatusStyle(s beads.Status) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(styles.StatusClosedColor)
 	default:
 		return lipgloss.NewStyle()
+	}
+}
+
+// renderStatusIndicator renders the status badge for dependency items.
+// Matches the tree view format: ○ (open), ● (in progress), ✓ (closed).
+func renderStatusIndicator(status beads.Status) string {
+	switch status {
+	case beads.StatusClosed:
+		style := lipgloss.NewStyle().Foreground(styles.StatusClosedColor)
+		return style.Render("✓")
+	case beads.StatusInProgress:
+		style := lipgloss.NewStyle().Foreground(styles.StatusInProgressColor)
+		return style.Render("●")
+	default:
+		style := lipgloss.NewStyle().Foreground(styles.StatusOpenColor)
+		return style.Render("○")
 	}
 }
 
