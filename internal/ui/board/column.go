@@ -3,10 +3,11 @@ package board
 import (
 	"fmt"
 	"io"
+	"strings"
+
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/ui/styles"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -84,15 +85,8 @@ func (d issueDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd {
 	return nil
 }
 
-// Render renders an issue item with priority colors and type indicator.
-func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
-	issue, ok := item.(beads.Issue)
-	if !ok {
-		return
-	}
-
-	isSelected := index == m.Index() && d.focused != nil && *d.focused
-
+// renderIssueLine returns the rendered line for an issue (used by both Render and width calculation).
+func renderIssueLine(issue beads.Issue, isSelected bool) string {
 	// Text content
 	priorityText := fmt.Sprintf("[P%d]", issue.Priority)
 	typeText := styles.GetTypeIndicator(issue.Type)
@@ -104,22 +98,42 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	typeStyle := styles.GetTypeStyle(issue.Type)
 	issueIdStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
 
-	var line string
-
 	lineParts := []string{
 		typeStyle.Render(typeText),
 		priorityStyle.Render(priorityText),
 		issueIdStyle.Render(issueId),
 		fmt.Sprintf(" %s", issueTitle),
 	}
-	line = strings.Join(lineParts, "")
+	line := strings.Join(lineParts, "")
 
 	if isSelected {
 		line = styles.SelectionIndicatorStyle.Render(">") + line
 	} else {
 		line = " " + line
 	}
+	return line
+}
 
+// itemRenderedLines returns how many lines an issue takes when rendered at the given width.
+func itemRenderedLines(issue beads.Issue, width int) int {
+	line := renderIssueLine(issue, false)
+	lineWidth := lipgloss.Width(line)
+	if lineWidth <= width || width <= 0 {
+		return 1
+	}
+
+	return (lineWidth + width - 1) / width
+}
+
+// Render renders an issue item with priority colors and type indicator.
+func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	issue, ok := item.(beads.Issue)
+	if !ok {
+		return
+	}
+
+	isSelected := index == m.Index() && d.focused != nil && *d.focused
+	line := renderIssueLine(issue, isSelected)
 	_, _ = fmt.Fprint(w, line)
 }
 
@@ -154,6 +168,7 @@ func NewColumn(title string, status beads.Status) Column {
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(false)
+	l.SetShowPagination(false)
 
 	return Column{
 		title:   title,
@@ -281,9 +296,12 @@ func (c Column) SetSize(width, height int) BoardColumn {
 
 	// Size list to fit inside borders (2 chars for left/right borders)
 	listWidth := max(width-2, 1)
-	// Account for top/bottom borders and bubbles list internal chrome
-	listHeight := max(height-5, 1)
+	// RenderWithTitleBorder uses height-2 for content area (top + bottom border)
+	listHeight := max(height-2, 1)
 	c.list.SetSize(listWidth, listHeight)
+
+	// Recalculate PerPage based on actual item heights (accounting for wrapping)
+	c.updatePerPage()
 	return c
 }
 
@@ -301,7 +319,44 @@ func (c Column) SetItems(issues []beads.Issue) Column {
 		items[i] = issue
 	}
 	c.list.SetItems(items)
+	c.updatePerPage()
 	return c
+}
+
+// updatePerPage calculates how many items actually fit in the visible area,
+// accounting for items that wrap to multiple lines.
+func (c *Column) updatePerPage() {
+	if c.width <= 0 || c.height <= 0 || len(c.items) == 0 {
+		return
+	}
+
+	// Available height for content (border takes 2 lines)
+	availableLines := c.height - 2
+	if availableLines <= 0 {
+		return
+	}
+
+	// Inner width for content (border takes 2 chars)
+	innerWidth := c.width - 2
+
+	// Count how many items fit
+	usedLines := 0
+	itemsThatFit := 0
+	for _, issue := range c.items {
+		lines := itemRenderedLines(issue, innerWidth)
+		if usedLines+lines > availableLines {
+			break
+		}
+		usedLines += lines
+		itemsThatFit++
+	}
+
+	// Ensure at least 1 item fits
+	if itemsThatFit == 0 {
+		itemsThatFit = 1
+	}
+
+	c.list.Paginator.PerPage = itemsThatFit
 }
 
 // SetShowCounts sets whether to display counts in the column title.
