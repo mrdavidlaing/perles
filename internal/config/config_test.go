@@ -106,6 +106,26 @@ func TestConfig_GetColumns_Empty(t *testing.T) {
 	require.Len(t, cols, 4)
 }
 
+func TestConfig_GetViews(t *testing.T) {
+	cfg := Config{
+		Views: []ViewConfig{
+			{Name: "Custom", Columns: []ColumnConfig{{Name: "Col1", Query: "status = open"}}},
+		},
+	}
+	views := cfg.GetViews()
+	require.Len(t, views, 1)
+	require.Equal(t, "Custom", views[0].Name)
+}
+
+func TestConfig_GetViews_Empty(t *testing.T) {
+	cfg := Config{} // No views
+	views := cfg.GetViews()
+	// Should return defaults
+	require.Len(t, views, 1)
+	require.Equal(t, "Default", views[0].Name)
+	require.Len(t, views[0].Columns, 4)
+}
+
 func TestConfig_SetColumns(t *testing.T) {
 	cfg := Defaults()
 	newCols := []ColumnConfig{{Name: "Test", Query: "status = open"}}

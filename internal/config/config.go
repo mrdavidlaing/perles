@@ -160,6 +160,14 @@ func (c Config) GetColumnsForView(viewIndex int) []ColumnConfig {
 	return DefaultColumns()
 }
 
+// GetViews returns the configured views, or DefaultViews() if none configured.
+func (c Config) GetViews() []ViewConfig {
+	if len(c.Views) > 0 {
+		return c.Views
+	}
+	return DefaultViews()
+}
+
 // SetColumns updates the columns for the first view.
 // If no views exist, it creates a default view with the given columns.
 // This provides backward compatibility during the transition to multi-view support.

@@ -103,14 +103,8 @@ func New(services mode.Services) Model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(styles.SpinnerColor)
 
-	// Create board - use views if configured, otherwise fall back to columns
-	var boardModel board.Model
-	if len(services.Config.Views) > 0 {
-		boardModel = board.NewFromViews(services.Config.Views, services.Executor).SetShowCounts(services.Config.UI.ShowCounts)
-	} else {
-		columns := services.Config.GetColumns()
-		boardModel = board.NewFromConfigWithExecutor(columns, services.Executor).SetShowCounts(services.Config.UI.ShowCounts)
-	}
+	// Create board from views (GetViews returns defaults if none configured)
+	boardModel := board.NewFromViews(services.Config.GetViews(), services.Executor).SetShowCounts(services.Config.UI.ShowCounts)
 
 	return Model{
 		services:            services,
@@ -582,18 +576,13 @@ func (m Model) boardHeight() int {
 func (m *Model) rebuildBoard() {
 	currentView := m.board.CurrentViewIndex()
 
-	if len(m.services.Config.Views) > 0 {
-		m.board = board.NewFromViews(m.services.Config.Views, m.services.Executor).
-			SetShowCounts(m.services.Config.UI.ShowCounts).
-			SetSize(m.width, m.boardHeight())
-		// Restore view index if valid
-		if currentView > 0 && currentView < m.board.ViewCount() {
-			m.board, _ = m.board.SwitchToView(currentView)
-		}
-	} else {
-		m.board = board.NewFromConfigWithExecutor(m.services.Config.GetColumns(), m.services.Executor).
-			SetShowCounts(m.services.Config.UI.ShowCounts).
-			SetSize(m.width, m.boardHeight())
+	m.board = board.NewFromViews(m.services.Config.GetViews(), m.services.Executor).
+		SetShowCounts(m.services.Config.UI.ShowCounts).
+		SetSize(m.width, m.boardHeight())
+
+	// Restore view index if valid
+	if currentView > 0 && currentView < m.board.ViewCount() {
+		m.board, _ = m.board.SwitchToView(currentView)
 	}
 }
 

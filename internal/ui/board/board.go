@@ -46,15 +46,6 @@ type Model struct {
 	height   int
 }
 
-// NewFromConfigWithExecutor creates a board with columns that can self-load via BQL.
-// This wraps the columns in a single default view and delegates to NewFromViews.
-func NewFromConfigWithExecutor(configs []config.ColumnConfig, executor *bql.Executor) Model {
-	return NewFromViews([]config.ViewConfig{{
-		Name:    "Default",
-		Columns: configs,
-	}}, executor)
-}
-
 // NewFromViews creates a board from multiple view configurations.
 func NewFromViews(viewConfigs []config.ViewConfig, executor *bql.Executor) Model {
 	views := make([]View, len(viewConfigs))

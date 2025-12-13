@@ -12,40 +12,40 @@ import (
 )
 
 func TestBoard_New_DefaultFocus(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	require.Equal(t, ColReady, m.FocusedColumn(), "expected default focus on Ready column")
 }
 
 func TestBoard_NavigateRight(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	// Default focus is Ready (index 1)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	require.Equal(t, ColInProgress, m.FocusedColumn(), "expected ColInProgress after 'l'")
 }
 
 func TestBoard_NavigateLeft(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	// Default focus is Ready (index 1)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 	require.Equal(t, ColBlocked, m.FocusedColumn(), "expected ColBlocked after 'h'")
 }
 
 func TestBoard_NavigateRightBoundary(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	m = m.SetFocus(ColClosed)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	require.Equal(t, ColClosed, m.FocusedColumn(), "expected to stay at ColClosed boundary")
 }
 
 func TestBoard_NavigateLeftBoundary(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	m = m.SetFocus(ColBlocked)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 	require.Equal(t, ColBlocked, m.FocusedColumn(), "expected to stay at ColBlocked boundary")
 }
 
 func TestBoard_NavigateWithArrowKeys(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	// Test right arrow
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	require.Equal(t, ColInProgress, m.FocusedColumn(), "expected ColInProgress after right arrow")
@@ -56,38 +56,38 @@ func TestBoard_NavigateWithArrowKeys(t *testing.T) {
 }
 
 func TestBoard_SetFocus(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	m = m.SetFocus(ColClosed)
 	require.Equal(t, ColClosed, m.FocusedColumn())
 }
 
 func TestBoard_SetFocus_InvalidIndex(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	original := m.FocusedColumn()
 	m = m.SetFocus(ColumnIndex(100)) // Invalid
 	require.Equal(t, original, m.FocusedColumn(), "expected focus to remain for invalid index")
 }
 
 func TestBoard_SelectedIssue_Empty(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	require.Nil(t, m.SelectedIssue(), "expected nil selected issue on empty board")
 }
 
 func TestBoard_SelectByID_NotFound(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	_, found := m.SelectByID("nonexistent")
 	require.False(t, found, "expected not to find nonexistent issue")
 }
 
 func TestBoard_SetSize(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	_ = m.SetSize(120, 40)
 	// SetSize modifies internal dimensions
 	// Verified through View output
 }
 
 func TestBoard_View(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil)
+	m := NewFromViews(config.DefaultViews(), nil)
 	m = m.SetSize(120, 40)
 	view := m.View()
 	require.NotEmpty(t, view, "expected non-empty view")
@@ -96,7 +96,7 @@ func TestBoard_View(t *testing.T) {
 // TestBoard_View_Golden uses teatest golden file comparison
 // Run with -update flag to update golden files: go test -update ./internal/ui/board/...
 func TestBoard_View_Golden(t *testing.T) {
-	m := NewFromConfigWithExecutor(config.DefaultColumns(), nil).SetSize(120, 40)
+	m := NewFromViews(config.DefaultViews(), nil).SetSize(120, 40)
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
 }
@@ -107,7 +107,7 @@ func TestBoard_CustomColumns(t *testing.T) {
 		{Name: "Done", Query: "status = closed", Color: "#10B981"},
 	}
 
-	board := NewFromConfigWithExecutor(configs, nil)
+	board := NewFromViews([]config.ViewConfig{{Name: "Test", Columns: configs}}, nil)
 	require.Equal(t, 2, board.ColCount())
 	require.Equal(t, 1, board.FocusedColumn()) // Second column by default
 }
@@ -117,7 +117,7 @@ func TestBoard_CustomColumns_SingleColumn(t *testing.T) {
 		{Name: "All", Query: "status = open"},
 	}
 
-	board := NewFromConfigWithExecutor(configs, nil)
+	board := NewFromViews([]config.ViewConfig{{Name: "Test", Columns: configs}}, nil)
 	require.Equal(t, 1, board.ColCount())
 	require.Equal(t, 0, board.FocusedColumn()) // First and only column
 }
@@ -129,7 +129,7 @@ func TestBoard_CustomColumns_Navigation(t *testing.T) {
 		{Name: "Col3", Query: "status = closed"},
 	}
 
-	m := NewFromConfigWithExecutor(configs, nil)
+	m := NewFromViews([]config.ViewConfig{{Name: "Test", Columns: configs}}, nil)
 	require.Equal(t, 1, m.FocusedColumn()) // Start on second column
 
 	// Navigate right
@@ -464,7 +464,7 @@ func TestBoard_SwitchToView_ReloadsAfterInvalidate(t *testing.T) {
 func TestBoard_EmptyColumns_ShowsEmptyState(t *testing.T) {
 	// Board with no columns should show empty state message
 	configs := []config.ColumnConfig{}
-	m := NewFromConfigWithExecutor(configs, nil).SetSize(80, 24)
+	m := NewFromViews([]config.ViewConfig{{Name: "Test", Columns: configs}}, nil).SetSize(80, 24)
 
 	view := m.View()
 	require.Contains(t, view, "No columns configured")
@@ -474,7 +474,7 @@ func TestBoard_EmptyColumns_ShowsEmptyState(t *testing.T) {
 func TestBoard_EmptyView_ColCount(t *testing.T) {
 	// Board with no columns should have ColCount of 0
 	configs := []config.ColumnConfig{}
-	m := NewFromConfigWithExecutor(configs, nil)
+	m := NewFromViews([]config.ViewConfig{{Name: "Test", Columns: configs}}, nil)
 
 	require.Equal(t, 0, m.ColCount())
 }
@@ -662,7 +662,7 @@ func TestSwapColumns_Basic(t *testing.T) {
 		{Name: "Col2", Query: "q2"},
 	}
 
-	m := NewFromConfigWithExecutor(configs, nil)
+	m := NewFromViews([]config.ViewConfig{{Name: "Test", Columns: configs}}, nil)
 	require.Equal(t, "Col0", m.configs[0].Name)
 	require.Equal(t, "Col1", m.configs[1].Name)
 	require.Equal(t, "Col2", m.configs[2].Name)
@@ -717,7 +717,7 @@ func TestSwapColumns_InvalidIndices(t *testing.T) {
 		{Name: "Col1", Query: "q1"},
 	}
 
-	m := NewFromConfigWithExecutor(configs, nil)
+	m := NewFromViews([]config.ViewConfig{{Name: "Test", Columns: configs}}, nil)
 	original0 := m.configs[0].Name
 	original1 := m.configs[1].Name
 
