@@ -127,13 +127,45 @@ func TestExecutor_LabelFilter(t *testing.T) {
 
 	executor := NewExecutor(db)
 
-	// Issues with urgent label
+	// Issues with urgent label (exact match)
 	issues, err := executor.Execute("label = urgent")
 	require.NoError(t, err)
 
 	require.Len(t, issues, 2) // test-1 and test-5
 	for _, issue := range issues {
 		require.Contains(t, []string{"test-1", "test-5"}, issue.ID)
+	}
+}
+
+func TestExecutor_LabelContains(t *testing.T) {
+	db := setupDB(t, (*testutil.Builder).WithStandardTestData)
+	defer func() { _ = db.Close() }()
+
+	executor := NewExecutor(db)
+
+	// Issues with labels containing "urg" (should match "urgent")
+	issues, err := executor.Execute("label ~ urg")
+	require.NoError(t, err)
+
+	require.Len(t, issues, 2) // test-1 and test-5 have "urgent"
+	for _, issue := range issues {
+		require.Contains(t, []string{"test-1", "test-5"}, issue.ID)
+	}
+}
+
+func TestExecutor_LabelNotContains(t *testing.T) {
+	db := setupDB(t, (*testutil.Builder).WithStandardTestData)
+	defer func() { _ = db.Close() }()
+
+	executor := NewExecutor(db)
+
+	// Issues with labels NOT containing "urg" (excludes "urgent")
+	issues, err := executor.Execute("label !~ urg and status = open")
+	require.NoError(t, err)
+
+	// Should exclude test-1 and test-5 which have "urgent"
+	for _, issue := range issues {
+		require.NotContains(t, []string{"test-1", "test-5"}, issue.ID)
 	}
 }
 

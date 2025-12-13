@@ -73,22 +73,22 @@ func (b *SQLBuilder) buildCompare(e *CompareExpr) string {
 		return "i.id NOT IN (SELECT id FROM ready_issues)"
 
 	case "label":
-		// Single label check via labels table
-		b.params = append(b.params, e.Value.String)
-		if e.Op == TokenNeq {
+		// Label check via labels table
+		// Supports exact match (=, !=) and partial match (~, !~)
+		switch e.Op {
+		case TokenContains:
+			b.params = append(b.params, "%"+e.Value.String+"%")
+			return "i.id IN (SELECT issue_id FROM labels WHERE label LIKE ?)"
+		case TokenNotContains:
+			b.params = append(b.params, "%"+e.Value.String+"%")
+			return "i.id NOT IN (SELECT issue_id FROM labels WHERE label LIKE ?)"
+		case TokenNeq:
+			b.params = append(b.params, e.Value.String)
 			return "i.id NOT IN (SELECT issue_id FROM labels WHERE label = ?)"
+		default: // TokenEq
+			b.params = append(b.params, e.Value.String)
+			return "i.id IN (SELECT issue_id FROM labels WHERE label = ?)"
 		}
-		return "i.id IN (SELECT issue_id FROM labels WHERE label = ?)"
-
-	case "labels":
-		// Search across all labels for an issue (using LIKE on aggregated labels)
-		b.params = append(b.params, "%"+e.Value.String+"%")
-		subquery := `i.id IN (SELECT issue_id FROM labels GROUP BY issue_id
-			HAVING GROUP_CONCAT(label) LIKE ?)`
-		if e.Op == TokenNotContains {
-			return "NOT " + subquery
-		}
-		return subquery
 	}
 
 	// Map BQL fields to SQL columns

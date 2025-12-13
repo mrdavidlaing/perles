@@ -120,6 +120,42 @@ func TestSQLBuilder_SpecialFields(t *testing.T) {
 		require.Equal(t, "i.id IN (SELECT issue_id FROM labels WHERE label = ?)", where)
 		require.Equal(t, []interface{}{"urgent"}, params)
 	})
+
+	t.Run("label not equals", func(t *testing.T) {
+		parser := NewParser("label != urgent")
+		query, err := parser.Parse()
+		require.NoError(t, err)
+
+		builder := NewSQLBuilder(query)
+		where, _, params := builder.Build()
+
+		require.Equal(t, "i.id NOT IN (SELECT issue_id FROM labels WHERE label = ?)", where)
+		require.Equal(t, []interface{}{"urgent"}, params)
+	})
+
+	t.Run("label contains", func(t *testing.T) {
+		parser := NewParser("label ~ spec")
+		query, err := parser.Parse()
+		require.NoError(t, err)
+
+		builder := NewSQLBuilder(query)
+		where, _, params := builder.Build()
+
+		require.Equal(t, "i.id IN (SELECT issue_id FROM labels WHERE label LIKE ?)", where)
+		require.Equal(t, []interface{}{"%spec%"}, params)
+	})
+
+	t.Run("label not contains", func(t *testing.T) {
+		parser := NewParser("label !~ backlog")
+		query, err := parser.Parse()
+		require.NoError(t, err)
+
+		builder := NewSQLBuilder(query)
+		where, _, params := builder.Build()
+
+		require.Equal(t, "i.id NOT IN (SELECT issue_id FROM labels WHERE label LIKE ?)", where)
+		require.Equal(t, []interface{}{"%backlog%"}, params)
+	})
 }
 
 func TestSQLBuilder_InExpression(t *testing.T) {
