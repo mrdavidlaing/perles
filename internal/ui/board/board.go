@@ -46,43 +46,13 @@ type Model struct {
 	height   int
 }
 
-// New creates a new board with default columns (backward compatibility).
-func New() Model {
-	return NewFromConfig(config.DefaultColumns())
-}
-
-// NewFromConfig creates a board with columns from configuration.
-// For self-loading columns, use NewFromConfigWithExecutor instead.
-func NewFromConfig(configs []config.ColumnConfig) Model {
-	return NewFromConfigWithExecutor(configs, nil)
-}
-
 // NewFromConfigWithExecutor creates a board with columns that can self-load via BQL.
+// This wraps the columns in a single default view and delegates to NewFromViews.
 func NewFromConfigWithExecutor(configs []config.ColumnConfig, executor *bql.Executor) Model {
-	columns := make([]BoardColumn, len(configs))
-
-	for i, cfg := range configs {
-		// Create column with executor for self-loading
-		col := NewColumnWithExecutor(cfg.Name, cfg.Query, executor)
-		col = col.SetColumnIndex(i) // Set column index for message routing
-		if cfg.Color != "" {
-			col = col.SetColor(lipgloss.Color(cfg.Color))
-		}
-		columns[i] = col
-	}
-
-	// Default focus to second column (Ready equivalent) or first
-	focusIdx := 0
-	if len(columns) > 1 {
-		focusIdx = 1
-	}
-
-	return Model{
-		columns:  columns,
-		configs:  configs,
-		executor: executor,
-		focused:  focusIdx,
-	}
+	return NewFromViews([]config.ViewConfig{{
+		Name:    "Default",
+		Columns: configs,
+	}}, executor)
 }
 
 // NewFromViews creates a board from multiple view configurations.
