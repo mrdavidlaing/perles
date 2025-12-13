@@ -141,8 +141,7 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 // Column represents a single kanban column.
 type Column struct {
 	title       string
-	columnIndex int // position within the view for message routing
-	status      beads.Status
+	columnIndex int                    // position within the view for message routing
 	color       lipgloss.TerminalColor // custom color for column border/title
 	list        list.Model
 	items       []beads.Issue
@@ -158,7 +157,7 @@ type Column struct {
 }
 
 // NewColumn creates a new column.
-func NewColumn(title string, status beads.Status) Column {
+func NewColumn(title string) Column {
 	// Allocate focused state on heap so pointer survives copies
 	focused := new(bool)
 
@@ -174,7 +173,6 @@ func NewColumn(title string, status beads.Status) Column {
 
 	return Column{
 		title:   title,
-		status:  status,
 		list:    l,
 		focused: focused,
 	}
@@ -182,7 +180,7 @@ func NewColumn(title string, status beads.Status) Column {
 
 // NewColumnWithExecutor creates a column that can load its own data via BQL.
 func NewColumnWithExecutor(title string, query string, executor *bql.Executor) Column {
-	col := NewColumn(title, "")
+	col := NewColumn(title)
 	col.executor = executor
 	col.query = query
 	return col

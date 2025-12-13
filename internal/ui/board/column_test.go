@@ -12,13 +12,12 @@ import (
 )
 
 func TestColumn_NewColumn(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	require.Equal(t, "Test", c.title)
-	require.Equal(t, beads.StatusOpen, c.status)
 }
 
 func TestColumn_SetItems(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -28,18 +27,18 @@ func TestColumn_SetItems(t *testing.T) {
 }
 
 func TestColumn_SetItems_Empty(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetItems([]beads.Issue{})
 	require.Empty(t, c.Items())
 }
 
 func TestColumn_SelectedItem_Empty(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	require.Nil(t, c.SelectedItem(), "expected nil selected item on empty column")
 }
 
 func TestColumn_SelectedItem_WithItems(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -51,7 +50,7 @@ func TestColumn_SelectedItem_WithItems(t *testing.T) {
 }
 
 func TestColumn_SelectByID(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -67,7 +66,7 @@ func TestColumn_SelectByID(t *testing.T) {
 }
 
 func TestColumn_SelectByID_NotFound(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	issues := []beads.Issue{{ID: "bd-1", TitleText: "Issue 1"}}
 	c = c.SetItems(issues)
 
@@ -76,7 +75,7 @@ func TestColumn_SelectByID_NotFound(t *testing.T) {
 }
 
 func TestColumn_SetFocused(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetFocused(true).(Column)
 	require.True(t, *c.focused, "expected column to be focused")
 	c = c.SetFocused(false).(Column)
@@ -84,27 +83,27 @@ func TestColumn_SetFocused(t *testing.T) {
 }
 
 func TestColumn_SetSize(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetSize(50, 20).(Column)
 	require.Equal(t, 50, c.width)
 	require.Equal(t, 20, c.height)
 }
 
 func TestColumn_Title_Empty(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	title := c.Title()
 	require.Equal(t, "Test (0)", title)
 }
 
 func TestColumn_View_Empty(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetSize(30, 10).(Column)
 	view := c.View()
 	require.Contains(t, view, "No issues")
 }
 
 func TestColumn_Title_WithItems(t *testing.T) {
-	c := NewColumn("Ready", beads.StatusOpen)
+	c := NewColumn("Ready")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1", Priority: beads.PriorityHigh, Type: beads.TypeTask},
 		{ID: "bd-2", TitleText: "Issue 2", Priority: beads.PriorityMedium, Type: beads.TypeBug},
@@ -115,7 +114,7 @@ func TestColumn_Title_WithItems(t *testing.T) {
 }
 
 func TestColumn_View_WithItems(t *testing.T) {
-	c := NewColumn("Ready", beads.StatusOpen)
+	c := NewColumn("Ready")
 	c = c.SetSize(50, 20).(Column)
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1", Priority: beads.PriorityHigh, Type: beads.TypeTask},
@@ -128,7 +127,7 @@ func TestColumn_View_WithItems(t *testing.T) {
 }
 
 func TestColumn_SetShowCounts(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetShowCounts(false).(Column)
 	require.NotNil(t, c.showCounts)
 	require.False(t, *c.showCounts, "expected showCounts to be false")
@@ -137,7 +136,7 @@ func TestColumn_SetShowCounts(t *testing.T) {
 }
 
 func TestColumn_Title_ShowCountsFalse(t *testing.T) {
-	c := NewColumn("Ready", beads.StatusOpen)
+	c := NewColumn("Ready")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -150,7 +149,7 @@ func TestColumn_Title_ShowCountsFalse(t *testing.T) {
 }
 
 func TestColumn_Title_ShowCountsTrue(t *testing.T) {
-	c := NewColumn("Ready", beads.StatusOpen)
+	c := NewColumn("Ready")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -164,7 +163,7 @@ func TestColumn_Title_ShowCountsTrue(t *testing.T) {
 
 func TestColumn_Title_ShowCountsDefault(t *testing.T) {
 	// When showCounts is nil (not set), should default to showing counts
-	c := NewColumn("Ready", beads.StatusOpen)
+	c := NewColumn("Ready")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 	}
@@ -175,7 +174,7 @@ func TestColumn_Title_ShowCountsDefault(t *testing.T) {
 }
 
 func TestColumn_Update_NavigateDown(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -190,7 +189,7 @@ func TestColumn_Update_NavigateDown(t *testing.T) {
 }
 
 func TestColumn_Update_NavigateUp(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -209,7 +208,7 @@ func TestColumn_Update_NavigateUp(t *testing.T) {
 }
 
 func TestColumn_Items(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "Issue 1"},
 		{ID: "bd-2", TitleText: "Issue 2"},
@@ -223,14 +222,14 @@ func TestColumn_Items(t *testing.T) {
 // TestColumn_View_Golden uses teatest golden file comparison
 // Run with -update flag to update golden files: go test -update ./internal/ui/board/...
 func TestColumn_View_Golden(t *testing.T) {
-	c := NewColumn("Ready", beads.StatusOpen).SetSize(30, 15).(Column)
+	c := NewColumn("Ready").SetSize(30, 15).(Column)
 	view := c.View()
 	teatest.RequireEqualOutput(t, []byte(view))
 }
 
 // TestColumn_View_WithIssues_Golden tests column with sample issues
 func TestColumn_View_WithIssues_Golden(t *testing.T) {
-	c := NewColumn("Ready", beads.StatusOpen).SetSize(30, 15).(Column).SetFocused(true).(Column)
+	c := NewColumn("Ready").SetSize(30, 15).(Column).SetFocused(true).(Column)
 	issues := []beads.Issue{
 		{ID: "bd-1", TitleText: "First Issue", Priority: beads.PriorityHigh, Type: beads.TypeBug},
 		{ID: "bd-2", TitleText: "Second Issue", Priority: beads.PriorityMedium, Type: beads.TypeTask},
@@ -253,20 +252,20 @@ func TestColumn_NewColumnWithExecutor(t *testing.T) {
 }
 
 func TestColumn_SetQuery(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetQuery("status = open and ready = true")
 	require.Equal(t, "status = open and ready = true", c.Query())
 }
 
 func TestColumn_SetExecutor(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	// We can't easily create a real executor without a DB, so just test the setter
 	c = c.SetExecutor(nil)
 	require.Nil(t, c.executor)
 }
 
 func TestColumn_LoadError(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 
 	// Default should have no error
 	require.Nil(t, c.LoadError())
@@ -274,7 +273,7 @@ func TestColumn_LoadError(t *testing.T) {
 
 func TestColumn_LoadIssues_NoExecutor(t *testing.T) {
 	// Without executor, LoadIssues should be a no-op
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetQuery("status = open")
 
 	// Should return unchanged column
@@ -284,7 +283,7 @@ func TestColumn_LoadIssues_NoExecutor(t *testing.T) {
 
 func TestColumn_LoadIssues_NoQuery(t *testing.T) {
 	// Without query, LoadIssues should be a no-op
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	// Don't set query
 
 	c2 := c.LoadIssues()
@@ -292,7 +291,7 @@ func TestColumn_LoadIssues_NoQuery(t *testing.T) {
 }
 
 func TestColumn_LoadIssuesCmd_NoExecutor(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	c = c.SetQuery("status = open")
 
 	// Should return nil command
@@ -301,7 +300,7 @@ func TestColumn_LoadIssuesCmd_NoExecutor(t *testing.T) {
 }
 
 func TestColumn_LoadIssuesCmd_NoQuery(t *testing.T) {
-	c := NewColumn("Test", beads.StatusOpen)
+	c := NewColumn("Test")
 	// Don't set query
 
 	cmd := c.LoadIssuesCmd()

@@ -978,8 +978,7 @@ func (m Model) renderPreview(width int) string {
 		countInfo = countStyle.Render(fmt.Sprintf("%d issues match current filters", len(m.previewIssues)))
 
 		// Create a preview column using actual Column component
-		// Status is only used for rendering hints, pass empty for preview
-		previewCol := board.NewColumn(cfg.Name, "")
+		previewCol := board.NewColumn(cfg.Name)
 		if cfg.Color != "" {
 			previewCol = previewCol.SetColor(lipgloss.Color(cfg.Color))
 		}

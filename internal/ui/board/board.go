@@ -2,8 +2,6 @@
 package board
 
 import (
-	"strings"
-
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
@@ -64,12 +62,8 @@ func NewFromConfigWithExecutor(configs []config.ColumnConfig, executor *bql.Exec
 	columns := make([]BoardColumn, len(configs))
 
 	for i, cfg := range configs {
-		// Extract primary status from Query for column rendering
-		primaryStatus := extractPrimaryStatus(cfg.Query)
-
 		// Create column with executor for self-loading
 		col := NewColumnWithExecutor(cfg.Name, cfg.Query, executor)
-		col.status = primaryStatus
 		col = col.SetColumnIndex(i) // Set column index for message routing
 		if cfg.Color != "" {
 			col = col.SetColor(lipgloss.Color(cfg.Color))
@@ -108,9 +102,7 @@ func NewFromViews(viewConfigs []config.ViewConfig, executor *bql.Executor) Model
 				columns[j] = treeCol
 			} else {
 				// Default: BQL column (existing logic)
-				primaryStatus := extractPrimaryStatus(cc.Query)
 				col := NewColumnWithExecutor(cc.Name, cc.Query, executor)
-				col.status = primaryStatus
 				col = col.SetColumnIndex(j) // Set column index for message routing
 				if cc.Color != "" {
 					col = col.SetColor(lipgloss.Color(cc.Color))
@@ -538,20 +530,4 @@ func (m Model) renderEmptyState() string {
 		hintStyle.Render("Press 'a' to add a column")
 
 	return emptyStyle.Render(content)
-}
-
-// extractPrimaryStatus extracts the primary status from a BQL query.
-// This is used for column rendering hints.
-func extractPrimaryStatus(query string) beads.Status {
-	query = strings.ToLower(query)
-	if strings.Contains(query, "status = open") {
-		return beads.StatusOpen
-	}
-	if strings.Contains(query, "status = in_progress") {
-		return beads.StatusInProgress
-	}
-	if strings.Contains(query, "status = closed") {
-		return beads.StatusClosed
-	}
-	return ""
 }
