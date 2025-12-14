@@ -3,32 +3,85 @@ package search
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/exp/teatest"
 
 	"perles/internal/beads"
+	"perles/internal/config"
+	"perles/internal/mode"
+	"perles/internal/mode/shared"
 	"perles/internal/ui/shared/formmodal"
 )
+
+// testNow is a fixed reference time for golden tests to ensure reproducible timestamps.
+var testNow = time.Date(2025, 12, 13, 12, 0, 0, 0, time.UTC)
+
+// createGoldenTestModel creates a Model with a fake clock for reproducible golden tests.
+func createGoldenTestModel() Model {
+	cfg := config.Defaults()
+	services := mode.Services{
+		Config:    &cfg,
+		Clipboard: shared.MockClipboard{},
+		Clock:     shared.FakeClock{FixedTime: testNow},
+	}
+
+	m := New(services)
+	m.width = 100
+	m.height = 40
+	return m
+}
+
+// createGoldenTestModelWithViews creates a Model with views and a fake clock.
+func createGoldenTestModelWithViews() Model {
+	cfg := config.Defaults()
+	cfg.Views = []config.ViewConfig{
+		{Name: "Inbox"},
+		{Name: "Critical"},
+		{Name: "In Progress"},
+	}
+	services := mode.Services{
+		Config:    &cfg,
+		Clipboard: shared.MockClipboard{},
+		Clock:     shared.FakeClock{FixedTime: testNow},
+	}
+
+	m := New(services)
+	m.width = 100
+	m.height = 40
+	return m
+}
 
 // Golden tests for search mode rendering.
 // Run with -update flag to update golden files: go test -update ./internal/mode/search/...
 
 func TestSearch_View_Golden_Empty(t *testing.T) {
-	m := createTestModel()
+	m := createGoldenTestModel()
 	m = m.SetSize(100, 30)
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
 }
 
 func TestSearch_View_Golden_WithResults(t *testing.T) {
-	m := createTestModel()
+	m := createGoldenTestModel()
 	m = m.SetSize(100, 30)
 
-	// Load some results
+	// Load some results with timestamps and comments
 	issues := []beads.Issue{
-		{ID: "bd-a1b", TitleText: "Implement webhook system", Priority: 1, Status: beads.StatusOpen, Type: beads.TypeFeature},
-		{ID: "bd-c2d", TitleText: "Fix crash on startup", Priority: 0, Status: beads.StatusInProgress, Type: beads.TypeBug},
-		{ID: "bd-e3f", TitleText: "Add unit tests", Priority: 2, Status: beads.StatusOpen, Type: beads.TypeTask},
+		{
+			ID: "bd-a1b", TitleText: "Implement webhook system", Priority: 1, Status: beads.StatusOpen, Type: beads.TypeFeature,
+			CreatedAt:    testNow.Add(-10 * time.Hour), // 10h ago
+			CommentCount: 3,                            // 3 comments
+		},
+		{
+			ID: "bd-c2d", TitleText: "Fix crash on startup", Priority: 0, Status: beads.StatusInProgress, Type: beads.TypeBug,
+			CreatedAt: testNow.Add(-3 * 24 * time.Hour), // 3d ago
+		},
+		{
+			ID: "bd-e3f", TitleText: "Add unit tests", Priority: 2, Status: beads.StatusOpen, Type: beads.TypeTask,
+			CreatedAt:    testNow.Add(-2 * 7 * 24 * time.Hour), // 2w ago
+			CommentCount: 1,                                    // 1 comment
+		},
 	}
 	m, _ = m.handleSearchResults(searchResultsMsg{issues: issues, err: nil})
 
@@ -37,7 +90,7 @@ func TestSearch_View_Golden_WithResults(t *testing.T) {
 }
 
 func TestSearch_View_Golden_Error(t *testing.T) {
-	m := createTestModel()
+	m := createGoldenTestModel()
 	m = m.SetSize(100, 30)
 	m.input.SetValue("invalid query syntax ===")
 
@@ -51,7 +104,7 @@ func TestSearch_View_Golden_Error(t *testing.T) {
 }
 
 func TestSearch_View_Golden_NoResults(t *testing.T) {
-	m := createTestModel()
+	m := createGoldenTestModel()
 	m = m.SetSize(100, 30)
 	m.input.SetValue("status = closed")
 
@@ -63,13 +116,20 @@ func TestSearch_View_Golden_NoResults(t *testing.T) {
 }
 
 func TestSearch_View_Golden_Wide(t *testing.T) {
-	m := createTestModel()
+	m := createGoldenTestModel()
 	m = m.SetSize(200, 40)
 
-	// Load some results
+	// Load some results with timestamps
 	issues := []beads.Issue{
-		{ID: "bd-a1b", TitleText: "Implement webhook system", Priority: 1, Status: beads.StatusOpen, Type: beads.TypeFeature},
-		{ID: "bd-c2d", TitleText: "Fix crash on startup", Priority: 0, Status: beads.StatusInProgress, Type: beads.TypeBug},
+		{
+			ID: "bd-a1b", TitleText: "Implement webhook system", Priority: 1, Status: beads.StatusOpen, Type: beads.TypeFeature,
+			CreatedAt: testNow.Add(-5 * time.Minute), // 5m ago
+		},
+		{
+			ID: "bd-c2d", TitleText: "Fix crash on startup", Priority: 0, Status: beads.StatusInProgress, Type: beads.TypeBug,
+			CreatedAt:    testNow.Add(-6 * 30 * 24 * time.Hour), // 6mo ago
+			CommentCount: 2,                                     // 2 comments
+		},
 	}
 	m, _ = m.handleSearchResults(searchResultsMsg{issues: issues, err: nil})
 
@@ -78,12 +138,15 @@ func TestSearch_View_Golden_Wide(t *testing.T) {
 }
 
 func TestSearch_View_Golden_Narrow(t *testing.T) {
-	m := createTestModel()
+	m := createGoldenTestModel()
 	m = m.SetSize(80, 24)
 
-	// Load some results
+	// Load some results with timestamp (narrow width should truncate title)
 	issues := []beads.Issue{
-		{ID: "bd-a1b", TitleText: "Implement webhook system", Priority: 1, Status: beads.StatusOpen, Type: beads.TypeFeature},
+		{
+			ID: "bd-a1b", TitleText: "Implement webhook system", Priority: 1, Status: beads.StatusOpen, Type: beads.TypeFeature,
+			CreatedAt: testNow.Add(-1 * time.Hour), // 1h ago
+		},
 	}
 	m, _ = m.handleSearchResults(searchResultsMsg{issues: issues, err: nil})
 
@@ -92,7 +155,7 @@ func TestSearch_View_Golden_Narrow(t *testing.T) {
 }
 
 func TestSearch_View_Golden_NewViewModal(t *testing.T) {
-	m := createTestModelWithViews()
+	m := createGoldenTestModelWithViews()
 	m = m.SetSize(100, 30)
 	m.input.SetValue("status = open")
 
@@ -106,7 +169,7 @@ func TestSearch_View_Golden_NewViewModal(t *testing.T) {
 }
 
 func TestSearch_View_Golden_SaveColumnModal(t *testing.T) {
-	m := createTestModelWithViews()
+	m := createGoldenTestModelWithViews()
 	m = m.SetSize(100, 30)
 	m.input.SetValue("priority = 0")
 

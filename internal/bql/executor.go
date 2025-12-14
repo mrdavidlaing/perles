@@ -114,7 +114,12 @@ func (e *Executor) executeBaseQuery(query *Query) ([]beads.Issue, error) {
 				SELECT GROUP_CONCAT(l.label)
 				FROM labels l
 				WHERE l.issue_id = i.id
-			), '') as labels
+			), '') as labels,
+			(
+				SELECT COUNT(*)
+				FROM comments c
+				WHERE c.issue_id = i.id
+			) as comment_count
 		FROM issues i
 		WHERE i.status != 'deleted'
 	`
@@ -177,6 +182,7 @@ func (e *Executor) scanIssues(rows *sql.Rows) ([]beads.Issue, error) {
 			&blocksIDs,
 			&childrenIDs,
 			&labelsStr,
+			&issue.CommentCount,
 		)
 		if err != nil {
 			log.ErrorErr(log.CatDB, "Scan failed", err)
@@ -467,7 +473,12 @@ func (e *Executor) fetchIssuesByIDs(ids []string) ([]beads.Issue, error) {
 				SELECT GROUP_CONCAT(l.label)
 				FROM labels l
 				WHERE l.issue_id = i.id
-			), '') as labels
+			), '') as labels,
+			(
+				SELECT COUNT(*)
+				FROM comments c
+				WHERE c.issue_id = i.id
+			) as comment_count
 		FROM issues i
 		WHERE i.id IN (%s)
 			AND i.status != 'deleted'

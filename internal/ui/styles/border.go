@@ -111,7 +111,7 @@ func buildTopBorder(title string, innerWidth int, borderStyle, titleStyle lipglo
 	displayTitle := title
 	if lipgloss.Width(displayTitle) > availableForTitle {
 		// Truncate title with ellipsis
-		displayTitle = truncateString(displayTitle, availableForTitle)
+		displayTitle = TruncateString(displayTitle, availableForTitle)
 	}
 
 	// Calculate remaining width for trailing dashes
@@ -203,8 +203,8 @@ func buildDualTitleTopBorder(leftTitle, rightTitle string, innerWidth int, borde
 	return result.String()
 }
 
-// truncateString truncates a string to fit within maxWidth, adding ellipsis if needed.
-func truncateString(s string, maxWidth int) string {
+// TruncateString truncates a string to fit within maxWidth, adding ellipsis if needed.
+func TruncateString(s string, maxWidth int) string {
 	if maxWidth < 1 {
 		return ""
 	}

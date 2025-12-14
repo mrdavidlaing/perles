@@ -67,6 +67,9 @@ type Issue struct {
 
 	// Comments (populated on demand)
 	Comments []Comment `json:"comments,omitempty"`
+
+	// CommentCount is populated by BQL queries for display without loading full comments
+	CommentCount int `json:"comment_count,omitempty"`
 }
 
 // Title implements list.Item interface.

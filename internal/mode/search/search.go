@@ -451,7 +451,12 @@ func New(services mode.Services) Model {
 	input.Focus()
 
 	// Configure results list with custom delegate
-	delegate := newIssueDelegate()
+	var delegate issueDelegate
+	if services.Clock != nil {
+		delegate = newIssueDelegateWithClock(services.Clock)
+	} else {
+		delegate = newIssueDelegate()
+	}
 	resultsList := list.New([]list.Item{}, delegate, 0, 0)
 	resultsList.SetShowTitle(false)
 	resultsList.SetShowStatusBar(false)
@@ -2177,10 +2182,16 @@ type issueItem struct {
 func (i issueItem) FilterValue() string { return i.issue.TitleText }
 
 // issueDelegate renders issues in board style.
-type issueDelegate struct{}
+type issueDelegate struct {
+	clock shared.Clock
+}
 
 func newIssueDelegate() issueDelegate {
-	return issueDelegate{}
+	return issueDelegate{clock: shared.RealClock{}}
+}
+
+func newIssueDelegateWithClock(clock shared.Clock) issueDelegate {
+	return issueDelegate{clock: clock}
 }
 
 // Height returns the height of a single list item.
@@ -2195,8 +2206,9 @@ func (d issueDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 // Render renders a single list item.
 func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	issue := item.(issueItem).issue
+	width := m.Width()
 
-	// Format: > [T][P2][id] Title...
+	// Format: > [T][P2][id] Title...          10h ago 💬 3
 	selected := index == m.Index()
 
 	prefix := " "
@@ -2213,12 +2225,58 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	idStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
 	idText := fmt.Sprintf("[%s]", issue.ID)
 
-	line := fmt.Sprintf("%s%s%s%s %s",
+	// Build left prefix (before title)
+	leftPrefix := fmt.Sprintf("%s%s%s%s ",
 		prefix,
 		typeStyle.Render(typeText),
 		priorityStyle.Render(priorityText),
 		idStyle.Render(idText),
-		issue.TitleText,
+	)
+
+	// Build right metadata: comment indicator + timestamp (comments first for alignment)
+	metaStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
+	timestamp := shared.FormatRelativeTimeWithClock(issue.CreatedAt, d.clock)
+	commentInd := styles.FormatCommentIndicator(issue.CommentCount)
+
+	rightMeta := timestamp
+	if commentInd != "" {
+		rightMeta = commentInd + " " + timestamp
+	}
+	rightRendered := metaStyle.Render(rightMeta)
+
+	// Calculate available width for title
+	leftPrefixWidth := lipgloss.Width(leftPrefix)
+	rightWidth := lipgloss.Width(rightRendered)
+	availableWidth := width - leftPrefixWidth - rightWidth - 1 // -1 for spacing
+
+	// Truncate title if needed
+	title := issue.TitleText
+	if availableWidth > 0 && lipgloss.Width(title) > availableWidth {
+		title = styles.TruncateString(title, availableWidth)
+	} else if availableWidth <= 0 {
+		// Very narrow: show minimal title and truncate metadata if needed
+		title = ""
+		maxRight := width - leftPrefixWidth - 1 // -1 for minimal spacing
+		if maxRight > 0 && rightWidth > maxRight {
+			rightMeta = styles.TruncateString(rightMeta, maxRight)
+			rightRendered = metaStyle.Render(rightMeta)
+			rightWidth = lipgloss.Width(rightRendered)
+		} else if maxRight <= 0 {
+			// Extremely narrow: omit metadata entirely
+			rightRendered = ""
+			rightWidth = 0
+		}
+	}
+
+	// Calculate padding to right-align metadata
+	contentWidth := leftPrefixWidth + lipgloss.Width(title)
+	padding := max(1, width-contentWidth-rightWidth)
+
+	line := fmt.Sprintf("%s%s%s%s",
+		leftPrefix,
+		title,
+		strings.Repeat(" ", padding),
+		rightRendered,
 	)
 
 	_, _ = fmt.Fprint(w, line)

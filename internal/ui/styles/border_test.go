@@ -203,8 +203,8 @@ func TestTruncateString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := truncateString(tt.input, tt.maxWidth)
-			require.Equal(t, tt.want, got, "truncateString(%q, %d)", tt.input, tt.maxWidth)
+			got := TruncateString(tt.input, tt.maxWidth)
+			require.Equal(t, tt.want, got, "TruncateString(%q, %d)", tt.input, tt.maxWidth)
 		})
 	}
 }

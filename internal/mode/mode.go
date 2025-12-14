@@ -50,6 +50,7 @@ type Services struct {
 	ConfigPath string
 	DBPath     string
 	Clipboard  shared.Clipboard
+	Clock      shared.Clock // Optional: if nil, uses real clock
 }
 
 // ShowToastMsg requests displaying a toast notification.
