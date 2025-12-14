@@ -25,7 +25,9 @@ CREATE TABLE issues (
 	issue_type TEXT NOT NULL DEFAULT 'task',
 	assignee TEXT,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	closed_at DATETIME,
+	CHECK ((status = 'closed') = (closed_at IS NOT NULL))
 );
 
 CREATE TABLE labels (

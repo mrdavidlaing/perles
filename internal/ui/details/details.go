@@ -4,6 +4,7 @@ package details
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"perles/internal/beads"
 	"perles/internal/bql"
@@ -570,6 +571,21 @@ func (m Model) renderMetadataColumn() string {
 		sb.WriteString("\n")
 	}
 
+	// Closed timestamp and Duration (only for closed issues)
+	if !issue.ClosedAt.IsZero() {
+		sb.WriteString(indent)
+		sb.WriteString(labelStyle.Render("Closed"))
+		sb.WriteString(valueStyle.Render(issue.ClosedAt.Format("2006-01-02 15:04:05")))
+		sb.WriteString("\n")
+
+		// Duration from Created to Closed
+		duration := issue.ClosedAt.Sub(issue.CreatedAt)
+		sb.WriteString(indent)
+		sb.WriteString(labelStyle.Render("Duration"))
+		sb.WriteString(valueStyle.Render(formatDuration(duration)))
+		sb.WriteString("\n")
+	}
+
 	// Labels section
 	if len(issue.Labels) > 0 {
 		sb.WriteString(indentedDivider)
@@ -960,4 +976,23 @@ func (m *Model) loadComments() {
 	m.comments = comments
 	m.commentsError = err
 	m.commentsLoaded = true
+}
+
+// formatDuration returns a human-readable duration string.
+// Shows the two largest non-zero units (e.g., "3d 4h", "2h 15m", "45m").
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	days := int(d.Hours() / 24)
+	hours := int(d.Hours()) % 24
+	minutes := int(d.Minutes()) % 60
+
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh", days, hours)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
 }

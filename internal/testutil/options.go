@@ -26,6 +26,7 @@ type issueData struct {
 	comments    []CommentData
 	createdAt   time.Time
 	updatedAt   time.Time
+	closedAt    *time.Time
 }
 
 // defaultIssue returns an issueData with sensible defaults.
@@ -55,9 +56,15 @@ func Description(desc string) IssueOption {
 	return func(i *issueData) { i.description = desc }
 }
 
-// Status sets the issue status.
+// Status sets the issue status. If status is "closed", automatically sets closedAt to now.
 func Status(status string) IssueOption {
-	return func(i *issueData) { i.status = status }
+	return func(i *issueData) {
+		i.status = status
+		if status == "closed" && i.closedAt == nil {
+			now := time.Now()
+			i.closedAt = &now
+		}
+	}
 }
 
 // Priority sets the issue priority (0-4).
@@ -93,4 +100,9 @@ func CreatedAt(t time.Time) IssueOption {
 // UpdatedAt sets the updated_at timestamp.
 func UpdatedAt(t time.Time) IssueOption {
 	return func(i *issueData) { i.updatedAt = t }
+}
+
+// ClosedAt sets the closed_at timestamp explicitly.
+func ClosedAt(t time.Time) IssueOption {
+	return func(i *issueData) { i.closedAt = &t }
 }

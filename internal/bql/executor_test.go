@@ -1037,6 +1037,47 @@ func TestExecutor_IDIn_Mixed(t *testing.T) {
 	require.False(t, ids["nonexistent"])
 }
 
+func TestExecutor_ClosedAtPopulated(t *testing.T) {
+	// Create a closed issue with closed_at timestamp
+	closedAt := time.Date(2024, 6, 15, 10, 30, 0, 0, time.UTC)
+	createdAt := time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC)
+
+	db := setupDB(t, func(b *testutil.Builder) *testutil.Builder {
+		return b.WithIssue("closed-1",
+			testutil.Title("Closed Issue"),
+			testutil.Status("closed"),
+			testutil.CreatedAt(createdAt),
+			testutil.ClosedAt(closedAt),
+		)
+	})
+	defer func() { _ = db.Close() }()
+
+	executor := NewExecutor(db)
+
+	issues, err := executor.Execute("id = closed-1")
+	require.NoError(t, err)
+
+	require.Len(t, issues, 1)
+	require.Equal(t, beads.StatusClosed, issues[0].Status, "status should be closed")
+	require.False(t, issues[0].ClosedAt.IsZero(), "ClosedAt should not be zero")
+	require.Equal(t, closedAt.UTC(), issues[0].ClosedAt.UTC(), "ClosedAt should match the set timestamp")
+}
+
+func TestExecutor_ClosedAtNullForOpenIssue(t *testing.T) {
+	db := setupDB(t, (*testutil.Builder).WithStandardTestData)
+	defer func() { _ = db.Close() }()
+
+	executor := NewExecutor(db)
+
+	// Get test-1 which is open
+	issues, err := executor.Execute("id = test-1")
+	require.NoError(t, err)
+
+	require.Len(t, issues, 1)
+	require.Equal(t, beads.StatusOpen, issues[0].Status, "status should be open")
+	require.True(t, issues[0].ClosedAt.IsZero(), "ClosedAt should be zero for open issues")
+}
+
 func TestExecutor_ExpandLargeFanout(t *testing.T) {
 	// Create 1 epic with 100 children (large fan-out)
 	db := testutil.NewTestDB(t)

@@ -68,18 +68,19 @@ func (e *Executor) executeBaseQuery(query *Query) ([]beads.Issue, error) {
 	// Construct full query
 	sqlQuery := `
 		SELECT
-			i.id, 
-			i.title, 
-			i.description, 
+			i.id,
+			i.title,
+			i.description,
 			i.design,
 			i.acceptance_criteria,
 			i.notes,
 			i.status,
-			i.priority, 
-			i.issue_type, 
-			i.assignee, 
-			i.created_at, 
+			i.priority,
+			i.issue_type,
+			i.assignee,
+			i.created_at,
 			i.updated_at,
+			i.closed_at,
 			COALESCE((
 				SELECT d.depends_on_id
 				FROM dependencies d
@@ -173,6 +174,7 @@ func (e *Executor) scanIssues(rows *sql.Rows) ([]beads.Issue, error) {
 			acceptanceCriteria sql.NullString
 			notes              sql.NullString
 			assignee           sql.NullString
+			closedAt           sql.NullTime
 			parentId           string
 			childrenIDs        string
 			blockerIDs         string
@@ -195,6 +197,7 @@ func (e *Executor) scanIssues(rows *sql.Rows) ([]beads.Issue, error) {
 			&assignee,
 			&issue.CreatedAt,
 			&issue.UpdatedAt,
+			&closedAt,
 			&parentId,
 			&blockerIDs,
 			&blocksIDs,
@@ -223,6 +226,9 @@ func (e *Executor) scanIssues(rows *sql.Rows) ([]beads.Issue, error) {
 		}
 		if assignee.Valid {
 			issue.Assignee = assignee.String
+		}
+		if closedAt.Valid {
+			issue.ClosedAt = closedAt.Time
 		}
 
 		if parentId != "" {
@@ -473,18 +479,19 @@ func (e *Executor) fetchIssuesByIDs(ids []string) ([]beads.Issue, error) {
 	//nolint:gosec // G201 - inClause contains only safe ? placeholders, not user input
 	sqlQuery := fmt.Sprintf(`
 		SELECT
-			i.id, 
-			i.title, 
-			i.description, 
+			i.id,
+			i.title,
+			i.description,
 			i.design,
 			i.acceptance_criteria,
 			i.notes,
 			i.status,
-			i.priority, 
-			i.issue_type, 
-			i.assignee, 
-			i.created_at, 
+			i.priority,
+			i.issue_type,
+			i.assignee,
+			i.created_at,
 			i.updated_at,
+			i.closed_at,
 			COALESCE((
 				SELECT d.depends_on_id
 				FROM dependencies d

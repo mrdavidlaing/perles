@@ -1065,3 +1065,81 @@ func TestDetails_View_Golden_NoExtraFields(t *testing.T) {
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
 }
+
+// TestDetails_View_Golden_WithClosedAt tests rendering with Closed timestamp and Duration.
+// Run with -update flag to update golden files: go test -update ./internal/ui/details/...
+func TestDetails_View_Golden_WithClosedAt(t *testing.T) {
+	issue := beads.Issue{
+		ID:              "closed-task",
+		TitleText:       "Completed Task with Duration",
+		DescriptionText: "This closed task shows the Closed timestamp and Duration fields.",
+		Type:            beads.TypeTask,
+		Priority:        beads.PriorityHigh,
+		Status:          beads.StatusClosed,
+		Labels:          []string{"done"},
+		CreatedAt:       time.Date(2024, 6, 1, 9, 0, 0, 0, time.UTC),
+		UpdatedAt:       time.Date(2024, 6, 3, 14, 30, 0, 0, time.UTC),
+		ClosedAt:        time.Date(2024, 6, 3, 14, 30, 0, 0, time.UTC),
+	}
+	m := New(issue, nil, nil).SetSize(120, 30)
+
+	view := m.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
+// TestFormatDuration tests the formatDuration helper function.
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		duration time.Duration
+		want     string
+	}{
+		{
+			name:     "zero duration",
+			duration: 0,
+			want:     "0m",
+		},
+		{
+			name:     "minutes only",
+			duration: 15 * time.Minute,
+			want:     "15m",
+		},
+		{
+			name:     "one hour exactly",
+			duration: time.Hour,
+			want:     "1h 0m",
+		},
+		{
+			name:     "hours and minutes",
+			duration: 2*time.Hour + 30*time.Minute,
+			want:     "2h 30m",
+		},
+		{
+			name:     "one day exactly",
+			duration: 24 * time.Hour,
+			want:     "1d 0h",
+		},
+		{
+			name:     "days and hours",
+			duration: 3*24*time.Hour + 4*time.Hour,
+			want:     "3d 4h",
+		},
+		{
+			name:     "complex duration",
+			duration: 5*24*time.Hour + 12*time.Hour + 30*time.Minute,
+			want:     "5d 12h",
+		},
+		{
+			name:     "less than a minute rounds to 0m",
+			duration: 30 * time.Second,
+			want:     "0m",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatDuration(tt.duration)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

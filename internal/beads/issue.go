@@ -57,6 +57,7 @@ type Issue struct {
 	Labels             []string  `json:"labels"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
+	ClosedAt           time.Time `json:"closed_at"`
 
 	// Dependency tracking
 	BlockedBy      []string `json:"blocked_by"`
