@@ -1,12 +1,16 @@
 # AGENTS.md - Perles Development Guide
 
-This document provides essential information for AI agents and developers working on the Perles codebase. It documents the actual patterns, conventions, and commands observed in this repository.
+This document provides essential information for AI agents and developers working
+on the Perles codebase. It documents the actual patterns, conventions, and
+commands observed in this repository.
 
 ## Project Overview
 
-Perles is a terminal-based search and kanban board for [beads](https://github.com/steveyegge/beads) issue tracking, built in Go using the Bubble Tea TUI framework.
+Perles is a terminal-based search and kanban board for [beads](https://github.com/steveyegge/beads)
+issue tracking, built in Go using the Bubble Tea TUI framework.
 
 **Requirements:**
+
 - Go 1.24+
 - A beads-enabled project (`.beads/` directory with `beads.db`)
 - golangci-lint (for linting)
@@ -14,6 +18,7 @@ Perles is a terminal-based search and kanban board for [beads](https://github.co
 ## Essential Commands
 
 ### Build & Run
+
 ```bash
 make build          # Build the binary with version info
 make run            # Build and run
@@ -28,6 +33,7 @@ make clean          # Clean build artifacts
 ```
 
 ### Testing
+
 ```bash
 make test           # Run all tests
 make test-v         # Run tests with verbose output
@@ -43,12 +49,14 @@ go test -v ./cmd/...
 ```
 
 ### Code Quality
+
 ```bash
 make lint           # Run golangci-lint (configured in .golangci.yml)
 go fmt ./...        # Format code (Go standard)
 ```
 
 ### Version Control
+
 ```bash
 # The project uses standard Git workflow
 # Version is automatically extracted from git tags
@@ -58,6 +66,7 @@ git describe --tags --always --dirty  # Version format used
 ## Code Organization
 
 ### Directory Structure
+
 ```
 perles/
 ├── cmd/                    # CLI commands (cobra)
@@ -100,16 +109,19 @@ perles/
 ## Code Conventions
 
 ### Package Naming
+
 - Short, lowercase, descriptive names (`app`, `mode`, `beads`, `bql`, `ui`)
 - Internal packages under `internal/` directory
 - Package comment at top of main file: `// Package x provides...`
 
 ### File Naming
+
 - Snake_case for file names: `search.go`, `search_test.go`, `golden_test.go`
 - Test files alongside implementation: `foo.go` → `foo_test.go`
 - Golden test files in `testdata/`: `testdata/*.golden`
 
 ### Type & Variable Naming
+
 - **Exported types:** PascalCase (`Model`, `Client`, `Controller`)
 - **Unexported types:** camelCase (`searchModel`, `columnConfig`)
 - **Messages:** Descriptive with `Msg` suffix (`DBChangedMsg`, `SaveSearchAsColumnMsg`)
@@ -117,6 +129,7 @@ perles/
 - **Interfaces:** Small, focused, verb-er naming (`Controller`, `Builder`)
 
 ### Import Organization
+
 ```go
 import (
     // Standard library
@@ -134,6 +147,7 @@ import (
 ```
 
 ### Error Handling
+
 - Explicit error returns: `func Foo() (string, error)`
 - Wrap errors with context: `fmt.Errorf("failed to load: %w", err)`
 - Check errors immediately, don't ignore
@@ -142,11 +156,13 @@ import (
 ## Testing Patterns
 
 ### Test Frameworks
-- **testify:** For assertions (`require`, `assert`)
+
+- **testify:** For assertions (`require`)
 - **teatest:** For golden/snapshot testing of TUI components
 - Standard Go testing package as base
 
 ### Test File Organization
+
 - Unit tests: `*_test.go` alongside implementation
 - Golden files: `testdata/*.golden`
 - Test utilities: `internal/testutil/`
@@ -154,6 +170,7 @@ import (
 ### Common Test Patterns
 
 **Basic Unit Test:**
+
 ```go
 func TestComponent_Method(t *testing.T) {
     m := New()
@@ -163,6 +180,7 @@ func TestComponent_Method(t *testing.T) {
 ```
 
 **Golden/Snapshot Test:**
+
 ```go
 func TestComponent_View_Golden(t *testing.T) {
     m := New().SetSize(100, 30)
@@ -172,6 +190,7 @@ func TestComponent_View_Golden(t *testing.T) {
 ```
 
 **Database Test Setup:**
+
 ```go
 func TestWithDB(t *testing.T) {
     db := testutil.NewTestDB(t)
@@ -183,7 +202,9 @@ func TestWithDB(t *testing.T) {
 ```
 
 ### Test Data Builders
-The `testutil` package provides fluent builders:
+
+The `testutil` package provides fluent builders for creating test issue setup:
+
 ```go
 WithIssue("issue-id",
     Title("Bug in auth"),
@@ -193,6 +214,7 @@ WithIssue("issue-id",
 ```
 
 ### Updating Golden Tests
+
 ```bash
 # Update all golden files
 make test-update
@@ -204,13 +226,16 @@ go test -update ./internal/mode/search/...
 ## Architecture Patterns
 
 ### MVC-like Structure
+
 - **Models:** Hold state and business logic
 - **Update:** Handle events and state mutations (Bubble Tea pattern)
 - **View:** Render UI from model state
 - Components implement `tea.Model` interface
 
 ### Message Passing
+
 Components communicate via Bubble Tea messages:
+
 ```go
 type SearchExecutedMsg struct {
     Query   string
@@ -219,7 +244,9 @@ type SearchExecutedMsg struct {
 ```
 
 ### Service Injection
+
 Shared dependencies passed via `Services` struct:
+
 ```go
 type Services struct {
     Client  *beads.Client
@@ -230,7 +257,9 @@ type Services struct {
 ```
 
 ### Controller Interface
+
 Different modes implement the same interface:
+
 ```go
 type Controller interface {
     Update(tea.Msg) (tea.Model, tea.Cmd)
@@ -243,25 +272,31 @@ type Controller interface {
 ## BQL (Beads Query Language)
 
 ### Fields
-`id`, `type`, `status`, `priority`, `title`, `body`, `created`, `updated`, `parent_id`, `blocked`, `blocks`, `ready`, `label`, `assignee`
+
+`id`, `type`, `status`, `priority`, `title`, `body`, `created`, `updated`,
+`parent_id`, `blocked`, `blocks`, `ready`, `label`, `assignee`
 
 ### Operators
+
 - **Comparison:** `=`, `!=`, `<`, `>`, `<=`, `>=`
 - **String:** `~` (contains), `!~` (not contains)
 - **Logical:** `and`, `or`, `not`, parentheses
 - **Set:** `in (values)`, `not in (values)`
 
 ### Value Types
+
 - **Strings:** `"quoted"` or `unquoted`
 - **Priorities:** `P0`, `P1`, `P2`, `P3`, `P4`
 - **Booleans:** `true`, `false`
 - **Dates:** `today`, `yesterday`, `-7d`, `-30d`
 
 ### Special Clauses
+
 - **EXPAND:** `expand up|down|all [depth N|*]` - traverse relationships
 - **ORDER BY:** `order by field [asc|desc]` - sort results
 
 ### Example Queries
+
 ```sql
 type = bug and priority = P0
 status != closed and ready = true
@@ -273,9 +308,11 @@ type = epic expand down depth 2
 ## Configuration
 
 ### Config File Location
+
 Default: `~/.config/perles/config.yaml`
 
 ### Config Structure
+
 ```yaml
 beads_dir: .beads                    # Database directory
 auto_refresh: true                    # Watch for changes
@@ -305,6 +342,7 @@ views:                               # Board views
 ```
 
 ## Environment Variables
+
 - `PERLES_DEBUG`: Enable debug mode
 - `PERLES_LOG`: Debug log file path (default: `debug.log`)
 - `UPDATE_GOLDEN`: Test variable for updating golden files
@@ -312,6 +350,7 @@ views:                               # Board views
 ## Keyboard Shortcuts
 
 ### Kanban Mode
+
 - **Navigation:** `h/j/k/l` or arrow keys
 - **Column management:** `a` (add), `e` (edit), `Ctrl+h/l` (move)
 - **View management:** `Ctrl+n/p` (switch), `Ctrl+v` (menu)
@@ -319,7 +358,8 @@ views:                               # Board views
 - **Mode switch:** `Ctrl+Space` (search), `/` (search column)
 - **General:** `?` (help), `q` (quit), `r` (refresh)
 
-### Search Mode
+### Search Mode (Supports regular search and tree sub-mode)
+
 - **Navigation:** `j/k` (move), `h/l` (focus panes)
 - **Search:** `/` (focus input), `Enter` (execute)
 - **Actions:** `s` (status), `p` (priority), `y` (copy ID)
@@ -329,26 +369,31 @@ views:                               # Board views
 ## Important Gotchas
 
 ### Database Requirements
+
 - Requires `.beads/beads.db` SQLite database
 - Database must be initialized with beads schema
 - Auto-refresh watches the database file for changes
 
 ### Terminal Compatibility
+
 - Requires terminal with 256 color support
 - Mouse support optional but enhances UX
 - Minimum recommended size: 80x24
 
 ### Golden Test Management
+
 - Golden tests capture exact terminal output
 - Update with `go test -update` when UI changes
 - Review diffs carefully before committing
 
 ### Theme System
+
 - Themes use semantic color tokens
 - Custom themes override specific tokens
 - Presets: default, catppuccin-*, dracula, nord, high-contrast
 
 ### Column Types
+
 - **BQL columns:** Filter issues with queries
 - **Tree columns:** Show dependency trees or child hierarchies
 - Mixed column types supported in same view
@@ -356,6 +401,7 @@ views:                               # Board views
 ## CI/CD
 
 ### GitHub Actions Workflow
+
 - **Triggers:** Push to main, pull requests
 - **Platforms:** Ubuntu, macOS
 - **Steps:** Build → Test → Lint
@@ -363,6 +409,7 @@ views:                               # Board views
 - **Linter:** golangci-lint (latest)
 
 ### Release Process
+
 - Uses goreleaser for releases
 - Binaries built for linux/darwin, amd64/arm64
 - Version extracted from git tags
@@ -371,6 +418,7 @@ views:                               # Board views
 ## Development Tips
 
 ### Debugging
+
 ```bash
 ./perles -d                  # Enable debug mode
 tail -f debug.log           # Watch debug output
@@ -378,12 +426,14 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 ```
 
 ### Working with Bubble Tea
+
 - Components are immutable - always return new instances
 - Use commands for async operations
 - Messages drive all state changes
 - Keep Update methods pure
 
 ### Adding New Features
+
 1. Define messages in appropriate package
 2. Implement handler in Update method
 3. Add keybinding in `internal/keys/`
@@ -392,6 +442,7 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 6. Update this document if needed
 
 ### Performance Considerations
+
 - Database queries are the main bottleneck
 - Use pagination for large result sets
 - Cache frequently accessed data
@@ -400,6 +451,7 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 ## Common Tasks
 
 ### Adding a New Column Type
+
 1. Update `ColumnConfig` in `internal/config/config.go`
 2. Implement renderer in `internal/ui/board/`
 3. Add validation in `ValidateColumns()`
@@ -407,6 +459,7 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 5. Write tests for new functionality
 
 ### Adding a BQL Operator
+
 1. Update lexer in `internal/bql/lexer.go`
 2. Update parser in `internal/bql/parser.go`
 3. Implement in executor `internal/bql/executor.go`
@@ -414,6 +467,7 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 5. Update BQL documentation
 
 ### Creating a New Mode
+
 1. Create package under `internal/mode/`
 2. Implement `Controller` interface
 3. Add to mode switching in `internal/app/`
@@ -427,3 +481,4 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 - [Lipgloss Styling](https://github.com/charmbracelet/lipgloss)
 - [Project README](./README.md)
 - [Contributing Guide](./CONTRIBUTING.md)
+
