@@ -421,24 +421,25 @@ func TestSearch_IssueDelegate_HeightAndSpacing(t *testing.T) {
 	require.Equal(t, 0, d.Spacing(), "delegate spacing should be 0")
 }
 
-func TestSearch_SetQuery(t *testing.T) {
+func TestSearch_EnterMsg_WithQuery(t *testing.T) {
 	m := createTestModel()
 
-	m = m.SetQuery("status:open")
+	m, _ = m.Update(EnterMsg{SubMode: mode.SubModeList, Query: "status:open"})
 
 	// Verify query was set on input
 	require.Equal(t, "status:open", m.input.Value(), "query should be set")
+	require.Equal(t, mode.SubModeList, m.subMode)
 }
 
-func TestSearch_SetQuery_Empty(t *testing.T) {
+func TestSearch_EnterMsg_EmptyQuery(t *testing.T) {
 	m := createTestModel()
 
 	// Set a query first
-	m = m.SetQuery("priority:1")
+	m, _ = m.Update(EnterMsg{SubMode: mode.SubModeList, Query: "priority:1"})
 	require.Equal(t, "priority:1", m.input.Value())
 
-	// Set empty query
-	m = m.SetQuery("")
+	// Enter with empty query
+	m, _ = m.Update(EnterMsg{SubMode: mode.SubModeList, Query: ""})
 
 	// Should clear the query
 	require.Equal(t, "", m.input.Value(), "empty query should clear input")

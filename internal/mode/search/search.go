@@ -474,37 +474,32 @@ func New(services mode.Services) Model {
 }
 
 // Init returns initial commands for the mode.
+// This is called once at app startup when search mode is not active,
+// so it returns nil. Actual initialization happens via EnterMsg.
 func (m Model) Init() tea.Cmd {
-	// If entering tree sub-mode, load the tree instead of executing search
-	if m.subMode == mode.SubModeTree && m.treeRoot != nil {
-		return m.loadTree(m.treeRoot.ID)
-	}
-	// Execute initial search for list sub-mode
-	return m.executeSearch()
+	return nil
 }
 
-// SetQuery sets the initial search query and returns the modified model.
-// This also ensures the model is in list sub-mode.
-func (m Model) SetQuery(query string) Model {
+// handleEnter processes the EnterMsg to configure and activate search mode.
+func (m Model) handleEnter(msg EnterMsg) (Model, tea.Cmd) {
+	if msg.SubMode == mode.SubModeTree {
+		// Tree sub-mode: show dependency/child tree for an issue
+		m.subMode = mode.SubModeTree
+		m.focus = FocusResults // Focus tree panel
+		m.tree = nil           // Clear old tree so handleTreeLoaded doesn't preserve stale selection
+		m.treeRoot = &beads.Issue{ID: msg.IssueID}
+		return m, m.loadTree(msg.IssueID)
+	}
+
+	// List sub-mode: BQL search
 	m.subMode = mode.SubModeList
 	m.focus = FocusSearch // Focus search input
-	m.input.Focus()       // Focus the bqlinput component
-	m.input.SetValue(query)
+	m.input.Focus()
+	m.input.SetValue(msg.Query)
 	// Clear tree state from any previous tree sub-mode usage
 	m.tree = nil
 	m.treeRoot = nil
-	return m
-}
-
-// SetTreeRootIssueId configures the model to enter tree sub-mode for an issue.
-// The tree will be loaded when Init() is called.
-func (m Model) SetTreeRootIssueId(issueID string) Model {
-	m.subMode = mode.SubModeTree
-	m.focus = FocusResults // Focus tree panel
-	m.tree = nil           // Clear old tree so handleTreeLoaded doesn't preserve stale selection
-	// Store issueID in treeRoot temporarily - we'll load full issue in Init
-	m.treeRoot = &beads.Issue{ID: issueID}
-	return m
+	return m, m.executeSearch()
 }
 
 // SetSize handles terminal resize.
@@ -553,6 +548,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case EnterMsg:
+		return m.handleEnter(msg)
 
 	case searchResultsMsg:
 		return m.handleSearchResults(msg)
@@ -2090,6 +2088,14 @@ type SaveTreeAsColumnMsg struct {
 // ExitToKanbanMsg requests switching back to kanban mode.
 // This is sent when the user presses ESC in the main search view (not in an overlay).
 type ExitToKanbanMsg struct{}
+
+// EnterMsg requests entering search mode with the given configuration.
+// This is sent by app.go when switching to search mode.
+type EnterMsg struct {
+	SubMode mode.SubMode
+	Query   string // For list sub-mode
+	IssueID string // For tree sub-mode
+}
 
 // Async commands
 

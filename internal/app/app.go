@@ -54,9 +54,6 @@ type Model struct {
 // configPath is the path to the config file for saving column changes.
 // debugMode enables the log overlay (Ctrl+X toggle).
 func NewWithConfig(client *beads.Client, cfg config.Config, dbPath, configPath string, debugMode bool) Model {
-	// Create BQL executor for column self-loading
-	executor := bql.NewExecutor(client.DB())
-
 	// Initialize file watcher if auto-refresh is enabled
 	var dbWatcher <-chan struct{}
 	var watcherHandle *watcher.Watcher
@@ -78,10 +75,10 @@ func NewWithConfig(client *beads.Client, cfg config.Config, dbPath, configPath s
 	// Create shared services
 	services := mode.Services{
 		Client:     client,
-		Executor:   executor,
 		Config:     &cfg,
 		ConfigPath: configPath,
 		DBPath:     dbPath,
+		Executor:   bql.NewExecutor(client.DB()),
 		Clipboard:  shared.SystemClipboard{},
 		Clock:      shared.RealClock{},
 	}
@@ -98,10 +95,14 @@ func NewWithConfig(client *beads.Client, cfg config.Config, dbPath, configPath s
 	}
 }
 
-// Init implements tea.Model.
+// Init implements tea.Model interface.
+// Defaults the application Kanan mode and creates a subscription
+// to the beads database if we are watching for changes.
 func (m Model) Init() tea.Cmd {
-	// Initialize the default mode (kanban) and start the database watcher
-	return tea.Batch(m.kanban.Init(), m.watchDatabase())
+	return tea.Batch(
+		m.kanban.Init(),
+		m.watchDatabase(),
+	)
 }
 
 // Update implements tea.Model.
@@ -110,53 +111,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Pass size to all modes, toaster, and log overlay
+
 		m.kanban = m.kanban.SetSize(msg.Width, msg.Height)
 		m.search = m.search.SetSize(msg.Width, msg.Height)
 		m.toaster = m.toaster.SetSize(msg.Width, msg.Height)
 		m.logOverlay.SetSize(msg.Width, msg.Height)
+
 		return m, nil
 
 	case tea.KeyMsg:
-		// Log overlay toggle (Ctrl+X) in debug mode
 		if m.debugMode && msg.String() == "ctrl+x" {
 			m.logOverlay.Toggle()
 			log.Debug(log.CatUI, "Log overlay toggled", "visible", m.logOverlay.Visible())
+
 			return m, nil
 		}
 
-		// Route keys to log overlay when visible
+		// If the debug log overlay is visible it takes precedence for updates
 		if m.logOverlay.Visible() {
 			var cmd tea.Cmd
 			m.logOverlay, cmd = m.logOverlay.Update(msg)
+
 			return m, cmd
 		}
 
-		// Global mode switching (Ctrl+Space, which is ctrl+@ in terminals)
+		// Handle global mode switching between Kanban and Search
+		// (Ctrl+Space, which is ctrl+@ in terminals)
 		if msg.String() == "ctrl+@" {
 			return m.switchMode()
 		}
 
-		// Global quit is handled by kanban mode (ctrl+c, q)
-		// Fall through to delegate to active mode
-
 	case kanban.SwitchToSearchMsg:
-		// Switch to search mode
 		m.currentMode = mode.ModeSearch
-		switch msg.SubMode {
-		case mode.SubModeTree:
-			log.Info(log.CatMode, "Switching mode", "from", "kanban", "to", "search", "subMode", "tree", "issue", msg.IssueID)
-			m.search = m.search.SetTreeRootIssueId(msg.IssueID)
-		default:
-			log.Info(log.CatMode, "Switching mode", "from", "kanban", "to", "search", "subMode", "list", "query", msg.Query)
-			m.search = m.search.SetQuery(msg.Query)
+		log.Info(log.CatMode, "Switching mode", "from", "kanban", "to", "search", "subMode", msg.SubMode, "query", msg.Query, "issue", msg.IssueID)
+		return m, func() tea.Msg {
+			return search.EnterMsg{SubMode: msg.SubMode, Query: msg.Query, IssueID: msg.IssueID}
 		}
-		return m, m.search.Init()
 
 	case search.ExitToKanbanMsg:
 		// Switch back to kanban mode from search
 		log.Info(log.CatMode, "Switching mode", "from", "search", "to", "kanban")
 		m.currentMode = mode.ModeKanban
+
 		// Rebuild kanban from config to reflect any column changes made in search mode
 		var cmd tea.Cmd
 		m.kanban, cmd = m.kanban.RefreshFromConfig()
@@ -184,18 +180,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case mode.ModeSearch:
 			m.search, modeCmd = m.search.HandleDBChanged()
 		}
+
 		return m, tea.Batch(modeCmd, m.watchDatabase())
 
 	case mode.ShowToastMsg:
 		m.toaster = m.toaster.Show(msg.Message, msg.Style)
+
 		return m, toaster.ScheduleDismiss(3 * time.Second)
 
 	case toaster.DismissMsg:
 		m.toaster = m.toaster.Hide()
+
 		return m, nil
 
 	case logoverlay.CloseMsg:
 		m.logOverlay.Hide()
+
 		return m, nil
 	}
 
@@ -204,10 +204,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mode.ModeKanban:
 		var cmd tea.Cmd
 		m.kanban, cmd = m.kanban.Update(msg)
+
 		return m, cmd
+
 	case mode.ModeSearch:
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Update(msg)
+
 		return m, cmd
 	}
 
@@ -220,9 +223,10 @@ func (m Model) switchMode() (tea.Model, tea.Cmd) {
 	case mode.ModeKanban:
 		log.Info(log.CatMode, "Switching mode", "from", "kanban", "to", "search", "subMode", "list")
 		m.currentMode = mode.ModeSearch
-		// Use SetQuery to ensure list sub-mode and clear any tree state
-		m.search = m.search.SetQuery("")
-		return m, m.search.Init()
+
+		return m, func() tea.Msg {
+			return search.EnterMsg{SubMode: mode.SubModeList, Query: ""}
+		}
 	case mode.ModeSearch:
 		log.Info(log.CatMode, "Switching mode", "from", "search", "to", "kanban")
 		m.currentMode = mode.ModeKanban

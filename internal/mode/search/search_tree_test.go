@@ -200,8 +200,8 @@ func TestRenderCompactProgress(t *testing.T) {
 func TestSearch_TreeSubMode_Initialization(t *testing.T) {
 	m := createTestModel()
 
-	// Enter tree sub-mode
-	m = m.SetTreeRootIssueId("test-123")
+	// Enter tree sub-mode via EnterMsg
+	m, _ = m.Update(EnterMsg{SubMode: mode.SubModeTree, IssueID: "test-123"})
 
 	assert.Equal(t, mode.SubModeTree, m.subMode)
 	assert.Equal(t, FocusResults, m.focus, "should focus tree panel when entering tree mode from kanban")
@@ -209,7 +209,7 @@ func TestSearch_TreeSubMode_Initialization(t *testing.T) {
 	assert.Equal(t, "test-123", m.treeRoot.ID)
 }
 
-func TestSearch_TreeSubMode_SetQueryClearsTreeState(t *testing.T) {
+func TestSearch_TreeSubMode_EnterListClearsTreeState(t *testing.T) {
 	rootIssue := beads.Issue{ID: "root", TitleText: "Root"}
 	m := createTestModelWithTree(rootIssue, []beads.Issue{rootIssue})
 
@@ -218,8 +218,8 @@ func TestSearch_TreeSubMode_SetQueryClearsTreeState(t *testing.T) {
 	assert.NotNil(t, m.tree)
 	assert.NotNil(t, m.treeRoot)
 
-	// SetQuery should clear tree state and switch to list mode
-	m = m.SetQuery("status = open")
+	// EnterMsg with list mode should clear tree state
+	m, _ = m.Update(EnterMsg{SubMode: mode.SubModeList, Query: "status = open"})
 
 	assert.Equal(t, mode.SubModeList, m.subMode)
 	assert.Equal(t, FocusSearch, m.focus)
@@ -227,7 +227,7 @@ func TestSearch_TreeSubMode_SetQueryClearsTreeState(t *testing.T) {
 	assert.Nil(t, m.treeRoot)
 }
 
-func TestSearch_SetTreeRootIssueId_ClearsTreeState(t *testing.T) {
+func TestSearch_EnterTreeMode_ClearsOldTreeState(t *testing.T) {
 	// Bug scenario: User views Task A in tree mode, returns to kanban,
 	// then opens Epic B. Without clearing m.tree, handleTreeLoaded()
 	// would restore selection to Task A (if it's a child of Epic B).
@@ -240,10 +240,10 @@ func TestSearch_SetTreeRootIssueId_ClearsTreeState(t *testing.T) {
 	assert.Equal(t, "task-1", m.treeRoot.ID)
 
 	// User enters tree mode for a DIFFERENT issue (Epic B)
-	m = m.SetTreeRootIssueId("epic-1")
+	m, _ = m.Update(EnterMsg{SubMode: mode.SubModeTree, IssueID: "epic-1"})
 
 	// m.tree should be nil to prevent handleTreeLoaded from restoring stale selection
-	assert.Nil(t, m.tree, "SetTreeRootIssueId should clear tree state")
+	assert.Nil(t, m.tree, "EnterMsg should clear tree state")
 	assert.Equal(t, "epic-1", m.treeRoot.ID, "treeRoot should be set to new issue")
 	assert.Equal(t, mode.SubModeTree, m.subMode, "should remain in tree mode")
 	assert.Equal(t, FocusResults, m.focus, "focus should be on results")
