@@ -11,6 +11,7 @@ import (
 	"perles/internal/config"
 	"perles/internal/log"
 	"perles/internal/ui/nobeads"
+	"perles/internal/ui/outdated"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -134,6 +135,19 @@ func runApp(cmd *cobra.Command, args []string) error {
 		return runNoBeadsMode()
 	}
 
+	// Version check - query bd_version from database metadata table
+	currentVersion, err := client.Version()
+	if err != nil {
+		// Very old database without bd_version metadata - show outdated view
+		log.Debug(log.CatBeads, "Version check failed", "error", err)
+		return runOutdatedMode("unknown", beads.MinBeadsVersion)
+	}
+
+	log.Debug(log.CatBeads, "Beads Database Version", "version", currentVersion, "minRequiredVersion", beads.MinBeadsVersion)
+	if err := beads.CheckVersion(currentVersion); err != nil {
+		return runOutdatedMode(currentVersion, beads.MinBeadsVersion)
+	}
+
 	// Handle --no-auto-refresh flag (negated logic)
 	if noAutoRefresh, _ := cmd.Flags().GetBool("no-auto-refresh"); noAutoRefresh {
 		cfg.AutoRefresh = false
@@ -194,6 +208,21 @@ func SetVersion(v string) {
 // empty state view when no .beads directory is found.
 func runNoBeadsMode() error {
 	model := nobeads.New()
+	p := tea.NewProgram(
+		&model,
+		tea.WithAltScreen(),
+	)
+
+	_, err := p.Run()
+	if err != nil {
+		return fmt.Errorf("running program: %w", err)
+	}
+	return nil
+}
+
+// runOutdatedMode launches the TUI showing the version upgrade screen.
+func runOutdatedMode(currentVersion, requiredVersion string) error {
+	model := outdated.New(currentVersion, requiredVersion)
 	p := tea.NewProgram(
 		&model,
 		tea.WithAltScreen(),

@@ -41,6 +41,7 @@ test-update:
 		./internal/ui/modals/help/... \
 		./internal/ui/modals/labeleditor/... \
 		./internal/ui/nobeads/... \
+		./internal/ui/outdated/... \
 		./internal/ui/shared/colorpicker/... \
 		./internal/ui/shared/logoverlay/... \
 		./internal/ui/shared/modal/... \

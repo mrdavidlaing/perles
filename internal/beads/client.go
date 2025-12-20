@@ -2,6 +2,7 @@ package beads
 
 import (
 	"database/sql"
+	"fmt"
 
 	"perles/internal/log"
 
@@ -42,6 +43,16 @@ func (c *Client) Close() error {
 // Used by BQL executor to run queries directly.
 func (c *Client) DB() *sql.DB {
 	return c.db
+}
+
+// Version returns the beads version from the database metadata table.
+func (c *Client) Version() (string, error) {
+	var version string
+	err := c.db.QueryRow("SELECT value FROM metadata WHERE key = 'bd_version'").Scan(&version)
+	if err != nil {
+		return "", fmt.Errorf("reading bd_version from metadata: %w", err)
+	}
+	return version, nil
 }
 
 // GetComments fetches comments for an issue.
