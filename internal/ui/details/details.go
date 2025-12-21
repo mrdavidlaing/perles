@@ -8,9 +8,11 @@ import (
 
 	"perles/internal/beads"
 	"perles/internal/bql"
+	"perles/internal/keys"
 	"perles/internal/ui/shared/markdown"
 	"perles/internal/ui/styles"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -208,14 +210,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "h":
+		switch {
+		case key.Matches(msg, keys.Common.Left):
 			// Move focus left (to content pane)
 			if m.focusPane == FocusMetadata {
 				m.focusPane = FocusContent
 			}
 			return m, nil
-		case "l":
+		case key.Matches(msg, keys.Common.Right):
 			// Move focus right (to metadata/dependencies pane) - only if there are dependencies
 			if m.focusPane == FocusContent && len(m.dependencies) > 0 {
 				m.focusPane = FocusMetadata
@@ -224,7 +226,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case "j", "down", "ctrl+n":
+		case key.Matches(msg, keys.Common.Down), key.Matches(msg, keys.Component.Next):
 			if m.focusPane == FocusMetadata && len(m.dependencies) > 0 {
 				// Navigate dependencies
 				m.selectedDependency++
@@ -234,7 +236,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			}
 			m.viewport.ScrollDown(1)
-		case "k", "up", "ctrl+p":
+		case key.Matches(msg, keys.Common.Up), key.Matches(msg, keys.Component.Prev):
 			if m.focusPane == FocusMetadata && len(m.dependencies) > 0 {
 				// Navigate dependencies
 				m.selectedDependency--
@@ -244,11 +246,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			}
 			m.viewport.ScrollUp(1)
-		case "g":
+		case key.Matches(msg, keys.Component.GotoTop):
 			m.viewport.GotoTop()
-		case "G":
+		case key.Matches(msg, keys.Component.GotoBottom):
 			m.viewport.GotoBottom()
-		case "enter":
+		case key.Matches(msg, keys.Common.Enter):
 			// Navigate to selected dependency (only when metadata focused)
 			if m.focusPane == FocusMetadata && m.selectedDependency >= 0 && m.selectedDependency < len(m.dependencies) {
 				dep := m.dependencies[m.selectedDependency]
@@ -257,14 +259,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case "d":
+		case key.Matches(msg, keys.Component.DelAction):
 			return m, func() tea.Msg {
 				return DeleteIssueMsg{
 					IssueID:   m.issue.ID,
 					IssueType: m.issue.Type,
 				}
 			}
-		case "e":
+		case key.Matches(msg, keys.Component.EditAction):
 			// Open edit menu
 			return m, func() tea.Msg {
 				return OpenEditMenuMsg{

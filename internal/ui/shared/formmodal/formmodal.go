@@ -3,8 +3,10 @@ package formmodal
 import (
 	"strings"
 
+	"perles/internal/keys"
 	"perles/internal/ui/shared/colorpicker"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -160,7 +162,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 // handleKeyMsg processes keyboard input.
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Handle Esc globally
-	if msg.String() == "esc" {
+	if key.Matches(msg, keys.Common.Escape) {
 		if m.config.OnCancel != nil {
 			return m, func() tea.Msg { return m.config.OnCancel() }
 		}
@@ -175,19 +177,19 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	switch msg.String() {
-	case "tab", "ctrl+n":
+	switch {
+	case key.Matches(msg, keys.Component.Tab), key.Matches(msg, keys.Component.Next):
 		m = m.nextField()
 		return m, m.blinkCmd()
 
-	case "shift+tab", "ctrl+p":
+	case key.Matches(msg, keys.Component.ShiftTab), key.Matches(msg, keys.Component.Prev):
 		m = m.prevField()
 		return m, m.blinkCmd()
 
-	case "enter":
+	case key.Matches(msg, keys.Common.Enter):
 		return m.handleEnter()
 
-	case "h", "left":
+	case key.Matches(msg, keys.Common.Left):
 		// For toggle fields, switch to first option
 		if m.focusedIndex >= 0 && m.focusedIndex < len(m.fields) {
 			fs := &m.fields[m.focusedIndex]
@@ -202,7 +204,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case "l", "right":
+	case key.Matches(msg, keys.Common.Right):
 		// For toggle fields, switch to second option
 		if m.focusedIndex >= 0 && m.focusedIndex < len(m.fields) {
 			fs := &m.fields[m.focusedIndex]
@@ -217,7 +219,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case "j", "down":
+	case key.Matches(msg, keys.Common.Down):
 		// For list fields, navigate within the list
 		if m.focusedIndex >= 0 && m.focusedIndex < len(m.fields) {
 			fs := &m.fields[m.focusedIndex]
@@ -244,7 +246,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 
-	case "k", "up":
+	case key.Matches(msg, keys.Common.Up):
 		// For list fields, navigate within the list
 		if m.focusedIndex >= 0 && m.focusedIndex < len(m.fields) {
 			fs := &m.fields[m.focusedIndex]
@@ -271,7 +273,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 
-	case " ":
+	case key.Matches(msg, keys.Component.Toggle):
 		// For list fields, toggle selection
 		if m.focusedIndex >= 0 && m.focusedIndex < len(m.fields) {
 			fs := &m.fields[m.focusedIndex]
@@ -511,8 +513,8 @@ func (m Model) listContains(fs *fieldState, value string) bool {
 //   - Space: toggle in list, insert in input
 //   - Enter: toggle in list, add item from input
 func (m Model) handleKeyForEditableList(msg tea.KeyMsg, fs *fieldState) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "tab":
+	switch {
+	case key.Matches(msg, keys.Component.Tab):
 		if fs.subFocus == SubFocusList {
 			// Move to input within same field
 			fs.subFocus = SubFocusInput
@@ -522,7 +524,7 @@ func (m Model) handleKeyForEditableList(msg tea.KeyMsg, fs *fieldState) (Model, 
 		// Move to next field
 		return m.nextField(), m.blinkCmd()
 
-	case "shift+tab":
+	case key.Matches(msg, keys.Component.ShiftTab):
 		if fs.subFocus == SubFocusInput {
 			// Move back to list within same field
 			fs.subFocus = SubFocusList
@@ -536,8 +538,9 @@ func (m Model) handleKeyForEditableList(msg tea.KeyMsg, fs *fieldState) (Model, 
 		// Move to previous field
 		return m.prevField(), m.blinkCmd()
 
-	case "j", "k":
+	case msg.String() == "j" || msg.String() == "k":
 		// j/k only navigate in list mode; in input they type characters
+		// Keep as msg.String() to allow typing in text inputs
 		if fs.subFocus == SubFocusList {
 			if msg.String() == "j" {
 				if len(fs.listItems) > 0 && fs.listCursor < len(fs.listItems)-1 {
@@ -559,7 +562,7 @@ func (m Model) handleKeyForEditableList(msg tea.KeyMsg, fs *fieldState) (Model, 
 		}
 		// In input, let j/k type characters - fall through to input handler
 
-	case "down", "ctrl+n":
+	case key.Matches(msg, keys.Common.Down), key.Matches(msg, keys.Component.Next):
 		if fs.subFocus == SubFocusList {
 			if len(fs.listItems) > 0 && fs.listCursor < len(fs.listItems)-1 {
 				fs.listCursor++
@@ -574,7 +577,7 @@ func (m Model) handleKeyForEditableList(msg tea.KeyMsg, fs *fieldState) (Model, 
 		fs.addInput.Blur()
 		return m.nextField(), m.blinkCmd()
 
-	case "up", "ctrl+p":
+	case key.Matches(msg, keys.Common.Up), key.Matches(msg, keys.Component.Prev):
 		if fs.subFocus == SubFocusList {
 			if fs.listCursor > 0 {
 				fs.listCursor--
@@ -591,14 +594,14 @@ func (m Model) handleKeyForEditableList(msg tea.KeyMsg, fs *fieldState) (Model, 
 		}
 		return m, nil
 
-	case " ":
+	case key.Matches(msg, keys.Component.Toggle):
 		if fs.subFocus == SubFocusList && len(fs.listItems) > 0 {
 			fs.listItems[fs.listCursor].selected = !fs.listItems[fs.listCursor].selected
 			return m, nil
 		}
 		// Fall through to let input handle space
 
-	case "enter":
+	case key.Matches(msg, keys.Common.Enter):
 		if fs.subFocus == SubFocusList && len(fs.listItems) > 0 {
 			// Toggle in list
 			fs.listItems[fs.listCursor].selected = !fs.listItems[fs.listCursor].selected

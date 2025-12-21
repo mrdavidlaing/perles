@@ -2,9 +2,11 @@
 package outdated
 
 import (
+	"perles/internal/keys"
 	"perles/internal/ui/shared/chainart"
 	"perles/internal/ui/styles"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -38,8 +40,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c", "esc":
+		switch {
+		case key.Matches(msg, keys.Common.Quit), key.Matches(msg, keys.Common.Escape):
 			return m, tea.Quit
 		}
 	}

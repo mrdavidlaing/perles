@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"perles/internal/keys"
+
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/stretchr/testify/require"
 )
@@ -11,13 +13,16 @@ import (
 func TestHelp_New(t *testing.T) {
 	m := New()
 
-	// Verify model is created with keys populated
-	require.NotEmpty(t, m.keys.Up.Keys(), "expected Up keys to be set")
-	require.NotEmpty(t, m.keys.Down.Keys(), "expected Down keys to be set")
-	require.NotEmpty(t, m.keys.Left.Keys(), "expected Left keys to be set")
-	require.NotEmpty(t, m.keys.Right.Keys(), "expected Right keys to be set")
-	require.NotEmpty(t, m.keys.Help.Keys(), "expected Help keys to be set")
-	require.NotEmpty(t, m.keys.Quit.Keys(), "expected Quit keys to be set")
+	// Verify model is created with correct mode
+	require.Equal(t, ModeKanban, m.mode, "expected mode to be ModeKanban")
+
+	// Verify global keys are populated
+	require.NotEmpty(t, keys.Common.Up.Keys(), "expected Up keys to be set")
+	require.NotEmpty(t, keys.Common.Down.Keys(), "expected Down keys to be set")
+	require.NotEmpty(t, keys.Common.Left.Keys(), "expected Left keys to be set")
+	require.NotEmpty(t, keys.Common.Right.Keys(), "expected Right keys to be set")
+	require.NotEmpty(t, keys.Common.Help.Keys(), "expected Help keys to be set")
+	require.NotEmpty(t, keys.Common.Quit.Keys(), "expected Quit keys to be set")
 }
 
 func TestHelp_SetSize(t *testing.T) {
@@ -181,10 +186,8 @@ func TestHelp_Overlay_BackgroundPreservation(t *testing.T) {
 }
 
 func TestHelp_renderBinding(t *testing.T) {
-	m := New()
-
-	// Test rendering a binding
-	output := m.renderBinding(m.keys.Quit)
+	// Test rendering a binding using the package-level function
+	output := renderBinding(keys.Common.Quit)
 
 	require.Contains(t, output, "q", "expected binding to contain key")
 	require.Contains(t, output, "quit", "expected binding to contain description")
@@ -208,14 +211,16 @@ func TestHelp_View_Stability(t *testing.T) {
 func TestHelp_NewSearch(t *testing.T) {
 	m := NewSearch()
 
-	// Verify model is created with search keys populated
-	require.NotEmpty(t, m.searchKeys.Up.Keys(), "expected Up keys to be set")
-	require.NotEmpty(t, m.searchKeys.Down.Keys(), "expected Down keys to be set")
-	require.NotEmpty(t, m.searchKeys.Left.Keys(), "expected Left keys to be set")
-	require.NotEmpty(t, m.searchKeys.Right.Keys(), "expected Right keys to be set")
-	require.NotEmpty(t, m.searchKeys.Help.Keys(), "expected Help keys to be set")
-	require.NotEmpty(t, m.searchKeys.Quit.Keys(), "expected Quit keys to be set")
+	// Verify model is created with search mode
 	require.Equal(t, ModeSearch, m.mode, "expected mode to be ModeSearch")
+
+	// Verify global search keys are populated
+	require.NotEmpty(t, keys.Search.Up.Keys(), "expected Up keys to be set")
+	require.NotEmpty(t, keys.Search.Down.Keys(), "expected Down keys to be set")
+	require.NotEmpty(t, keys.Search.Left.Keys(), "expected Left keys to be set")
+	require.NotEmpty(t, keys.Search.Right.Keys(), "expected Right keys to be set")
+	require.NotEmpty(t, keys.Search.Help.Keys(), "expected Help keys to be set")
+	require.NotEmpty(t, keys.Search.Quit.Keys(), "expected Quit keys to be set")
 }
 
 func TestHelp_SearchView_ContainsSections(t *testing.T) {

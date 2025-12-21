@@ -6,6 +6,7 @@ import (
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
+	"perles/internal/keys"
 	"perles/internal/mode/shared"
 	"perles/internal/ui/board"
 	"perles/internal/ui/forms/bqlinput"
@@ -17,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -359,44 +361,46 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "tab", "down":
+		switch {
+		case key.Matches(msg, keys.Component.Tab), key.Matches(msg, keys.Common.Down):
 			m.focused = m.nextField()
 			m = m.updateFocus()
 			return m, nil
 
-		case "shift+tab", "up":
+		case key.Matches(msg, keys.Component.ShiftTab), key.Matches(msg, keys.Common.Up):
 			m.focused = m.prevField()
 			m = m.updateFocus()
 			return m, nil
 
-		case "ctrl+n":
+		case key.Matches(msg, keys.Component.Next):
 			m.focused = m.nextField()
 			m = m.updateFocus()
 			return m, nil
 
-		case "ctrl+p":
+		case key.Matches(msg, keys.Component.Prev):
 			m.focused = m.prevField()
 			m = m.updateFocus()
 			return m, nil
 
-		case "j":
+		case msg.String() == "j":
 			// j only navigates when not in a text input field
+			// Keep as msg.String() to allow typing 'j' in text inputs
 			if !m.isTextInputField() {
 				m.focused = m.nextField()
 				m = m.updateFocus()
 				return m, nil
 			}
 
-		case "k":
+		case msg.String() == "k":
 			// k only navigates when not in a text input field
+			// Keep as msg.String() to allow typing 'k' in text inputs
 			if !m.isTextInputField() {
 				m.focused = m.prevField()
 				m = m.updateFocus()
 				return m, nil
 			}
 
-		case "left", "h":
+		case key.Matches(msg, keys.Common.Left):
 			// Type selector toggle
 			if m.focused == FieldType {
 				if m.columnType == "tree" {
@@ -419,7 +423,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			}
 
-		case "right", "l":
+		case key.Matches(msg, keys.Common.Right):
 			// Type selector toggle
 			if m.focused == FieldType {
 				if m.columnType == "bql" {
@@ -442,7 +446,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			}
 
-		case "enter":
+		case key.Matches(msg, keys.Common.Enter):
 			// Handle enter based on focused field
 			switch m.focused {
 			case FieldColor:
@@ -482,7 +486,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case "esc":
+		case key.Matches(msg, keys.Common.Escape):
 			return m, cancelCmd()
 		}
 

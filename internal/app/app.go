@@ -4,11 +4,13 @@ package app
 import (
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
+	"perles/internal/keys"
 	"perles/internal/log"
 	"perles/internal/mode"
 	"perles/internal/mode/kanban"
@@ -120,7 +122,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.debugMode && msg.String() == "ctrl+x" {
+		if m.debugMode && key.Matches(msg, keys.Component.Close) {
 			m.logOverlay.Toggle()
 			log.Debug(log.CatUI, "Log overlay toggled", "visible", m.logOverlay.Visible())
 
@@ -137,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle global mode switching between Kanban and Search
 		// (Ctrl+Space, which is ctrl+@ in terminals)
-		if msg.String() == "ctrl+@" {
+		if key.Matches(msg, keys.Kanban.SwitchMode) {
 			return m.switchMode()
 		}
 

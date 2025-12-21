@@ -2,10 +2,12 @@
 package picker
 
 import (
+	"perles/internal/keys"
 	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -101,18 +103,18 @@ func (m Model) Selected() Option {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "j", "down", "ctrl+n":
+		switch {
+		case key.Matches(msg, keys.Common.Down), key.Matches(msg, keys.Component.Next):
 			if m.selected < len(m.config.Options)-1 {
 				m.selected++
 			}
-		case "k", "up", "ctrl+p":
+		case key.Matches(msg, keys.Common.Up), key.Matches(msg, keys.Component.Prev):
 			if m.selected > 0 {
 				m.selected--
 			}
-		case "enter":
+		case key.Matches(msg, keys.Common.Enter):
 			return m, m.selectCmd()
-		case "esc", "q":
+		case key.Matches(msg, keys.Common.Escape), key.Matches(msg, keys.Common.Quit):
 			return m, m.cancelCmd()
 		}
 	}

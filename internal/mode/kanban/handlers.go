@@ -3,9 +3,11 @@ package kanban
 import (
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"perles/internal/config"
+	"perles/internal/keys"
 	"perles/internal/mode"
 	"perles/internal/ui/coleditor"
 	"perles/internal/ui/shared/modal"
@@ -21,10 +23,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case ViewDetails:
 		return m.handleDetailsKey(msg)
 	case ViewHelp:
-		switch msg.String() {
-		case "ctrl+c":
+		switch {
+		case key.Matches(msg, keys.Common.Quit):
 			return m, tea.Quit
-		case "esc", "?":
+		case key.Matches(msg, keys.Common.Escape), key.Matches(msg, keys.Common.Help):
 			m.view = ViewBoard
 			return m, nil
 		}
@@ -56,20 +58,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Dismiss error on any key press (except quit)
 	// Don't return early - let the key continue to be processed
-	if m.err != nil && msg.String() != "q" && msg.String() != "ctrl+c" {
+	if m.err != nil && !key.Matches(msg, keys.Common.Quit) {
 		m.err = nil
 		m.errContext = ""
 	}
 
-	switch msg.String() {
-	case "q", "ctrl+c":
+	switch {
+	case key.Matches(msg, keys.Common.Quit):
 		return m, tea.Quit
 
-	case "?":
+	case key.Matches(msg, keys.Common.Help):
 		m.view = ViewHelp
 		return m, nil
 
-	case "r":
+	case key.Matches(msg, keys.Kanban.Refresh):
 		// Save cursor before refresh to restore position after
 		m.pendingCursor = m.saveCursor()
 		m.loading = true
@@ -83,7 +85,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
-	case "y":
+	case key.Matches(msg, keys.Kanban.Yank):
 		// Yank (copy) selected issue ID to clipboard
 		if issue := m.board.SelectedIssue(); issue != nil {
 			if err := m.services.Clipboard.Copy(issue.ID); err != nil {
@@ -95,14 +97,14 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "w":
+	case key.Matches(msg, keys.Kanban.ToggleStatus):
 		// Toggle status bar visibility
 		m.showStatusBar = !m.showStatusBar
 		// Recalculate board height since available space changed
 		m.board = m.board.SetSize(m.width, m.boardHeight())
 		return m, nil
 
-	case "e":
+	case key.Matches(msg, keys.Kanban.EditColumn):
 		// Open column editor for focused column
 		focusedCol := m.board.FocusedColumn()
 		columns := m.currentViewColumns()
@@ -114,7 +116,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "a":
+	case key.Matches(msg, keys.Kanban.AddColumn):
 		// Open column editor in New mode (insert after focused column)
 		focusedCol := m.board.FocusedColumn()
 		columns := m.currentViewColumns()
@@ -131,7 +133,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.view = ViewColumnEditor
 		return m, nil
 
-	case "ctrl+h": // Move column left
+	case key.Matches(msg, keys.Kanban.MoveColumnLeft):
 		focusedCol := m.board.FocusedColumn()
 		if focusedCol <= 0 {
 			return m, nil // Already leftmost
@@ -149,7 +151,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.board = m.board.SwapColumns(focusedCol, focusedCol-1).SetFocus(focusedCol - 1)
 		return m, nil
 
-	case "ctrl+l": // Move column right
+	case key.Matches(msg, keys.Kanban.MoveColumnRight):
 		focusedCol := m.board.FocusedColumn()
 		viewIndex := m.currentViewIndex()
 		columns := m.currentViewColumns()
@@ -167,7 +169,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.board = m.board.SwapColumns(focusedCol, focusedCol+1).SetFocus(focusedCol + 1)
 		return m, nil
 
-	case "ctrl+j", "ctrl+n": // Next view
+	case key.Matches(msg, keys.Kanban.NextView):
 		if m.board.ViewCount() > 1 {
 			var cmd tea.Cmd
 			m.board, cmd = m.board.CycleViewNext()
@@ -198,7 +200,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "ctrl+k", "ctrl+p": // Previous view
+	case key.Matches(msg, keys.Kanban.PrevView):
 		if m.board.ViewCount() > 1 {
 			var cmd tea.Cmd
 			m.board, cmd = m.board.CycleViewPrev()
@@ -229,7 +231,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "ctrl+v": // View menu
+	case key.Matches(msg, keys.Kanban.ViewMenu):
 		m.picker = picker.NewWithConfig(picker.Config{
 			Title: "View Menu",
 			Options: []picker.Option{
@@ -253,7 +255,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.view = ViewViewMenu
 		return m, nil
 
-	case "ctrl+d": // Delete column
+	case key.Matches(msg, keys.Kanban.DeleteColumn):
 		focusedCol := m.board.FocusedColumn()
 		columns := m.currentViewColumns()
 		if focusedCol < 0 || focusedCol >= len(columns) {
@@ -270,7 +272,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.view = ViewDeleteColumnModal
 		return m, m.modal.Init()
 
-	case "enter":
+	case key.Matches(msg, keys.Kanban.Enter):
 		// Open search mode in tree sub-mode for the selected issue
 		if issue := m.board.SelectedIssue(); issue != nil {
 			return m, func() tea.Msg {
@@ -282,7 +284,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "/":
+	case key.Matches(msg, keys.Kanban.SearchFromColumn):
 		// Switch to search mode in list sub-mode with current column's BQL query
 		focusedCol := m.board.FocusedColumn()
 		query := ""
@@ -304,10 +306,10 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDetailsKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	switch {
+	case key.Matches(msg, keys.Common.Quit):
 		return m, tea.Quit
-	case "esc", "q":
+	case key.Matches(msg, keys.Common.Escape), key.Matches(msg, keys.Kanban.Escape):
 		m.view = ViewBoard
 		// Save cursor to return to the same issue after refresh
 		m.pendingCursor = &cursorState{
@@ -317,7 +319,7 @@ func (m Model) handleDetailsKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		// Invalidate views and reload to show any changes made in details view
 		m.board = m.board.InvalidateViews()
 		return m, m.board.LoadAllColumns()
-	case "y":
+	case key.Matches(msg, keys.Kanban.Yank):
 		// Yank (copy) the issue ID shown in the details view
 		issueID := m.details.IssueID()
 		if issueID == "" {
@@ -340,7 +342,7 @@ func (m Model) handleDetailsKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 // handlePickerKey handles key events for all picker views.
 // The picker's callbacks produce domain-specific messages.
 func (m Model) handlePickerKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" {
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 	var cmd tea.Cmd
@@ -349,8 +351,7 @@ func (m Model) handlePickerKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleColumnEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -361,8 +362,7 @@ func (m Model) handleColumnEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleNewViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -373,8 +373,7 @@ func (m Model) handleNewViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -385,8 +384,7 @@ func (m Model) handleDeleteViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -397,8 +395,7 @@ func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleLabelEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -409,8 +406,7 @@ func (m Model) handleLabelEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleViewMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -421,8 +417,7 @@ func (m Model) handleViewMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDetailsEditMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -433,8 +428,7 @@ func (m Model) handleDetailsEditMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteColumnModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 
@@ -445,8 +439,7 @@ func (m Model) handleDeleteColumnModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleRenameViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
+	if key.Matches(msg, keys.Common.Quit) {
 		return m, tea.Quit
 	}
 

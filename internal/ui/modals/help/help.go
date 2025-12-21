@@ -113,17 +113,14 @@ const (
 
 // Model holds the help view state.
 type Model struct {
-	keys       keys.KeyMap
-	searchKeys keys.SearchKeyMap
-	mode       HelpMode
-	width      int
-	height     int
+	mode   HelpMode
+	width  int
+	height int
 }
 
 // New creates a new help view for kanban mode.
 func New() Model {
 	return Model{
-		keys: keys.DefaultKeyMap(),
 		mode: ModeKanban,
 	}
 }
@@ -131,8 +128,7 @@ func New() Model {
 // NewSearch creates a new help view for search mode.
 func NewSearch() Model {
 	return Model{
-		searchKeys: keys.DefaultSearchKeyMap(),
-		mode:       ModeSearch,
+		mode: ModeSearch,
 	}
 }
 
@@ -197,38 +193,38 @@ func (m Model) renderKanbanContent() string {
 	navCol.WriteString("\n")
 	navCol.WriteString(renderKeyDesc("h/l", "left/right"))
 	navCol.WriteString(renderKeyDesc("j/k", "up/down"))
-	navCol.WriteString(m.renderBinding(m.keys.SwitchMode))
+	navCol.WriteString(renderBinding(keys.Kanban.SwitchMode))
 
 	// Actions column
 	var actionsCol strings.Builder
 	actionsCol.WriteString(sectionStyle.Render("Actions"))
 	actionsCol.WriteString("\n")
-	actionsCol.WriteString(m.renderBinding(m.keys.Enter))
-	actionsCol.WriteString(m.renderBinding(m.keys.Refresh))
-	actionsCol.WriteString(m.renderBinding(m.keys.Yank))
-	actionsCol.WriteString(m.renderBinding(m.keys.AddColumn))
-	actionsCol.WriteString(m.renderBinding(m.keys.EditColumn))
-	actionsCol.WriteString(m.renderBinding(m.keys.MoveColumnLeft))
-	actionsCol.WriteString(m.renderBinding(m.keys.MoveColumnRight))
+	actionsCol.WriteString(renderBinding(keys.Kanban.Enter))
+	actionsCol.WriteString(renderBinding(keys.Kanban.Refresh))
+	actionsCol.WriteString(renderBinding(keys.Kanban.Yank))
+	actionsCol.WriteString(renderBinding(keys.Kanban.AddColumn))
+	actionsCol.WriteString(renderBinding(keys.Kanban.EditColumn))
+	actionsCol.WriteString(renderBinding(keys.Kanban.MoveColumnLeft))
+	actionsCol.WriteString(renderBinding(keys.Kanban.MoveColumnRight))
 
 	// Views column
 	var viewsCol strings.Builder
 	viewsCol.WriteString(sectionStyle.Render("Views"))
 	viewsCol.WriteString("\n")
-	viewsCol.WriteString(m.renderBinding(m.keys.NextView))
-	viewsCol.WriteString(m.renderBinding(m.keys.PrevView))
-	viewsCol.WriteString(m.renderBinding(m.keys.ViewMenu))
-	viewsCol.WriteString(m.renderBinding(m.keys.DeleteColumn))
-	viewsCol.WriteString(m.renderBinding(m.keys.SearchFromColumn))
+	viewsCol.WriteString(renderBinding(keys.Kanban.NextView))
+	viewsCol.WriteString(renderBinding(keys.Kanban.PrevView))
+	viewsCol.WriteString(renderBinding(keys.Kanban.ViewMenu))
+	viewsCol.WriteString(renderBinding(keys.Kanban.DeleteColumn))
+	viewsCol.WriteString(renderBinding(keys.Kanban.SearchFromColumn))
 
 	// General column
 	var generalCol strings.Builder
 	generalCol.WriteString(sectionStyle.Render("General"))
 	generalCol.WriteString("\n")
-	generalCol.WriteString(m.renderBinding(m.keys.Help))
-	generalCol.WriteString(m.renderBinding(m.keys.ToggleStatus))
-	generalCol.WriteString(m.renderBinding(m.keys.Escape))
-	generalCol.WriteString(m.renderBinding(m.keys.Quit))
+	generalCol.WriteString(renderBinding(keys.Common.Help))
+	generalCol.WriteString(renderBinding(keys.Kanban.ToggleStatus))
+	generalCol.WriteString(renderBinding(keys.Kanban.Escape))
+	generalCol.WriteString(renderBinding(keys.Common.Quit))
 
 	// Join columns horizontally, aligned at top
 	columns := lipgloss.JoinHorizontal(
@@ -260,7 +256,7 @@ func (m Model) renderKanbanContent() string {
 	return boxStyle.Width(boxWidth).Render(content.String())
 }
 
-func (m Model) renderBinding(b key.Binding) string {
+func renderBinding(b key.Binding) string {
 	help := b.Help()
 	return renderKeyDesc(help.Key, help.Desc)
 }
@@ -278,28 +274,28 @@ func (m Model) renderSearchContent() string {
 	var navCol strings.Builder
 	navCol.WriteString(sectionStyle.Render("Navigation"))
 	navCol.WriteString("\n")
-	navCol.WriteString(m.renderBinding(m.searchKeys.Left))
-	navCol.WriteString(m.renderBinding(m.searchKeys.Right))
-	navCol.WriteString(m.renderBinding(m.searchKeys.Up))
-	navCol.WriteString(m.renderBinding(m.searchKeys.Down))
-	navCol.WriteString(m.renderBinding(m.searchKeys.FocusSearch))
-	navCol.WriteString(m.renderBinding(m.searchKeys.Blur))
+	navCol.WriteString(renderBinding(keys.Search.Left))
+	navCol.WriteString(renderBinding(keys.Search.Right))
+	navCol.WriteString(renderBinding(keys.Search.Up))
+	navCol.WriteString(renderBinding(keys.Search.Down))
+	navCol.WriteString(renderBinding(keys.Search.FocusSearch))
+	navCol.WriteString(renderBinding(keys.Search.Blur))
 
 	// Actions column
 	var actionsCol strings.Builder
 	actionsCol.WriteString(sectionStyle.Render("Actions"))
 	actionsCol.WriteString("\n")
-	actionsCol.WriteString(m.renderBinding(m.searchKeys.OpenTree))
-	actionsCol.WriteString(m.renderBinding(m.searchKeys.Yank))
-	actionsCol.WriteString(m.renderBinding(m.searchKeys.SaveColumn))
+	actionsCol.WriteString(renderBinding(keys.Search.OpenTree))
+	actionsCol.WriteString(renderBinding(keys.Search.Yank))
+	actionsCol.WriteString(renderBinding(keys.Search.SaveColumn))
 
 	// General column
 	var generalCol strings.Builder
 	generalCol.WriteString(sectionStyle.Render("General"))
 	generalCol.WriteString("\n")
-	generalCol.WriteString(m.renderBinding(m.searchKeys.SwitchMode))
-	generalCol.WriteString(m.renderBinding(m.searchKeys.Help))
-	generalCol.WriteString(m.renderBinding(m.searchKeys.Quit))
+	generalCol.WriteString(renderBinding(keys.Search.SwitchMode))
+	generalCol.WriteString(renderBinding(keys.Search.Help))
+	generalCol.WriteString(renderBinding(keys.Search.Quit))
 
 	// Join columns horizontally, aligned at top
 	keybindingColumns := lipgloss.JoinHorizontal(

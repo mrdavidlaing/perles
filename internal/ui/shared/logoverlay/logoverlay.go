@@ -5,11 +5,13 @@ package logoverlay
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"perles/internal/keys"
 	"perles/internal/log"
 	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
@@ -65,58 +67,58 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "c":
+		switch {
+		case key.Matches(msg, keys.Component.Clear):
 			// Clear buffer
 			log.ClearBuffer()
 			m.refreshViewport()
 			return m, nil
 
-		case "d":
+		case key.Matches(msg, keys.LogOverlay.FilterDebug):
 			// Filter to DEBUG and above
 			m.minLevel = log.LevelDebug
 			m.refreshViewport()
 			return m, nil
 
-		case "i":
+		case key.Matches(msg, keys.LogOverlay.FilterInfo):
 			// Filter to INFO and above
 			m.minLevel = log.LevelInfo
 			m.refreshViewport()
 			return m, nil
 
-		case "w":
+		case key.Matches(msg, keys.LogOverlay.FilterWarn):
 			// Filter to WARN and above
 			m.minLevel = log.LevelWarn
 			m.refreshViewport()
 			return m, nil
 
-		case "e":
+		case key.Matches(msg, keys.LogOverlay.FilterError):
 			// Filter to ERROR only
 			m.minLevel = log.LevelError
 			m.refreshViewport()
 			return m, nil
 
-		case "j", "down":
+		case key.Matches(msg, keys.Common.Down):
 			m.viewport.ScrollDown(1)
 			return m, nil
 
-		case "k", "up":
+		case key.Matches(msg, keys.Common.Up):
 			m.viewport.ScrollUp(1)
 			return m, nil
 
-		case "g":
+		case key.Matches(msg, keys.Component.GotoTop):
 			m.viewport.GotoTop()
 			return m, nil
 
-		case "G":
+		case key.Matches(msg, keys.Component.GotoBottom):
 			m.viewport.GotoBottom()
 			return m, nil
 
-		case "ctrl+c":
+		case key.Matches(msg, keys.Common.Quit):
 			// Quit the app
 			return m, tea.Quit
 
-		case "ctrl+x", "esc":
+		case key.Matches(msg, keys.Component.Close), key.Matches(msg, keys.Common.Escape):
 			// Close overlay
 			m.visible = false
 			return m, func() tea.Msg { return CloseMsg{} }

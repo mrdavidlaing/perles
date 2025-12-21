@@ -5,9 +5,11 @@ import (
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
+	"perles/internal/keys"
 	"perles/internal/mode/shared"
 	"perles/internal/ui/styles"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -413,20 +415,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "h", "left":
+		switch {
+		case key.Matches(msg, keys.Common.Left):
 			if m.focused > 0 {
 				m.focused--
 			}
 			return m, nil
 
-		case "l", "right":
+		case key.Matches(msg, keys.Common.Right):
 			if m.focused < len(m.columns)-1 {
 				m.focused++
 			}
 			return m, nil
 
-		case "j", "down", "k", "up", "m":
+		case key.Matches(msg, keys.Common.Down), key.Matches(msg, keys.Common.Up), key.Matches(msg, keys.Component.ModeToggle):
 			// Pass navigation and mode toggle keys to focused column
 			if m.focused >= 0 && m.focused < len(m.columns) {
 				col, cmd := m.columns[m.focused].Update(msg)

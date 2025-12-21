@@ -2,11 +2,13 @@
 package colorpicker
 
 import (
+	"perles/internal/keys"
 	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"regexp"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -194,16 +196,16 @@ func (m Model) updateNormalMode(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		currentColumn := m.columns[m.column]
-		switch msg.String() {
-		case "j", "down", "ctrl+n":
+		switch {
+		case key.Matches(msg, keys.Common.Down), key.Matches(msg, keys.Component.Next):
 			if m.selected < len(currentColumn)-1 {
 				m.selected++
 			}
-		case "k", "up", "ctrl+p":
+		case key.Matches(msg, keys.Common.Up), key.Matches(msg, keys.Component.Prev):
 			if m.selected > 0 {
 				m.selected--
 			}
-		case "h", "left":
+		case key.Matches(msg, keys.Common.Left):
 			if m.column > 0 {
 				m.column--
 				// Clamp selected to new column's bounds
@@ -212,7 +214,7 @@ func (m Model) updateNormalMode(msg tea.Msg) (Model, tea.Cmd) {
 					m.selected = len(newColumn) - 1
 				}
 			}
-		case "l", "right":
+		case key.Matches(msg, keys.Common.Right):
 			if m.column < len(m.columns)-1 {
 				m.column++
 				// Clamp selected to new column's bounds
@@ -221,11 +223,11 @@ func (m Model) updateNormalMode(msg tea.Msg) (Model, tea.Cmd) {
 					m.selected = len(newColumn) - 1
 				}
 			}
-		case "enter":
+		case key.Matches(msg, keys.Common.Enter):
 			return m, selectCmd(currentColumn[m.selected].Hex)
-		case "esc":
+		case key.Matches(msg, keys.Common.Escape):
 			return m, cancelCmd()
-		case "c":
+		case key.Matches(msg, keys.Component.Clear):
 			if m.customEnabled {
 				m.inCustomMode = true
 				m.customInput.SetValue("")
@@ -240,8 +242,8 @@ func (m Model) updateNormalMode(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) updateCustomMode(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
+		switch {
+		case key.Matches(msg, keys.Common.Enter):
 			switch m.customFocus {
 			case customFocusInput:
 				// Move to save button on enter from input
@@ -262,13 +264,46 @@ func (m Model) updateCustomMode(msg tea.Msg) (Model, tea.Cmd) {
 				m.showCustomError = false
 				return m, nil
 			}
-		case "esc":
+		case key.Matches(msg, keys.Common.Escape):
 			m.inCustomMode = false
 			m.customFocus = customFocusInput
 			m.showCustomError = false
 			m.customInput.Blur()
 			return m, nil
-		case "tab", "down", "ctrl+n":
+		case msg.String() == "j":
+			// j only navigates when not focused on text input
+			// Must check BEFORE keys.Common.Down since Down binding includes "j"
+			// Keep as msg.String() to allow typing 'j' in text inputs
+			if m.customFocus != customFocusInput {
+				if m.customFocus < customFocusCancel {
+					m.customFocus++
+				} else {
+					m.customFocus = customFocusInput
+					m.customInput.Focus()
+					return m, textinput.Blink
+				}
+				return m, nil
+			}
+			// Fall through to text input update when focused on input
+		case msg.String() == "k":
+			// k only navigates when not focused on text input
+			// Must check BEFORE keys.Common.Up since Up binding includes "k"
+			// Keep as msg.String() to allow typing 'k' in text inputs
+			if m.customFocus != customFocusInput {
+				if m.customFocus > customFocusInput {
+					m.customFocus--
+					if m.customFocus == customFocusInput {
+						m.customInput.Focus()
+						return m, textinput.Blink
+					}
+				} else {
+					m.customFocus = customFocusCancel
+					m.customInput.Blur()
+				}
+				return m, nil
+			}
+			// Fall through to text input update when focused on input
+		case key.Matches(msg, keys.Component.Tab), key.Matches(msg, keys.Common.Down), key.Matches(msg, keys.Component.Next):
 			if m.customFocus < customFocusCancel {
 				m.customFocus++
 				m.customInput.Blur()
@@ -279,19 +314,7 @@ func (m Model) updateCustomMode(msg tea.Msg) (Model, tea.Cmd) {
 				return m, textinput.Blink
 			}
 			return m, nil
-		case "j":
-			// j only navigates when not focused on text input
-			if m.customFocus != customFocusInput {
-				if m.customFocus < customFocusCancel {
-					m.customFocus++
-				} else {
-					m.customFocus = customFocusInput
-					m.customInput.Focus()
-					return m, textinput.Blink
-				}
-			}
-			// Fall through to text input update when focused
-		case "shift+tab", "up", "ctrl+p":
+		case key.Matches(msg, keys.Component.ShiftTab), key.Matches(msg, keys.Common.Up), key.Matches(msg, keys.Component.Prev):
 			if m.customFocus > customFocusInput {
 				m.customFocus--
 				if m.customFocus == customFocusInput {
@@ -304,27 +327,12 @@ func (m Model) updateCustomMode(msg tea.Msg) (Model, tea.Cmd) {
 				m.customInput.Blur()
 			}
 			return m, nil
-		case "k":
-			// k only navigates when not focused on text input
-			if m.customFocus != customFocusInput {
-				if m.customFocus > customFocusInput {
-					m.customFocus--
-					if m.customFocus == customFocusInput {
-						m.customInput.Focus()
-						return m, textinput.Blink
-					}
-				} else {
-					m.customFocus = customFocusCancel
-					m.customInput.Blur()
-				}
-			}
-			// Fall through to text input update when focused
-		case "h", "left":
+		case key.Matches(msg, keys.Common.Left):
 			if m.customFocus == customFocusCancel {
 				m.customFocus = customFocusSave
 			}
 			return m, nil
-		case "l", "right":
+		case key.Matches(msg, keys.Common.Right):
 			if m.customFocus == customFocusSave {
 				m.customFocus = customFocusCancel
 			}

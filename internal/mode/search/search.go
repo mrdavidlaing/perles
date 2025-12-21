@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -15,6 +16,7 @@ import (
 	"perles/internal/beads"
 	"perles/internal/bql"
 	"perles/internal/config"
+	"perles/internal/keys"
 	"perles/internal/mode"
 	"perles/internal/mode/shared"
 	"perles/internal/ui/details"
@@ -842,7 +844,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Handle overlays first
 	switch m.view {
 	case ViewHelp:
-		if msg.String() == "esc" || msg.String() == "?" {
+		switch {
+		case key.Matches(msg, keys.Common.Escape), key.Matches(msg, keys.Common.Help):
 			m.view = ViewSearch
 		}
 		return m, nil
@@ -857,7 +860,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case ViewSaveAction, ViewDetailsEditMenu:
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, keys.Common.Quit) {
 			return m, tea.Quit
 		}
 		// Delegate to picker
@@ -871,7 +874,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case ViewDeleteConfirm:
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, keys.Common.Quit) {
 			return m, tea.Quit
 		}
 		// Delegate to modal
@@ -880,7 +883,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case ViewLabelEditor:
-		if msg.String() == "ctrl+c" {
+		if key.Matches(msg, keys.Common.Quit) {
 			return m, tea.Quit
 		}
 		// Delegate to label editor
@@ -891,35 +894,37 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	// When focused on search input, only intercept specific keys
 	// All other keys (including j/k/h/l) go to the input
+	// IMPORTANT: We use msg.String() for some keys here because key.Matches() would
+	// intercept keys that should type into the input (e.g., j/k/h/l)
 	if m.focus == FocusSearch {
-		switch msg.String() {
-		case "ctrl+c":
+		switch {
+		case key.Matches(msg, keys.Common.Quit):
 			return m, tea.Quit
-		case "esc":
+		case key.Matches(msg, keys.Search.Blur):
 			// Exit search mode back to kanban
 			m.input.Blur()
 			return m, func() tea.Msg { return ExitToKanbanMsg{} }
-		case "tab", "ctrl+n":
+		case msg.String() == "tab" || msg.String() == "ctrl+n":
 			// Exit search input, move to results
 			m.input.Blur()
 			m.focus = FocusResults
 			m.showSearchErr = true // Show any pending error now
 			return m, nil
-		case "ctrl+p":
+		case msg.String() == "ctrl+p":
 			// Cycle backward from search to details
 			m.input.Blur()
 			m.showSearchErr = true
 			m.focus = FocusDetails
 			return m, nil
-		case "enter":
+		case key.Matches(msg, keys.Search.Execute):
 			m.input.Blur()
 			m.focus = FocusResults
 			m.showSearchErr = true // Show any pending error now
 			return m, m.executeSearch()
-		case "ctrl+@":
+		case key.Matches(msg, keys.Search.SwitchMode):
 			// Let app handle mode switch (ctrl+space)
 			return m, nil
-		case "ctrl+s":
+		case key.Matches(msg, keys.Search.SaveColumn):
 			// Save current query as column (works even while typing)
 			query := m.input.Value()
 			if query == "" {
@@ -942,7 +947,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}).SetSize(m.width, m.height).SetBoxWidth(30)
 			m.view = ViewSaveAction
 			return m, nil
-		case "down":
+		case msg.String() == "down":
 			// Down arrow always moves to results
 			m.input.Blur()
 			m.focus = FocusResults
@@ -966,45 +971,45 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	// Tree sub-mode specific handling (when focused on tree panel)
 	if m.subMode == mode.SubModeTree && m.focus == FocusResults {
-		switch msg.String() {
-		case "ctrl+c":
+		switch {
+		case key.Matches(msg, keys.Common.Quit):
 			return m, tea.Quit
-		case "esc":
+		case key.Matches(msg, keys.Search.Blur):
 			return m, func() tea.Msg { return ExitToKanbanMsg{} }
-		case "?":
+		case key.Matches(msg, keys.Search.Help):
 			m.help = m.help.SetMode(help.ModeSearchTree)
 			m.view = ViewHelp
 			return m, nil
-		case "/":
+		case key.Matches(msg, keys.Search.FocusSearch):
 			// Switch from tree to list sub-mode
 			m.subMode = mode.SubModeList
 			m.focus = FocusSearch
 			m.input.Focus()
 			m.showSearchErr = false
 			return m, nil
-		case "j", "down":
+		case key.Matches(msg, keys.Search.Down):
 			if m.tree != nil {
 				m.tree.MoveCursor(1)
 				m.updateDetailFromTree()
 			}
 			return m, nil
-		case "k", "up":
+		case key.Matches(msg, keys.Search.Up):
 			if m.tree != nil {
 				m.tree.MoveCursor(-1)
 				m.updateDetailFromTree()
 			}
 			return m, nil
-		case "enter":
+		case key.Matches(msg, keys.Search.OpenTree):
 			return m.refocusTree()
-		case "u":
+		case msg.String() == "u":
 			return m.treeGoBack()
-		case "U":
+		case msg.String() == "U":
 			return m.treeGoToOriginal()
-		case "d":
+		case msg.String() == "d":
 			return m.toggleTreeDirection()
-		case "m":
+		case msg.String() == "m":
 			return m.toggleTreeMode()
-		case "ctrl+s":
+		case key.Matches(msg, keys.Search.SaveColumn):
 			// Save current tree as column
 			if m.tree == nil || m.treeRoot == nil {
 				return m, func() tea.Msg {
@@ -1038,48 +1043,48 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}).SetSize(m.width, m.height).SetBoxWidth(30)
 			m.view = ViewSaveAction
 			return m, nil
-		case "l", "right":
+		case key.Matches(msg, keys.Search.Right):
 			// Move focus to details panel
 			m.focus = FocusDetails
 			return m, nil
-		case "y":
+		case key.Matches(msg, keys.Search.Yank):
 			// Yank (copy) issue ID to clipboard
 			return m.yankTreeIssueID()
-		case "tab", "ctrl+n":
+		case msg.String() == "tab" || msg.String() == "ctrl+n":
 			m.focus = FocusDetails
 			return m, nil
-		case "ctrl+p":
+		case msg.String() == "ctrl+p":
 			m.focus = FocusDetails
 			return m, nil
 		}
 	}
 
 	// Not in search input - handle navigation and global keys
-	switch msg.String() {
-	case "ctrl+c":
+	switch {
+	case key.Matches(msg, keys.Common.Quit):
 		return m, tea.Quit
 
-	case "esc":
+	case key.Matches(msg, keys.Search.Blur):
 		// Exit search mode back to kanban
 		return m, func() tea.Msg { return ExitToKanbanMsg{} }
 
-	case "?":
+	case key.Matches(msg, keys.Search.Help):
 		m.help = m.help.SetMode(help.ModeSearch)
 		m.view = ViewHelp
 		return m, nil
 
-	case "/":
+	case key.Matches(msg, keys.Search.FocusSearch):
 		// Focus search input
 		m.focus = FocusSearch
 		m.input.Focus()
 		m.showSearchErr = false // Hide error while typing
 		return m, nil
 
-	case "ctrl+@":
+	case key.Matches(msg, keys.Search.SwitchMode):
 		// Let app handle mode switch (ctrl+space)
 		return m, nil
 
-	case "ctrl+s":
+	case key.Matches(msg, keys.Search.SaveColumn):
 		// Save current query as column
 		query := m.input.Value()
 		if query == "" {
@@ -1103,7 +1108,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.view = ViewSaveAction
 		return m, nil
 
-	case "h", "left":
+	case key.Matches(msg, keys.Search.Left):
 		// Move focus left
 		if m.focus == FocusDetails {
 			if m.details.IsOnLeftEdge() {
@@ -1118,7 +1123,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "l", "right":
+	case key.Matches(msg, keys.Search.Right):
 		// Move focus right
 		switch m.focus {
 		case FocusResults:
@@ -1131,7 +1136,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "ctrl+n":
+	case msg.String() == "ctrl+n":
 		// In tree sub-mode: cycle Results <-> Details (no search input)
 		if m.subMode == mode.SubModeTree {
 			switch m.focus {
@@ -1157,7 +1162,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "ctrl+p":
+	case msg.String() == "ctrl+p":
 		// In tree sub-mode: cycle Details <-> Results (no search input)
 		if m.subMode == mode.SubModeTree {
 			switch m.focus {
@@ -1183,7 +1188,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "tab":
+	case msg.String() == "tab":
 		// In tree sub-mode: cycle Results <-> Details (no search input)
 		if m.subMode == mode.SubModeTree {
 			switch m.focus {
@@ -1209,10 +1214,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "j", "down":
+	case key.Matches(msg, keys.Search.Down):
 		return m.handleNavDown()
 
-	case "k", "up":
+	case key.Matches(msg, keys.Search.Up):
 		// On first result item, move to search input
 		if m.focus == FocusResults && m.selectedIdx == 0 {
 			m.focus = FocusSearch
@@ -1222,7 +1227,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m.handleNavUp()
 
-	case "y":
+	case key.Matches(msg, keys.Search.Yank):
 		// Yank (copy) issue ID to clipboard
 		if m.focus == FocusDetails {
 			// Use issue ID from details view (may be a navigated dependency)
@@ -1233,7 +1238,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "enter":
+	case key.Matches(msg, keys.Search.OpenTree):
 		if m.focus == FocusResults {
 			// Switch to tree sub-mode for selected issue
 			return m.switchToTreeSubMode()
@@ -1291,6 +1296,7 @@ func (m Model) handleNavUp() (Model, tea.Cmd) {
 
 // handlePickerKey handles key events for all picker views.
 // The picker's callbacks produce domain-specific messages.
+// Note: Only ctrl+c quits here - "q" is passed to picker for cancel behavior.
 func (m Model) handlePickerKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit

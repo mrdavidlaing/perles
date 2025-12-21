@@ -3,10 +3,12 @@
 package modal
 
 import (
+	"perles/internal/keys"
 	"perles/internal/ui/shared/overlay"
 	"perles/internal/ui/styles"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -119,30 +121,30 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "tab", "down", "ctrl+n":
+		switch {
+		case key.Matches(msg, keys.Component.Tab), key.Matches(msg, keys.Common.Down), key.Matches(msg, keys.Component.Next):
 			m = m.nextField()
 			return m, nil
 
-		case "shift+tab", "up", "ctrl+p":
+		case key.Matches(msg, keys.Component.ShiftTab), key.Matches(msg, keys.Common.Up), key.Matches(msg, keys.Component.Prev):
 			m = m.prevField()
 			return m, nil
 
-		case "left", "h":
+		case key.Matches(msg, keys.Common.Left):
 			// Navigate between Save and Cancel (only when on buttons)
 			if m.focusedInput == -1 && m.focusedField == FieldCancel {
 				m.focusedField = FieldSave
 				return m, nil
 			}
 
-		case "right", "l":
+		case key.Matches(msg, keys.Common.Right):
 			// Navigate between Save and Cancel (only when on buttons)
 			if m.focusedInput == -1 && m.focusedField == FieldSave {
 				m.focusedField = FieldCancel
 				return m, nil
 			}
 
-		case "enter":
+		case key.Matches(msg, keys.Common.Enter):
 			if m.focusedInput >= 0 {
 				// On an input - move to next field
 				m = m.nextField()
@@ -174,7 +176,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, func() tea.Msg { return CancelMsg{} }
 			}
 
-		case "esc":
+		case key.Matches(msg, keys.Common.Escape):
 			return m, func() tea.Msg { return CancelMsg{} }
 		}
 
