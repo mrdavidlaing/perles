@@ -74,22 +74,14 @@ func statusIndicator(status pool.WorkerStatus) (string, lipgloss.Style) {
 // Each worker gets its own bordered pane with title.
 // Retired workers are filtered out.
 func (m Model) renderWorkerPanes(width, height int) string {
-	// Filter out retired workers
-	var activeWorkerIDs []string
-	for _, workerID := range m.workerPane.workerIDs {
-		status := m.workerPane.workerStatus[workerID]
-		if status != pool.WorkerRetired {
-			activeWorkerIDs = append(activeWorkerIDs, workerID)
-		}
-	}
+	activeWorkerIDs := m.ActiveWorkerIDs()
 
 	if len(activeWorkerIDs) == 0 {
 		// No active workers - show placeholder pane
 		return m.renderEmptyWorkerPane(width, height)
 	}
 
-	// Calculate height per worker pane (minimum 5 lines for border + content)
-	minHeightPerWorker := 3
+	// Calculate height per worker pane (minimum for border + content)
 	heightPerWorker := max(height/len(activeWorkerIDs), minHeightPerWorker)
 
 	// Render each active worker as its own pane
@@ -140,100 +132,45 @@ func (m Model) renderSingleWorkerPane(workerID string, width, height int) string
 	status := m.workerPane.workerStatus[workerID]
 	indicator, indicatorStyle := statusIndicator(status)
 
-	// Calculate viewport dimensions (subtract 2 for borders)
-	vpWidth := max(width-2, 1)
-	vpHeight := max(height-2, 1)
-
-	// Build pre-wrapped content
-	content := m.renderWorkerContent(workerID, vpWidth, vpHeight)
-
-	// Pad content to push it to the bottom when it's shorter than viewport
-	// This preserves the "latest content at bottom" behavior
-	contentLines := strings.Split(content, "\n")
-	if len(contentLines) < vpHeight {
-		padding := make([]string, vpHeight-len(contentLines))
-		contentLines = append(padding, contentLines...)
-		content = strings.Join(contentLines, "\n")
-	}
-
 	// Get or create viewport for this worker
 	vp, exists := m.workerPane.viewports[workerID]
 	if !exists {
+		vpWidth := max(width-2, 1)
+		vpHeight := max(height-2, 1)
 		vp = viewport.New(vpWidth, vpHeight)
-		m.workerPane.viewports[workerID] = vp
 	}
-	vp.Width = vpWidth
-	vp.Height = vpHeight
-
-	// Check if user was at bottom BEFORE SetContent() changes the viewport state
-	// This enables smart auto-scroll: only follow new content if user was at bottom
-	wasAtBottom := vp.AtBottom()
-
-	vp.SetContent(content)
-
-	// Smart auto-scroll: only scroll to bottom if content is dirty AND user was at bottom
-	// This preserves scroll position when user has scrolled up to read history
-	if m.workerPane.contentDirty[workerID] && wasAtBottom {
-		vp.GotoBottom()
-	}
-
-	// Store updated viewport back
-	m.workerPane.viewports[workerID] = vp
-
-	// Get viewport view (handles scrolling and clipping)
-	viewportContent := vp.View()
 
 	// Build title: "● WORKER-1" with colored indicator
 	leftTitle := fmt.Sprintf("%s %s", indicatorStyle.Render(indicator), strings.ToUpper(workerID))
 
-	// Build right title with scroll indicator, new content indicator, and token count
-	var rightParts []string
-
-	// Add new content indicator if scrolled up and new content arrived
-	if m.workerPane.hasNewContent[workerID] {
-		rightParts = append(rightParts, newContentIndicatorStyle.Render("↓New"))
-	}
-
-	// Add scroll indicator if scrolled up from bottom
-	if scrollIndicator := buildScrollIndicator(vp); scrollIndicator != "" {
-		rightParts = append(rightParts, scrollIndicator)
-	}
-
-	// Add context usage if available (format: "27k/200k") - muted style
+	// Build metrics display for right title
+	var metricsDisplay string
 	if workerMetrics, ok := m.workerPane.workerMetrics[workerID]; ok && workerMetrics != nil && workerMetrics.ContextTokens > 0 {
-		rightParts = append(rightParts, scrollIndicatorStyle.Render(
-			workerMetrics.FormatContextDisplay(),
-		))
+		metricsDisplay = workerMetrics.FormatContextDisplay()
 	}
 
-	rightTitle := strings.Join(rightParts, " ")
+	// Use renderScrollablePane helper for viewport setup, padding, and auto-scroll
+	result := renderScrollablePane(width, height, ScrollablePaneConfig{
+		Viewport:       &vp,
+		ContentDirty:   m.workerPane.contentDirty[workerID],
+		HasNewContent:  m.workerPane.hasNewContent[workerID],
+		MetricsDisplay: metricsDisplay,
+		LeftTitle:      leftTitle,
+		TitleColor:     WorkerColor,
+		BorderColor:    lipgloss.AdaptiveColor{Light: "#54A0FF", Dark: "#54A0FF"},
+	}, func(wrapWidth int) string {
+		return m.renderWorkerContent(workerID, wrapWidth, 0)
+	})
 
-	// Colors based on status
-	titleColor := WorkerColor
-	focusedBorderColor := lipgloss.AdaptiveColor{Light: "#54A0FF", Dark: "#54A0FF"}
+	// Store updated viewport back to map (helper modified via pointer)
+	m.workerPane.viewports[workerID] = vp
 
-	return styles.RenderWithTitleBorder(
-		viewportContent,
-		leftTitle,
-		rightTitle,
-		width,
-		height,
-		false,
-		titleColor,
-		focusedBorderColor,
-	)
+	return result
 }
 
 // renderFullscreenWorkerPane renders a single worker pane in fullscreen mode.
 func (m Model) renderFullscreenWorkerPane(width, height int) string {
-	// Get active workers
-	var activeWorkerIDs []string
-	for _, workerID := range m.workerPane.workerIDs {
-		status := m.workerPane.workerStatus[workerID]
-		if status != pool.WorkerRetired {
-			activeWorkerIDs = append(activeWorkerIDs, workerID)
-		}
-	}
+	activeWorkerIDs := m.ActiveWorkerIDs()
 
 	// Validate index
 	if m.fullscreenWorkerIndex >= len(activeWorkerIDs) {
@@ -255,54 +192,9 @@ func (m Model) renderWorkerContent(workerID string, wrapWidth, _ int) string {
 		return lipgloss.NewStyle().Foreground(styles.TextSecondaryColor).Render("  Waiting for output...")
 	}
 
-	var content strings.Builder
-
-	// Process messages and build content
-	for i, msg := range messages {
-		isFirstToolInSequence := msg.IsToolCall && (i == 0 || !messages[i-1].IsToolCall)
-		isLastToolInSequence := msg.IsToolCall && (i == len(messages)-1 || !messages[i+1].IsToolCall)
-
-		if msg.IsToolCall {
-			// Tool calls get grouped with tree characters
-			if isFirstToolInSequence {
-				roleLabel := roleStyle.Foreground(workerMessageStyle.GetForeground()).Render("Worker")
-				content.WriteString(roleLabel)
-				content.WriteString("\n")
-			}
-
-			var prefix string
-			if isLastToolInSequence {
-				prefix = "╰╴ "
-			} else {
-				prefix = "├╴ "
-			}
-
-			toolName := strings.TrimPrefix(msg.Content, "🔧 ")
-			content.WriteString(toolCallStyle.Render(prefix + toolName))
-			content.WriteString("\n")
-
-			if isLastToolInSequence {
-				content.WriteString("\n")
-			}
-		} else {
-			// Regular text message
-			var roleLabel string
-			switch msg.Role {
-			case "user":
-				roleLabel = roleStyle.Foreground(userMessageStyle.GetForeground()).Render("User")
-			case "coordinator":
-				roleLabel = roleStyle.Foreground(CoordinatorColor).Render("Coordinator")
-			default:
-				roleLabel = roleStyle.Foreground(workerMessageStyle.GetForeground()).Render("Worker")
-			}
-
-			content.WriteString(roleLabel)
-			content.WriteString("\n")
-			wrapped := wordWrap(msg.Content, wrapWidth-4)
-			content.WriteString(wrapped)
-			content.WriteString("\n\n")
-		}
-	}
-
-	return strings.TrimRight(content.String(), "\n")
+	return renderChatContent(messages, wrapWidth, ChatRenderConfig{
+		AgentLabel:              "Worker",
+		AgentColor:              workerMessageStyle.GetForeground().(lipgloss.AdaptiveColor),
+		ShowCoordinatorInWorker: true,
+	})
 }

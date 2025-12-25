@@ -216,9 +216,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Calculate pane boundaries based on layout (35%/32%/33%)
-		leftWidth := m.width * 35 / 100
-		middleWidth := m.width * 32 / 100
+		// Calculate pane boundaries based on layout
+		leftWidth := m.width * leftPanePercent / 100
+		middleWidth := m.width * middlePanePercent / 100
 		contentHeight := m.height - 4 // Reserve 4 lines for input bar
 
 		// Ignore mouse events in input bar area (bottom 4 lines)
@@ -262,18 +262,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		default:
 			// Worker pane - determine which stacked worker pane based on Y coordinate
-			// Filter to active workers (same logic as renderWorkerPanes)
-			var activeWorkerIDs []string
-			for _, workerID := range m.workerPane.workerIDs {
-				status := m.workerPane.workerStatus[workerID]
-				if status != pool.WorkerRetired {
-					activeWorkerIDs = append(activeWorkerIDs, workerID)
-				}
-			}
+			activeWorkerIDs := m.ActiveWorkerIDs()
 
 			if len(activeWorkerIDs) > 0 {
 				// Calculate height per worker pane (matches renderWorkerPanes)
-				minHeightPerWorker := 5
 				heightPerWorker := max(contentHeight/len(activeWorkerIDs), minHeightPerWorker)
 
 				// Determine which worker pane the mouse is in based on Y

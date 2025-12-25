@@ -33,51 +33,51 @@ var (
 )
 
 // renderCoordinatorPane renders the left pane showing coordinator chat history.
-func (m Model) renderCoordinatorPane(width, height int) string {
-	// Calculate viewport dimensions (subtract 2 for borders)
-	vpWidth := max(width-2, 1)
-	vpHeight := max(height-2, 1)
-
-	// Build pre-wrapped content
-	content := m.renderCoordinatorContent(vpWidth)
-
-	// Pad content to push it to the bottom when it's shorter than viewport
-	// This preserves the "latest content at bottom" behavior
-	contentLines := strings.Split(content, "\n")
-	if len(contentLines) < vpHeight {
-		padding := make([]string, vpHeight-len(contentLines))
-		contentLines = append(padding, contentLines...)
-		content = strings.Join(contentLines, "\n")
-	}
-
-	// Get or create viewport for this pane
+// When fullscreen=true, renders in fullscreen mode with simplified title and no metrics.
+func (m Model) renderCoordinatorPane(width, height int, fullscreen bool) string {
+	// Get viewport from map (will be modified by helper via pointer)
 	vp := m.coordinatorPane.viewports[viewportKey]
-	vp.Width = vpWidth
-	vp.Height = vpHeight
 
-	// Check if user was at bottom BEFORE SetContent() changes the viewport state
-	// This enables smart auto-scroll: only follow new content if user was at bottom
-	wasAtBottom := vp.AtBottom()
+	// Build title and metrics based on fullscreen mode
+	var leftTitle, metricsDisplay string
+	var hasNewContent bool
+	var borderColor lipgloss.AdaptiveColor
 
-	vp.SetContent(content)
-
-	// Smart auto-scroll: only scroll to bottom if content is dirty AND user was at bottom
-	// This preserves scroll position when user has scrolled up to read history
-	if m.coordinatorPane.contentDirty && wasAtBottom {
-		vp.GotoBottom()
+	if fullscreen {
+		// Fullscreen: simplified title, no metrics or new content indicator
+		leftTitle = "● COORDINATOR"
+		metricsDisplay = ""
+		hasNewContent = false
+		borderColor = CoordinatorColor
+	} else {
+		// Normal: dynamic status title with metrics
+		leftTitle = m.buildCoordinatorTitle()
+		if m.coordinatorMetrics != nil && m.coordinatorMetrics.ContextTokens > 0 {
+			metricsDisplay = m.coordinatorMetrics.FormatContextDisplay()
+		}
+		hasNewContent = m.coordinatorPane.hasNewContent
+		borderColor = lipgloss.AdaptiveColor{Light: "#54A0FF", Dark: "#54A0FF"}
 	}
 
-	// Store updated viewport back (maps are reference types, so this persists)
+	// Use renderScrollablePane helper for viewport setup, padding, and auto-scroll
+	result := renderScrollablePane(width, height, ScrollablePaneConfig{
+		Viewport:       &vp,
+		ContentDirty:   m.coordinatorPane.contentDirty,
+		HasNewContent:  hasNewContent,
+		MetricsDisplay: metricsDisplay,
+		LeftTitle:      leftTitle,
+		TitleColor:     CoordinatorColor,
+		BorderColor:    borderColor,
+	}, m.renderCoordinatorContent)
+
+	// Store updated viewport back to map (helper modified via pointer)
 	m.coordinatorPane.viewports[viewportKey] = vp
 
-	// Get viewport view (handles scrolling and clipping)
-	viewportContent := vp.View()
+	return result
+}
 
-	// Colors for title and border (use CoordinatorColor like worker pane uses WorkerColor)
-	titleColor := CoordinatorColor
-	focusedBorderColor := lipgloss.AdaptiveColor{Light: "#54A0FF", Dark: "#54A0FF"}
-
-	// Build title with status indicator first, like worker pane: "● COORDINATOR"
+// buildCoordinatorTitle builds the left title with status indicator for the coordinator pane.
+func (m Model) buildCoordinatorTitle() string {
 	var indicator string
 	var indicatorStyle lipgloss.Style
 
@@ -109,101 +109,15 @@ func (m Model) renderCoordinatorPane(width, height int) string {
 		indicatorStyle = lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
 	}
 
-	leftTitle := fmt.Sprintf("%s COORDINATOR", indicatorStyle.Render(indicator))
-
-	// Build right title with new content indicator, scroll indicator and token count
-	var rightParts []string
-
-	// Add new content indicator if scrolled up and new content arrived
-	if m.coordinatorPane.hasNewContent {
-		rightParts = append(rightParts, newContentIndicatorStyle.Render("↓New"))
-	}
-
-	// Add scroll indicator if scrolled up from bottom
-	if scrollIndicator := buildScrollIndicator(vp); scrollIndicator != "" {
-		rightParts = append(rightParts, scrollIndicator)
-	}
-
-	// Add context usage if available (format: "27k/200k") - muted style
-	if m.coordinatorMetrics != nil && m.coordinatorMetrics.ContextTokens > 0 {
-		rightParts = append(rightParts, scrollIndicatorStyle.Render(
-			m.coordinatorMetrics.FormatContextDisplay(),
-		))
-	}
-
-	rightTitle := strings.Join(rightParts, " ")
-
-	// Render pane with bordered title (height includes title + border, no adjustment needed)
-	return styles.RenderWithTitleBorder(
-		viewportContent,
-		leftTitle,
-		rightTitle,
-		width,
-		height,
-		false,
-		titleColor,
-		focusedBorderColor,
-	)
+	return fmt.Sprintf("%s COORDINATOR", indicatorStyle.Render(indicator))
 }
 
 // renderCoordinatorContent builds the pre-wrapped content string for the viewport.
 func (m Model) renderCoordinatorContent(wrapWidth int) string {
-	var content strings.Builder
-
-	for i, msg := range m.coordinatorPane.messages {
-		// Check if we're in a tool call sequence
-		isFirstToolInSequence := msg.IsToolCall && (i == 0 || !m.coordinatorPane.messages[i-1].IsToolCall)
-		isLastToolInSequence := msg.IsToolCall && (i == len(m.coordinatorPane.messages)-1 || !m.coordinatorPane.messages[i+1].IsToolCall)
-
-		if msg.Role == "user" {
-			// User messages always get full label
-			roleLabel := roleStyle.Foreground(userMessageStyle.GetForeground()).Render("User")
-			wrappedContent := wordWrap(msg.Content, wrapWidth-4)
-			content.WriteString(roleLabel)
-			content.WriteString("\n")
-			content.WriteString(wrappedContent)
-			content.WriteString("\n\n")
-
-		} else if msg.IsToolCall {
-			// Tool calls get grouped with tree characters
-			var prefix string
-			if isFirstToolInSequence {
-				// First tool in sequence - show role label
-				roleLabel := roleStyle.Foreground(coordinatorMessageStyle.GetForeground()).Render("Coordinator")
-				content.WriteString(roleLabel)
-				content.WriteString("\n")
-			}
-
-			// Choose tree character based on position
-			if isLastToolInSequence {
-				prefix = "╰╴ "
-			} else {
-				prefix = "├╴ "
-			}
-
-			// Remove 🔧 emoji prefix since we're using tree characters
-			toolName := strings.TrimPrefix(msg.Content, "🔧 ")
-			// Apply lighter color to tool calls
-			content.WriteString(toolCallStyle.Render(prefix + toolName))
-			content.WriteString("\n")
-
-			// Add spacing after last tool in sequence
-			if isLastToolInSequence {
-				content.WriteString("\n")
-			}
-
-		} else {
-			// Regular coordinator text message
-			roleLabel := roleStyle.Foreground(coordinatorMessageStyle.GetForeground()).Render("Coordinator")
-			wrappedContent := wordWrap(msg.Content, wrapWidth-4)
-			content.WriteString(roleLabel)
-			content.WriteString("\n")
-			content.WriteString(wrappedContent)
-			content.WriteString("\n\n")
-		}
-	}
-
-	return strings.TrimRight(content.String(), "\n")
+	return renderChatContent(m.coordinatorPane.messages, wrapWidth, ChatRenderConfig{
+		AgentLabel: "Coordinator",
+		AgentColor: coordinatorMessageStyle.GetForeground().(lipgloss.AdaptiveColor),
+	})
 }
 
 // wordWrap wraps text at the given width, preserving explicit newlines.
@@ -266,50 +180,4 @@ func buildScrollIndicator(vp viewport.Model) string {
 		return "" // At live position, no indicator needed
 	}
 	return scrollIndicatorStyle.Render(fmt.Sprintf("↑%.0f%%", vp.ScrollPercent()*100))
-}
-
-// renderFullscreenCoordinatorPane renders the coordinator pane in fullscreen mode.
-func (m Model) renderFullscreenCoordinatorPane(width, height int) string {
-	// Calculate viewport dimensions (subtract 2 for borders)
-	vpWidth := max(width-2, 1)
-	vpHeight := max(height-2, 1)
-
-	// Build pre-wrapped content
-	content := m.renderCoordinatorContent(vpWidth)
-
-	// Pad content to push it to the bottom when it's shorter than viewport
-	contentLines := strings.Split(content, "\n")
-	if len(contentLines) < vpHeight {
-		padding := make([]string, vpHeight-len(contentLines))
-		contentLines = append(padding, contentLines...)
-		content = strings.Join(contentLines, "\n")
-	}
-
-	// Get or create viewport for this pane
-	vp := m.coordinatorPane.viewports[viewportKey]
-	vp.Width = vpWidth
-	vp.Height = vpHeight
-
-	wasAtBottom := vp.AtBottom()
-	vp.SetContent(content)
-
-	if m.coordinatorPane.contentDirty && wasAtBottom {
-		vp.GotoBottom()
-	}
-
-	m.coordinatorPane.viewports[viewportKey] = vp
-	viewportContent := vp.View()
-
-	leftTitle := "● COORDINATOR"
-
-	return styles.RenderWithTitleBorder(
-		viewportContent,
-		leftTitle,
-		"",
-		width,
-		height,
-		false,
-		CoordinatorColor,
-		CoordinatorColor,
-	)
 }

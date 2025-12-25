@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -615,6 +616,105 @@ func TestView_Golden_WithError(t *testing.T) {
 	teatest.RequireEqualOutput(t, []byte(view))
 }
 
+func TestView_Golden_FullscreenCoordinator(t *testing.T) {
+	m := New(Config{})
+	m = m.SetSize(120, 30)
+
+	// Add chat messages to the coordinator pane
+	m = m.AddChatMessage("user", "Start working on the auth epic")
+	m = m.AddChatMessage("coordinator", "I'll analyze the epic and plan the execution. I see 4 tasks with dependencies.")
+	m = m.AddChatMessage("coordinator", "🔧 MCPSearch")
+	m = m.AddChatMessage("coordinator", "🔧 MCPSearch")
+	m = m.AddChatMessage("coordinator", "Now I'll spawn workers for the ready tasks.")
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker")
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker")
+
+	// Enter navigation mode and fullscreen coordinator pane
+	m.navigationMode = true
+	m.fullscreenPaneType = PaneCoordinator
+	m.fullscreenWorkerIndex = -1
+
+	view := m.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
+func TestView_Golden_FullscreenMessages(t *testing.T) {
+	m := New(Config{})
+	m = m.SetSize(120, 30)
+
+	// Add message log entries
+	entries := []message.Entry{
+		{
+			ID:        "msg-1",
+			Timestamp: testNow,
+			From:      message.ActorCoordinator,
+			To:        message.ActorAll,
+			Content:   "Starting epic perles-auth. 4 tasks identified.",
+			Type:      message.MessageInfo,
+		},
+		{
+			ID:        "msg-2",
+			Timestamp: testNow.Add(2 * time.Minute),
+			From:      message.WorkerID(1),
+			To:        message.ActorCoordinator,
+			Content:   "Task .1 complete. OAuth providers added successfully.",
+			Type:      message.MessageCompletion,
+		},
+		{
+			ID:        "msg-3",
+			Timestamp: testNow.Add(5 * time.Minute),
+			From:      message.ActorUser,
+			To:        message.ActorCoordinator,
+			Content:   "Add refresh token support to the implementation",
+			Type:      message.MessageRequest,
+		},
+		{
+			ID:        "msg-4",
+			Timestamp: testNow.Add(7 * time.Minute),
+			From:      message.WorkerID(2),
+			To:        message.ActorCoordinator,
+			Content:   "Task .2 in progress. Adding JWT validation.",
+			Type:      message.MessageInfo,
+		},
+	}
+	m = m.SetMessageEntries(entries)
+
+	// Enter navigation mode and fullscreen messages pane
+	m.navigationMode = true
+	m.fullscreenPaneType = PaneMessages
+	m.fullscreenWorkerIndex = -1
+
+	view := m.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
+func TestView_Golden_FullscreenWorker(t *testing.T) {
+	m := New(Config{})
+	m = m.SetSize(120, 30)
+
+	// Add workers with messages
+	m = m.UpdateWorker("worker-1", pool.WorkerWorking)
+	m = m.AddWorkerMessage("worker-1", "Reading auth/oauth.go")
+	m = m.AddWorkerMessage("worker-1", "Found existing OAuth setup")
+	m = m.AddWorkerMessage("worker-1", "🔧 Read")
+	m = m.AddWorkerMessage("worker-1", "🔧 Grep")
+	m = m.AddWorkerMessage("worker-1", "Adding Google provider configuration")
+	m = m.AddWorkerMessage("worker-1", "🔧 Edit")
+	m = m.AddWorkerMessage("worker-1", "Running tests to verify changes")
+	m = m.AddWorkerMessage("worker-1", "🔧 Bash")
+
+	m = m.UpdateWorker("worker-2", pool.WorkerReady)
+	m = m.AddWorkerMessage("worker-2", "Task complete")
+
+	// Enter navigation mode and fullscreen worker-1 (index 0)
+	m.navigationMode = true
+	m.fullscreenPaneType = PaneWorker
+	m.fullscreenWorkerIndex = 0
+
+	view := m.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
 func TestResizeViewportProportional(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -768,4 +868,249 @@ func TestBuildScrollIndicator(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// Invariant tests for renderScrollablePane helper.
+// These tests verify the critical invariants documented in pane_helpers.go.
+
+func TestRenderScrollablePane_WasAtBottomTiming(t *testing.T) {
+	// This test verifies that wasAtBottom is checked BEFORE SetContent().
+	// If this invariant is violated, users would be forcibly scrolled to bottom
+	// every time new content arrives, even when reading history.
+
+	vp := viewport.New(80, 20)
+
+	// Build content that exceeds viewport height
+	var content string
+	for i := 0; i < 100; i++ {
+		if i > 0 {
+			content += "\n"
+		}
+		content += "line"
+	}
+	vp.SetContent(content)
+
+	// Scroll up to middle (not at bottom)
+	vp.SetYOffset(40)
+	require.False(t, vp.AtBottom(), "should be scrolled up initially")
+
+	// Call renderScrollablePane with contentDirty=true
+	// Content still exceeds viewport to properly test scroll preservation
+	_ = renderScrollablePane(84, 22, ScrollablePaneConfig{
+		Viewport:       &vp,
+		ContentDirty:   true,
+		HasNewContent:  false,
+		MetricsDisplay: "",
+		LeftTitle:      "TEST",
+		TitleColor:     CoordinatorColor,
+		BorderColor:    CoordinatorColor,
+	}, func(wrapWidth int) string {
+		// Return content that still exceeds viewport height
+		// so we can properly test if scroll position is preserved
+		var newContent string
+		for i := 0; i < 100; i++ {
+			if i > 0 {
+				newContent += "\n"
+			}
+			newContent += "updated line"
+		}
+		return newContent
+	})
+
+	// If the invariant is preserved, we should NOT be at bottom
+	// because we were scrolled up and wasAtBottom was captured before SetContent
+	require.False(t, vp.AtBottom(), "scroll position should be preserved when scrolled up")
+}
+
+func TestRenderScrollablePane_PaddingIsPrepended(t *testing.T) {
+	// This test verifies that content padding is PREPENDED (not appended).
+	// If padding is appended, content would appear at the top of the viewport
+	// instead of being pushed to the bottom.
+
+	vp := viewport.New(80, 20)
+
+	// Call with short content that needs padding
+	result := renderScrollablePane(84, 22, ScrollablePaneConfig{
+		Viewport:       &vp,
+		ContentDirty:   false,
+		HasNewContent:  false,
+		MetricsDisplay: "",
+		LeftTitle:      "TEST",
+		TitleColor:     CoordinatorColor,
+		BorderColor:    CoordinatorColor,
+	}, func(wrapWidth int) string {
+		return "short content"
+	})
+
+	// The rendered content should have the actual text at the bottom.
+	// We verify by checking that the content appears in the result
+	// and that empty lines come before it (prepended padding).
+	require.Contains(t, result, "short content", "content should appear in result")
+
+	// Verify viewport content has padding prepended by checking line count
+	// equals viewport height (padding fills the difference)
+	viewContent := vp.View()
+	lines := len(strings.Split(viewContent, "\n"))
+	require.Equal(t, vp.Height, lines, "viewport should be filled with padded content")
+
+	// Verify content is at bottom by checking it's in the last lines
+	viewLines := strings.Split(viewContent, "\n")
+	lastLine := viewLines[len(viewLines)-1]
+	require.Contains(t, lastLine, "short content", "content should be at bottom of viewport")
+}
+
+func TestRenderScrollablePane_ViewportReferenceSemantics(t *testing.T) {
+	// This test verifies that viewport uses pointer semantics.
+	// If value semantics were used, scroll state changes wouldn't persist
+	// because Go copies structs by value.
+
+	vp := viewport.New(80, 20)
+
+	// Build scrollable content
+	var content string
+	for i := 0; i < 100; i++ {
+		if i > 0 {
+			content += "\n"
+		}
+		content += "line"
+	}
+	vp.SetContent(content)
+	vp.GotoBottom()
+
+	// Scroll up
+	vp.SetYOffset(30)
+	initialOffset := vp.YOffset
+
+	// Call renderScrollablePane with contentDirty=false (shouldn't auto-scroll)
+	_ = renderScrollablePane(84, 22, ScrollablePaneConfig{
+		Viewport:       &vp, // Pointer, not value
+		ContentDirty:   false,
+		HasNewContent:  false,
+		MetricsDisplay: "",
+		LeftTitle:      "TEST",
+		TitleColor:     CoordinatorColor,
+		BorderColor:    CoordinatorColor,
+	}, func(wrapWidth int) string {
+		return content
+	})
+
+	// The viewport dimensions should be updated (proving writes persist)
+	require.Equal(t, 82, vp.Width, "viewport width should be updated via pointer")
+	require.Equal(t, 20, vp.Height, "viewport height should be updated via pointer")
+
+	// Scroll position should be preserved (proving we used pointer semantics)
+	// Note: The exact offset may change due to dimension changes, but it should
+	// still be in a non-bottom position if pointer semantics are working
+	require.Greater(t, vp.YOffset, 0, "scroll offset should be preserved")
+	require.False(t, vp.AtBottom(), "should not be at bottom (scroll preserved)")
+	_ = initialOffset // Avoid unused variable
+}
+
+// Boundary condition tests for renderChatContent helper.
+// These tests verify the critical edge cases in tool call sequence detection.
+// CRITICAL: Off-by-one errors in these conditions cause index out of bounds or wrong tree characters.
+
+func TestRenderChatContent_SingleToolCall(t *testing.T) {
+	// Single tool call: Both first AND last (should get ╰╴ character, not ├╴)
+	// This tests the case where i == 0 AND i == len(messages)-1
+	messages := []ChatMessage{
+		{Role: "assistant", Content: "🔧 Read", IsToolCall: true},
+	}
+
+	cfg := ChatRenderConfig{
+		AgentLabel: "Coordinator",
+		AgentColor: CoordinatorColor,
+	}
+
+	result := renderChatContent(messages, 80, cfg)
+
+	// Single tool call should use ╰╴ (last in sequence), not ├╴
+	require.Contains(t, result, "╰╴ Read", "single tool call should use ╰╴ character")
+	require.NotContains(t, result, "├╴", "single tool call should NOT use ├╴ character")
+
+	// Should have role label before tool call
+	require.Contains(t, result, "Coordinator", "should show agent role label")
+}
+
+func TestRenderChatContent_FirstMessageIsToolCall(t *testing.T) {
+	// First message is tool call: Tests i == 0 boundary in isFirstToolInSequence
+	// This ensures we don't try to access messages[i-1] when i == 0
+	messages := []ChatMessage{
+		{Role: "assistant", Content: "🔧 Glob", IsToolCall: true},
+		{Role: "assistant", Content: "🔧 Read", IsToolCall: true},
+		{Role: "assistant", Content: "Found the files", IsToolCall: false},
+	}
+
+	cfg := ChatRenderConfig{
+		AgentLabel: "Worker",
+		AgentColor: WorkerColor,
+	}
+
+	result := renderChatContent(messages, 80, cfg)
+
+	// First tool should start sequence with role label
+	require.Contains(t, result, "Worker", "should show agent role label for tool sequence")
+
+	// First tool gets ├╴, last tool gets ╰╴
+	require.Contains(t, result, "├╴ Glob", "first tool in sequence should use ├╴")
+	require.Contains(t, result, "╰╴ Read", "last tool in sequence should use ╰╴")
+
+	// Regular message at end should have its own role label
+	require.Contains(t, result, "Found the files")
+}
+
+func TestRenderChatContent_LastMessageIsToolCall(t *testing.T) {
+	// Last message is tool call: Tests i == len(messages)-1 boundary in isLastToolInSequence
+	// This ensures we don't try to access messages[i+1] when at the last index
+	messages := []ChatMessage{
+		{Role: "assistant", Content: "Starting work", IsToolCall: false},
+		{Role: "assistant", Content: "🔧 Edit", IsToolCall: true},
+		{Role: "assistant", Content: "🔧 Bash", IsToolCall: true},
+	}
+
+	cfg := ChatRenderConfig{
+		AgentLabel: "Coordinator",
+		AgentColor: CoordinatorColor,
+	}
+
+	result := renderChatContent(messages, 80, cfg)
+
+	// First message should have role label
+	require.Contains(t, result, "Coordinator")
+	require.Contains(t, result, "Starting work")
+
+	// Tool sequence: Edit is first (├╴), Bash is last (╰╴)
+	require.Contains(t, result, "├╴ Edit", "first tool in ending sequence should use ├╴")
+	require.Contains(t, result, "╰╴ Bash", "last tool (at end of messages) should use ╰╴")
+}
+
+func TestRenderChatContent_NonToolCallSurroundedByToolCalls(t *testing.T) {
+	// Non-tool call surrounded by tool calls: Tests sequence breaking
+	// Tool calls should form separate sequences with the text message breaking them
+	messages := []ChatMessage{
+		{Role: "assistant", Content: "🔧 Read", IsToolCall: true},
+		{Role: "assistant", Content: "🔧 Glob", IsToolCall: true},
+		{Role: "assistant", Content: "Found what I needed", IsToolCall: false},
+		{Role: "assistant", Content: "🔧 Edit", IsToolCall: true},
+		{Role: "assistant", Content: "🔧 Bash", IsToolCall: true},
+	}
+
+	cfg := ChatRenderConfig{
+		AgentLabel:              "Worker",
+		AgentColor:              WorkerColor,
+		ShowCoordinatorInWorker: true,
+	}
+
+	result := renderChatContent(messages, 80, cfg)
+
+	// First sequence: Read (├╴) -> Glob (╰╴)
+	require.Contains(t, result, "├╴ Read", "first tool in first sequence should use ├╴")
+	require.Contains(t, result, "╰╴ Glob", "last tool in first sequence should use ╰╴")
+
+	// Text message breaks the sequence
+	require.Contains(t, result, "Found what I needed")
+
+	// Second sequence: Edit (├╴) -> Bash (╰╴)
+	require.Contains(t, result, "├╴ Edit", "first tool in second sequence should use ├╴")
+	require.Contains(t, result, "╰╴ Bash", "last tool in second sequence should use ╰╴")
 }

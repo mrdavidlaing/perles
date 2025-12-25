@@ -42,76 +42,45 @@ var (
 )
 
 // renderMessagePane renders the middle pane showing message log.
-func (m Model) renderMessagePane(width, height int) string {
-	// Calculate viewport dimensions (subtract 2 for borders)
-	vpWidth := max(width-2, 1)
-	vpHeight := max(height-2, 1)
-
-	// Build pre-wrapped content
-	content := m.renderMessageContent(vpWidth)
-
-	// Pad content to push it to the bottom when it's shorter than viewport
-	// This preserves the "latest content at bottom" behavior
-	contentLines := strings.Split(content, "\n")
-	if len(contentLines) < vpHeight {
-		padding := make([]string, vpHeight-len(contentLines))
-		contentLines = append(padding, contentLines...)
-		content = strings.Join(contentLines, "\n")
-	}
-
-	// Get or create viewport for this pane
+// When fullscreen=true, renders in fullscreen mode with simplified styling.
+func (m Model) renderMessagePane(width, height int, fullscreen bool) string {
+	// Get viewport from map (will be modified by helper via pointer)
 	vp := m.messagePane.viewports[viewportKey]
-	vp.Width = vpWidth
-	vp.Height = vpHeight
 
-	// Check if user was at bottom BEFORE SetContent() changes the viewport state
-	// This enables smart auto-scroll: only follow new content if user was at bottom
-	wasAtBottom := vp.AtBottom()
+	// Build config based on fullscreen mode
+	var leftTitle string
+	var hasNewContent bool
+	var titleColor, borderColor lipgloss.AdaptiveColor
 
-	vp.SetContent(content)
-
-	// Smart auto-scroll: only scroll to bottom if content is dirty AND user was at bottom
-	// This preserves scroll position when user has scrolled up to read history
-	if m.messagePane.contentDirty && wasAtBottom {
-		vp.GotoBottom()
+	if fullscreen {
+		// Fullscreen: simplified title, muted colors, no new content indicator
+		leftTitle = "MESSAGES"
+		hasNewContent = false
+		titleColor = styles.TextMutedColor
+		borderColor = styles.TextMutedColor
+	} else {
+		// Normal: full title with new content indicator
+		leftTitle = "MESSAGE LOG"
+		hasNewContent = m.messagePane.hasNewContent
+		titleColor = styles.TextSecondaryColor
+		borderColor = lipgloss.AdaptiveColor{Light: "#54A0FF", Dark: "#54A0FF"}
 	}
 
-	// Store updated viewport back (maps are reference types, so this persists)
+	// Use renderScrollablePane helper for viewport setup, padding, and auto-scroll
+	result := renderScrollablePane(width, height, ScrollablePaneConfig{
+		Viewport:       &vp,
+		ContentDirty:   m.messagePane.contentDirty,
+		HasNewContent:  hasNewContent,
+		MetricsDisplay: "", // No metrics for message pane
+		LeftTitle:      leftTitle,
+		TitleColor:     titleColor,
+		BorderColor:    borderColor,
+	}, m.renderMessageContent)
+
+	// Store updated viewport back to map (helper modified via pointer)
 	m.messagePane.viewports[viewportKey] = vp
 
-	// Get viewport view (handles scrolling and clipping)
-	viewportContent := vp.View()
-
-	// Colors for title and border (neutral color to match other panes)
-	titleColor := styles.TextSecondaryColor
-	focusedBorderColor := lipgloss.AdaptiveColor{Light: "#54A0FF", Dark: "#54A0FF"}
-
-	// Build right title with scroll indicator and new content indicator
-	var rightParts []string
-
-	// Add new content indicator if scrolled up and new content arrived
-	if m.messagePane.hasNewContent {
-		rightParts = append(rightParts, newContentIndicatorStyle.Render("↓New"))
-	}
-
-	// Add scroll indicator if scrolled up from bottom
-	if scrollIndicator := buildScrollIndicator(vp); scrollIndicator != "" {
-		rightParts = append(rightParts, scrollIndicator)
-	}
-
-	rightTitle := strings.Join(rightParts, " ")
-
-	// Render pane with bordered title
-	return styles.RenderWithTitleBorder(
-		viewportContent,
-		"MESSAGE LOG",
-		rightTitle,
-		width,
-		height,
-		false,
-		titleColor,
-		focusedBorderColor,
-	)
+	return result
 }
 
 // renderMessageContent builds the pre-wrapped content string for the viewport.
@@ -178,50 +147,4 @@ func (m Model) renderMessageContent(wrapWidth int) string {
 	}
 
 	return strings.TrimRight(content.String(), "\n")
-}
-
-// renderFullscreenMessagePane renders the message pane in fullscreen mode.
-func (m Model) renderFullscreenMessagePane(width, height int) string {
-	// Calculate viewport dimensions (subtract 2 for borders)
-	vpWidth := max(width-2, 1)
-	vpHeight := max(height-2, 1)
-
-	// Build pre-wrapped content
-	content := m.renderMessageContent(vpWidth)
-
-	// Pad content to push it to the bottom when it's shorter than viewport
-	contentLines := strings.Split(content, "\n")
-	if len(contentLines) < vpHeight {
-		padding := make([]string, vpHeight-len(contentLines))
-		contentLines = append(padding, contentLines...)
-		content = strings.Join(contentLines, "\n")
-	}
-
-	// Get or create viewport for this pane
-	vp := m.messagePane.viewports[viewportKey]
-	vp.Width = vpWidth
-	vp.Height = vpHeight
-
-	wasAtBottom := vp.AtBottom()
-	vp.SetContent(content)
-
-	if m.messagePane.contentDirty && wasAtBottom {
-		vp.GotoBottom()
-	}
-
-	m.messagePane.viewports[viewportKey] = vp
-	viewportContent := vp.View()
-
-	leftTitle := "MESSAGES"
-
-	return styles.RenderWithTitleBorder(
-		viewportContent,
-		leftTitle,
-		"",
-		width,
-		height,
-		false,
-		styles.TextMutedColor,
-		styles.TextMutedColor,
-	)
 }

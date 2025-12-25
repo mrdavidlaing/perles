@@ -2,6 +2,20 @@ package orchestration
 
 import "github.com/charmbracelet/lipgloss"
 
+// Layout constants
+const (
+	// minHeightPerWorker is the minimum height for each worker pane in the stacked view.
+	// Used by both rendering (worker_pane.go) and mouse routing (update.go) to ensure
+	// consistent height calculations.
+	minHeightPerWorker = 5
+
+	// Pane width percentages for the three-column layout.
+	// Used by view.go, update.go (mouse routing), and model.go (SetSize).
+	leftPanePercent   = 35
+	middlePanePercent = 32
+	// rightPanePercent = 100 - leftPanePercent - middlePanePercent (calculated)
+)
+
 // Agent colors - consistent colors for each agent type across all panes
 var (
 	CoordinatorColor = lipgloss.AdaptiveColor{Light: "#179299", Dark: "#179299"}

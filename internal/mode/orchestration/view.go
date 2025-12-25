@@ -41,21 +41,21 @@ func (m Model) renderMainView() string {
 		// Fullscreen mode: render only the selected pane
 		switch m.fullscreenPaneType {
 		case PaneCoordinator:
-			panes = m.renderFullscreenCoordinatorPane(m.width, contentHeight)
+			panes = m.renderCoordinatorPane(m.width, contentHeight, true)
 		case PaneMessages:
-			panes = m.renderFullscreenMessagePane(m.width, contentHeight)
+			panes = m.renderMessagePane(m.width, contentHeight, true)
 		case PaneWorker:
 			panes = m.renderFullscreenWorkerPane(m.width, contentHeight)
 		}
 	} else {
 		// Normal three-pane layout
-		leftWidth := m.width * 35 / 100
-		middleWidth := m.width * 32 / 100
+		leftWidth := m.width * leftPanePercent / 100
+		middleWidth := m.width * middlePanePercent / 100
 		rightWidth := m.width - leftWidth - middleWidth
 
 		// Render each pane
-		leftPane := m.renderCoordinatorPane(leftWidth, contentHeight)
-		middlePane := m.renderMessagePane(middleWidth, contentHeight)
+		leftPane := m.renderCoordinatorPane(leftWidth, contentHeight, false)
+		middlePane := m.renderMessagePane(middleWidth, contentHeight, false)
 		rightPanes := m.renderWorkerPanes(rightWidth, contentHeight)
 
 		// Join panes horizontally

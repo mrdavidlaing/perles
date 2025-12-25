@@ -224,8 +224,8 @@ func (m Model) SetSize(width, height int) Model {
 
 	// Calculate pane dimensions (matches view.go layout)
 	contentHeight := max(height-4, 5) // Reserve 4 lines for input bar
-	leftWidth := width * 35 / 100
-	middleWidth := width * 32 / 100
+	leftWidth := width * leftPanePercent / 100
+	middleWidth := width * middlePanePercent / 100
 	rightWidth := width - leftWidth - middleWidth
 
 	// Update coordinator viewport with proportional scroll preservation
@@ -337,6 +337,7 @@ func (m Model) AddChatMessage(role, content string) Model {
 }
 
 // SetMessageEntries updates the message log entries.
+// Used in tests.
 func (m Model) SetMessageEntries(entries []message.Entry) Model {
 	// Only mark as new content if entries actually changed
 	if len(entries) > len(m.messagePane.entries) {
@@ -451,12 +452,6 @@ func (m Model) AddWorkerMessageWithRole(workerID, role, content string) Model {
 	return m
 }
 
-// UpdateWorkerMetrics updates the token metrics for a worker.
-func (m Model) UpdateWorkerMetrics(workerID string, tokenMetrics *metrics.TokenMetrics) Model {
-	m.workerPane.workerMetrics[workerID] = tokenMetrics
-	return m
-}
-
 // CycleWorker moves to the next or previous worker in the list.
 func (m Model) CycleWorker(forward bool) Model {
 	if len(m.workerPane.workerIDs) == 0 {
@@ -488,6 +483,18 @@ func (m Model) WorkerCount() (total, active int) {
 		}
 	}
 	return
+}
+
+// ActiveWorkerIDs returns a list of worker IDs that are not retired.
+// Used for filtering active workers in multiple locations.
+func (m Model) ActiveWorkerIDs() []string {
+	var active []string
+	for _, workerID := range m.workerPane.workerIDs {
+		if m.workerPane.workerStatus[workerID] != pool.WorkerRetired {
+			active = append(active, workerID)
+		}
+	}
+	return active
 }
 
 // CycleMessageTarget cycles through available message targets (COORDINATOR, BROADCAST, workers).
@@ -585,13 +592,7 @@ func (m Model) exitNavigationMode() Model {
 func (m Model) toggleFullscreenPane(paneType int, workerIndex int) Model {
 	// For worker panes, validate the worker index
 	if paneType == PaneWorker {
-		var activeWorkerIDs []string
-		for _, workerID := range m.workerPane.workerIDs {
-			status := m.workerPane.workerStatus[workerID]
-			if status != pool.WorkerRetired {
-				activeWorkerIDs = append(activeWorkerIDs, workerID)
-			}
-		}
+		activeWorkerIDs := m.ActiveWorkerIDs()
 		if workerIndex >= len(activeWorkerIDs) {
 			return m
 		}
