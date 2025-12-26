@@ -146,10 +146,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.viewport.GotoBottom()
 			return m, nil
 
-		case key.Matches(msg, keys.Common.Quit):
-			// Quit the app
-			return m, tea.Quit
-
 		case key.Matches(msg, keys.Component.Close), key.Matches(msg, keys.Common.Escape):
 			// Close overlay
 			m.visible = false
@@ -200,8 +196,16 @@ func (m Model) View() string {
 		Foreground(styles.OverlayBorderColor)
 	divider := dividerStyle.Render(strings.Repeat("─", boxWidth))
 
-	// Build header
-	header := titleStyle.Render("Logs")
+	// Build header with ESC hint
+	title := titleStyle.Render("Logs")
+	hintStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)
+	escHint := hintStyle.Render("[ESC] Close ") // trailing space for border padding
+
+	// Calculate padding to right-align the hint
+	titleWidth := lipgloss.Width(title)
+	hintWidth := lipgloss.Width(escHint)
+	padding := max(boxWidth-titleWidth-hintWidth, 1)
+	header := title + strings.Repeat(" ", padding) + escHint
 
 	// Build log content for viewport
 	content := m.viewport.View()

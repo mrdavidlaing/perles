@@ -14,6 +14,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/pool"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
+	"github.com/zjrosen/perles/internal/ui/shared/modal"
 )
 
 func TestUpdate_WindowSize(t *testing.T) {
@@ -138,24 +139,36 @@ func TestUpdate_InputEmpty_NoSubmit(t *testing.T) {
 func TestUpdate_QuitMsg(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(120, 40)
+	m.initializer = newTestInitializer(InitReady, nil)
 
-	// Esc quits (input is always focused)
+	// ESC shows modal, doesn't immediately quit
 	var cmd tea.Cmd
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	require.Nil(t, cmd, "ESC should not return a command (modal shown instead)")
+	require.NotNil(t, m.quitModal, "quit modal should be shown after ESC")
 
-	require.NotNil(t, cmd)
+	// Confirm via modal submit triggers QuitMsg
+	m, cmd = m.Update(modal.SubmitMsg{})
+	require.NotNil(t, cmd, "modal submit should return a command")
 	msg := cmd()
 	_, ok := msg.(QuitMsg)
-	require.True(t, ok)
+	require.True(t, ok, "modal submit should produce QuitMsg")
 }
 
 func TestUpdate_EscQuits(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(120, 40)
+	m.initializer = newTestInitializer(InitReady, nil)
 
+	// ESC shows quit confirmation modal (when initPhase is InitReady)
 	var cmd tea.Cmd
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 
+	require.Nil(t, cmd, "ESC should not return a command (modal shown instead)")
+	require.NotNil(t, m.quitModal, "quit modal should be shown after ESC")
+
+	// Confirm via modal submit to get QuitMsg
+	m, cmd = m.Update(modal.SubmitMsg{})
 	require.NotNil(t, cmd)
 	msg := cmd()
 	_, ok := msg.(QuitMsg)
@@ -165,15 +178,21 @@ func TestUpdate_EscQuits(t *testing.T) {
 func TestUpdate_EscFromInputQuits(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(120, 40)
+	m.initializer = newTestInitializer(InitReady, nil)
 
 	// Focus input
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	require.True(t, m.input.Focused())
 
-	// Esc should quit (not just unfocus)
+	// Esc should show quit confirmation modal (not just unfocus or immediately quit)
 	var cmd tea.Cmd
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 
+	require.Nil(t, cmd, "ESC should not return a command (modal shown instead)")
+	require.NotNil(t, m.quitModal, "quit modal should be shown after ESC from input")
+
+	// Confirm via modal submit to get QuitMsg
+	m, cmd = m.Update(modal.SubmitMsg{})
 	require.NotNil(t, cmd)
 	msg := cmd()
 	_, ok := msg.(QuitMsg)
@@ -764,4 +783,169 @@ func TestHandleMessageEvent_RegularMessage_UsesDebounce(t *testing.T) {
 
 	// Now it should have fired
 	require.Equal(t, 1, nudgeCallCount, "should nudge after debounce for regular messages")
+}
+
+func TestQuitConfirmation_ForceQuit_DoubleCtrlC(t *testing.T) {
+	// Test that Ctrl+C while quit modal is visible bypasses confirmation (force quit)
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+
+	// Simulate quit modal being shown (as if user pressed ESC/Ctrl+C once)
+	m.quitModal = &modal.Model{} // Non-nil indicates modal is visible
+
+	// Press Ctrl+C while quit modal is visible
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	// Modal should be cleared
+	require.Nil(t, m.quitModal, "quitModal should be cleared after force quit")
+
+	// Should produce immediate QuitMsg (force quit bypasses confirmation)
+	require.NotNil(t, cmd, "should return a command for force quit")
+	msg := cmd()
+	_, ok := msg.(QuitMsg)
+	require.True(t, ok, "force quit should produce QuitMsg")
+}
+
+func TestQuitConfirmation_ModalForwardsOtherKeys(t *testing.T) {
+	// Test that non-Ctrl+C keys are forwarded to the modal
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+
+	// Simulate quit modal being shown
+	qm := modal.New(modal.Config{
+		Title:   "Test",
+		Message: "Test message",
+	})
+	m.quitModal = &qm
+
+	// Press Enter (should be forwarded to modal, not trigger force quit)
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Modal should still be set (key forwarded, not force quit)
+	// Note: The actual modal behavior (submit/cancel) depends on modal state,
+	// but the key should be forwarded rather than triggering force quit
+	require.NotNil(t, cmd, "should return a command from modal")
+
+	// Verify it's NOT a QuitMsg (force quit requires Ctrl+C specifically)
+	if cmd != nil {
+		msg := cmd()
+		_, isQuitMsg := msg.(QuitMsg)
+		// Enter on modal typically produces SubmitMsg, not QuitMsg
+		require.False(t, isQuitMsg, "non-Ctrl+C keys should not trigger force quit")
+	}
+}
+
+// === Quit Confirmation Test Suite ===
+// These tests verify the quit confirmation modal behavior introduced to prevent
+// accidental exits from orchestrator mode.
+
+func TestQuitConfirmation_CtrlC_ShowsModal(t *testing.T) {
+	// Test that Ctrl+C in ready state shows the quit confirmation modal
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+	m.initializer = newTestInitializer(InitReady, nil)
+
+	// Ctrl+C should show quit modal, not immediately quit
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	require.Nil(t, cmd, "Ctrl+C should not return a command (modal shown instead)")
+	require.NotNil(t, m.quitModal, "quit modal should be shown after Ctrl+C")
+}
+
+func TestQuitConfirmation_Cancel(t *testing.T) {
+	// Test that cancelling the modal (ESC or CancelMsg) dismisses without quitting
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+	m.initializer = newTestInitializer(InitReady, nil)
+
+	// First, trigger the quit modal
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	require.NotNil(t, m.quitModal, "quit modal should be shown")
+
+	// Cancel via modal.CancelMsg
+	m, cmd := m.Update(modal.CancelMsg{})
+
+	// Modal should be cleared
+	require.Nil(t, m.quitModal, "quit modal should be cleared after cancel")
+	// No QuitMsg should be produced
+	require.Nil(t, cmd, "cancel should not return a command")
+}
+
+func TestQuitConfirmation_DuringInit_NoModal(t *testing.T) {
+	// Test that during initialization phases, ESC/Ctrl+C exits immediately (no confirmation)
+	// This is intentional design - users need to escape stuck init immediately
+
+	tests := []struct {
+		name  string
+		phase InitPhase
+	}{
+		{"InitCreatingWorkspace", InitCreatingWorkspace},
+		{"InitSpawningCoordinator", InitSpawningCoordinator},
+		{"InitAwaitingFirstMessage", InitAwaitingFirstMessage},
+		{"InitSpawningWorkers", InitSpawningWorkers},
+		{"InitWorkersReady", InitWorkersReady},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(Config{})
+			m = m.SetSize(120, 40)
+			m.initializer = newTestInitializer(tt.phase, nil)
+
+			// ESC should produce immediate QuitMsg during loading (no modal)
+			m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+
+			// Should return a command (QuitMsg), not show a modal
+			require.NotNil(t, cmd, "ESC should return a command during init phase %v", tt.phase)
+			require.Nil(t, m.quitModal, "quit modal should NOT be shown during init phase %v", tt.phase)
+
+			// Verify the command produces QuitMsg
+			msg := cmd()
+			_, ok := msg.(QuitMsg)
+			require.True(t, ok, "ESC should produce QuitMsg during init phase %v", tt.phase)
+		})
+	}
+}
+
+func TestQuitConfirmation_DuringInit_CtrlC_NoModal(t *testing.T) {
+	// Test that Ctrl+C also exits immediately during initialization (no confirmation)
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+	m.initializer = newTestInitializer(InitSpawningCoordinator, nil)
+
+	// Ctrl+C should produce immediate QuitMsg during loading
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	require.NotNil(t, cmd, "Ctrl+C should return a command during loading")
+	require.Nil(t, m.quitModal, "quit modal should NOT be shown during loading")
+
+	msg := cmd()
+	_, ok := msg.(QuitMsg)
+	require.True(t, ok, "Ctrl+C should produce QuitMsg during loading")
+}
+
+func TestQuitConfirmation_NavigationMode(t *testing.T) {
+	// Test that quit confirmation works in navigation mode (fullscreen pane selection)
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+	m.initializer = newTestInitializer(InitReady, nil)
+
+	// Enter navigation mode (Ctrl+F)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	require.True(t, m.navigationMode, "should be in navigation mode")
+
+	// ESC in navigation mode exits navigation mode, doesn't trigger quit
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	require.False(t, m.navigationMode, "ESC should exit navigation mode")
+	require.Nil(t, m.quitModal, "ESC in navigation mode should exit nav mode, not show quit modal")
+	require.Nil(t, cmd, "should not return a command when exiting navigation mode")
+
+	// Re-enter navigation mode
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	require.True(t, m.navigationMode, "should be back in navigation mode")
+
+	// Ctrl+C in navigation mode should show quit modal
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	require.NotNil(t, m.quitModal, "Ctrl+C in navigation mode should show quit modal")
+	require.Nil(t, cmd, "should not return command, modal shown instead")
 }

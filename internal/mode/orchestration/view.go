@@ -83,7 +83,12 @@ func (m Model) renderMainView() string {
 		mainView = m.workflowPicker.Overlay(mainView)
 	}
 
-	// Show error modal overlay (on top of workflow picker if both visible)
+	// Show quit confirmation modal (below error modal)
+	if m.quitModal != nil {
+		mainView = m.quitModal.Overlay(mainView)
+	}
+
+	// Show error modal overlay (on top - errors take priority)
 	if m.errorModal != nil {
 		mainView = m.errorModal.Overlay(mainView)
 	}

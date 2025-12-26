@@ -89,6 +89,9 @@ type Model struct {
 	// Error display (modal overlay)
 	errorModal *modal.Model
 
+	// Quit confirmation modal (nil when not showing)
+	quitModal *modal.Model
+
 	// Workflow state
 	paused bool
 
@@ -587,6 +590,7 @@ func (m Model) CycleMessageTarget() Model {
 }
 
 // SetError displays an error in a modal overlay.
+// Clears any active quit confirmation modal since errors take priority.
 func (m Model) SetError(msg string) Model {
 	mdl := modal.New(modal.Config{
 		Title:       "Error",
@@ -595,12 +599,26 @@ func (m Model) SetError(msg string) Model {
 	})
 	mdl.SetSize(m.width, m.height)
 	m.errorModal = &mdl
+	m.quitModal = nil // Clear quit modal - error takes priority
 	return m
 }
 
 // ClearError clears the error display.
 func (m Model) ClearError() Model {
 	m.errorModal = nil
+	return m
+}
+
+// showQuitConfirmation creates and shows the quit confirmation modal.
+// Uses ButtonDanger for destructive action emphasis.
+func (m Model) showQuitConfirmation() Model {
+	mdl := modal.New(modal.Config{
+		Title:          "Exit Orchestration Mode?",
+		Message:        "Active workers will be stopped.\n\nPress Enter to exit or Esc to cancel.",
+		ConfirmVariant: modal.ButtonDanger,
+	})
+	mdl.SetSize(m.width, m.height)
+	m.quitModal = &mdl
 	return m
 }
 

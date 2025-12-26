@@ -138,12 +138,37 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	// Handle modal cancel (dismisses critical error)
+	// Handle quit confirmation submit
+	case modal.SubmitMsg:
+		if m.quitModal != nil {
+			m.quitModal = nil
+			return m, func() tea.Msg { return QuitMsg{} }
+		}
+		return m, nil
+
+	// Handle modal cancel (dismisses quit modal or critical error)
 	case modal.CancelMsg:
+		if m.quitModal != nil {
+			m.quitModal = nil
+			return m, nil
+		}
 		m = m.ClearError()
 		return m, nil
 
 	case tea.KeyMsg:
+		// If quit modal visible, handle force quit or forward to modal
+		if m.quitModal != nil {
+			// Ctrl+C again = force quit (bypass confirmation)
+			if msg.Type == tea.KeyCtrlC {
+				m.quitModal = nil
+				return m, func() tea.Msg { return QuitMsg{} }
+			}
+			// Forward other keys to modal for navigation
+			var cmd tea.Cmd
+			*m.quitModal, cmd = m.quitModal.Update(msg)
+			return m, cmd
+		}
+
 		// Forward key events to error modal when it's visible
 		if m.errorModal != nil {
 			var cmd tea.Cmd
@@ -218,7 +243,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					return m, nil
 				}
 			case key.Matches(msg, keys.Quit) || msg.Type == tea.KeyCtrlC:
-				return m, func() tea.Msg { return QuitMsg{} }
+				return m.showQuitConfirmation(), nil
 			}
 			return m, nil
 		}
@@ -237,7 +262,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, keys.Quit), msg.Type == tea.KeyCtrlC:
-			return m, func() tea.Msg { return QuitMsg{} }
+			return m.showQuitConfirmation(), nil
 
 		case key.Matches(msg, keys.Pause):
 			return m, func() tea.Msg { return PauseMsg{} }

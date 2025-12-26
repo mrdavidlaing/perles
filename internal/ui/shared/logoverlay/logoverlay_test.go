@@ -773,3 +773,24 @@ func TestStopListening_CleansUp(t *testing.T) {
 	require.Nil(t, m.listener)
 	require.Nil(t, m.cancel)
 }
+
+// === Bug Fix Verification Tests ===
+
+// TestUpdate_QKey_DoesNotQuit verifies the fix for the 'q' key bug.
+// Previously, pressing 'q' with the log overlay open would quit the entire application
+// because the overlay handled keys.Common.Quit which includes 'q'.
+// The fix removed this handler - 'q' should now be ignored (not quit app, not close overlay).
+func TestUpdate_QKey_DoesNotQuit(t *testing.T) {
+	m := NewWithSize(80, 24)
+	m.Show()
+	require.True(t, m.Visible(), "overlay should be visible")
+
+	// Press 'q' - should NOT quit app and NOT close overlay
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+
+	// Overlay should still be visible (not closed)
+	require.True(t, m.Visible(), "'q' should not close the log overlay")
+
+	// Command should be nil (not tea.Quit, not CloseMsg)
+	require.Nil(t, cmd, "'q' should not produce any command")
+}
