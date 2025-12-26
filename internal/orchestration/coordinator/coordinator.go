@@ -96,6 +96,9 @@ type Config struct {
 	// MessageIssue is the message issue for inter-agent communication.
 	MessageIssue *message.Issue
 
+	// Port is the MCP HTTP server port for config generation.
+	Port int
+
 	// Model specifies which AI model to use (sonnet, opus, haiku for Claude).
 	// Defaults to sonnet if empty.
 	Model string
@@ -107,6 +110,7 @@ type Coordinator struct {
 	client       client.HeadlessClient
 	pool         *pool.WorkerPool
 	messageIssue *message.Issue
+	port         int // MCP HTTP server port for config generation
 	model        string
 
 	// AI session
@@ -155,6 +159,7 @@ func New(cfg Config) (*Coordinator, error) {
 		client:            cfg.Client,
 		pool:              cfg.Pool,
 		messageIssue:      cfg.MessageIssue,
+		port:              cfg.Port,
 		model:             model,
 		cumulativeMetrics: &metrics.TokenMetrics{},
 		broker:            pubsub.NewBroker[events.CoordinatorEvent](),

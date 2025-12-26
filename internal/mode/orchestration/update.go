@@ -624,6 +624,7 @@ func (m Model) handleInitializerEvent(event pubsub.Event[InitializerEvent]) (Mod
 		m.pool = res.Pool
 		m.messageLog = res.MessageLog
 		m.mcpServer = res.MCPServer
+		m.mcpPort = res.MCPPort
 		m.coord = res.Coordinator
 
 		// Set up pub/sub subscriptions if not already set up
@@ -866,9 +867,9 @@ func (m Model) handleUserInputBroadcast(content string) (Model, tea.Cmd) {
 // generateWorkerMCPConfig returns the appropriate MCP config format based on client type.
 func (m Model) generateWorkerMCPConfig(workerID string) (string, error) {
 	if client.ClientType(m.clientType) == client.ClientAmp {
-		return mcp.GenerateWorkerConfigAmp(8765, workerID)
+		return mcp.GenerateWorkerConfigAmp(m.mcpPort, workerID)
 	}
-	return mcp.GenerateWorkerConfig(workerID, m.workDir)
+	return mcp.GenerateWorkerConfigHTTP(m.mcpPort, workerID)
 }
 
 // buildWorkerSpawnConfig creates a client.Config for resuming a worker session.

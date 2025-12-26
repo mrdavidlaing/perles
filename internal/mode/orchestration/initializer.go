@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -59,6 +60,7 @@ type InitializerResources struct {
 	Pool              *pool.WorkerPool
 	MessageLog        *message.Issue
 	MCPServer         *http.Server
+	MCPPort           int // Dynamic port the MCP server is listening on
 	Coordinator       *coordinator.Coordinator
 	WorkerServerCache *workerServerCache
 }
@@ -83,6 +85,8 @@ type Initializer struct {
 	aiClientExtensions map[string]any
 	pool               *pool.WorkerPool
 	messageLog         *message.Issue
+	mcpListener        net.Listener // Listener for dynamic port
+	mcpPort            int          // Assigned port
 	mcpServer          *http.Server
 	mcpCoordServer     *mcp.CoordinatorServer
 	coord              *coordinator.Coordinator
@@ -169,6 +173,7 @@ func (i *Initializer) Resources() InitializerResources {
 		Pool:              i.pool,
 		MessageLog:        i.messageLog,
 		MCPServer:         i.mcpServer,
+		MCPPort:           i.mcpPort,
 		Coordinator:       i.coord,
 		WorkerServerCache: i.workerServers,
 	}
@@ -221,6 +226,8 @@ func (i *Initializer) Retry() error {
 	i.aiClientExtensions = nil
 	i.pool = nil
 	i.messageLog = nil
+	i.mcpListener = nil
+	i.mcpPort = 0
 	i.mcpServer = nil
 	i.mcpCoordServer = nil
 	i.coord = nil
@@ -354,8 +361,24 @@ func (i *Initializer) createWorkspace() error {
 	i.messageLog = msgLog
 	i.mu.Unlock()
 
-	// 4. Start MCP server
-	mcpCoordServer := mcp.NewCoordinatorServer(aiClient, workerPool, msgLog, i.cfg.WorkDir, extensions)
+	// 4. Start MCP server with dynamic port
+	// Create listener on :0 to get a random available port
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return fmt.Errorf("failed to create MCP listener: %w", err)
+	}
+
+	// Extract the assigned port
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		listener.Close()
+		return fmt.Errorf("failed to get TCP address from listener")
+	}
+	port := tcpAddr.Port
+	log.Debug("initializer", "MCP server listening on dynamic port", "port", port)
+
+	// Create coordinator server with the dynamic port
+	mcpCoordServer := mcp.NewCoordinatorServer(aiClient, workerPool, msgLog, i.cfg.WorkDir, port, extensions)
 	workerServers := newWorkerServerCache(msgLog)
 
 	mux := http.NewServeMux()
@@ -363,20 +386,21 @@ func (i *Initializer) createWorkspace() error {
 	mux.HandleFunc("/worker/", workerServers.ServeHTTP)
 
 	httpServer := &http.Server{
-		Addr:              ":8765",
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	i.mu.Lock()
+	i.mcpListener = listener
+	i.mcpPort = port
 	i.mcpServer = httpServer
 	i.mcpCoordServer = mcpCoordServer
 	i.workerServers = workerServers
 	i.mu.Unlock()
 
-	// Start HTTP server in background
+	// Start HTTP server in background using the listener
 	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Error("initializer", "MCP server error", "error", err)
 		}
 	}()
@@ -390,6 +414,7 @@ func (i *Initializer) spawnCoordinator() error {
 	aiClient := i.aiClient
 	workerPool := i.pool
 	msgLog := i.messageLog
+	port := i.mcpPort
 	i.mu.RUnlock()
 
 	if aiClient == nil || workerPool == nil || msgLog == nil {
@@ -401,6 +426,7 @@ func (i *Initializer) spawnCoordinator() error {
 		Client:       aiClient,
 		Pool:         workerPool,
 		MessageIssue: msgLog,
+		Port:         port,
 	}
 
 	coord, err := coordinator.New(coordCfg)

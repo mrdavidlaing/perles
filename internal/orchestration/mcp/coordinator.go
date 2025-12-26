@@ -28,6 +28,7 @@ type CoordinatorServer struct {
 	pool       *pool.WorkerPool
 	msgIssue   *message.Issue
 	workDir    string
+	port       int            // HTTP server port for MCP config generation
 	extensions map[string]any // Provider-specific extensions (model, mode, etc.)
 
 	// workerTaskMap maps workerID -> taskID for lookup
@@ -37,15 +38,17 @@ type CoordinatorServer struct {
 
 // NewCoordinatorServer creates a new coordinator MCP server.
 // The client is used for spawning and resuming AI processes for workers.
+// The port is the HTTP server port used for MCP config generation.
 // The extensions map holds provider-specific configuration (model, mode, etc.)
 // that will be passed to workers when they are spawned.
-func NewCoordinatorServer(aiClient client.HeadlessClient, workerPool *pool.WorkerPool, msgIssue *message.Issue, workDir string, extensions map[string]any) *CoordinatorServer {
+func NewCoordinatorServer(aiClient client.HeadlessClient, workerPool *pool.WorkerPool, msgIssue *message.Issue, workDir string, port int, extensions map[string]any) *CoordinatorServer {
 	cs := &CoordinatorServer{
 		Server:        NewServer("perles-orchestrator", "1.0.0", WithInstructions(coordinatorInstructions)),
 		client:        aiClient,
 		pool:          workerPool,
 		msgIssue:      msgIssue,
 		workDir:       workDir,
+		port:          port,
 		extensions:    extensions,
 		workerTaskMap: make(map[string]string),
 	}
@@ -62,9 +65,9 @@ const coordinatorInstructions = `Perles orchestrator MCP server providing worker
 func (cs *CoordinatorServer) generateWorkerMCPConfig(workerID string) (string, error) {
 	switch cs.client.Type() {
 	case client.ClientAmp:
-		return GenerateWorkerConfigAmp(8765, workerID)
+		return GenerateWorkerConfigAmp(cs.port, workerID)
 	default:
-		return GenerateWorkerConfig(workerID, cs.workDir)
+		return GenerateWorkerConfigHTTP(cs.port, workerID)
 	}
 }
 

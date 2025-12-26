@@ -17,9 +17,9 @@ import (
 func (c *Coordinator) generateMCPConfig() (string, error) {
 	switch c.client.Type() {
 	case client.ClientAmp:
-		return mcp.GenerateCoordinatorConfigAmp(8765)
+		return mcp.GenerateCoordinatorConfigAmp(c.port)
 	default:
-		return mcp.GenerateCoordinatorConfig(c.workDir)
+		return mcp.GenerateCoordinatorConfigHTTP(c.port)
 	}
 }
 

@@ -14,7 +14,7 @@ func TestCoordinatorServer_RegistersAllTools(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 
 	expectedTools := []string{
 		"spawn_worker",
@@ -48,7 +48,7 @@ func TestCoordinatorServer_ToolSchemas(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 
 	for name, tool := range cs.tools {
 		t.Run(name, func(t *testing.T) {
@@ -74,7 +74,7 @@ func TestCoordinatorServer_SpawnWorker(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["spawn_worker"]
 
 	// spawn_worker takes no args, so empty args should be accepted (but will fail to actually spawn)
@@ -90,7 +90,7 @@ func TestCoordinatorServer_AssignTaskValidation(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["assign_task"]
 
 	tests := []struct {
@@ -140,7 +140,7 @@ func TestCoordinatorServer_ReplaceWorkerValidation(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["replace_worker"]
 
 	tests := []struct {
@@ -180,7 +180,7 @@ func TestCoordinatorServer_SendToWorkerValidation(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["send_to_worker"]
 
 	tests := []struct {
@@ -221,7 +221,7 @@ func TestCoordinatorServer_PostMessageValidation(t *testing.T) {
 	defer workerPool.Close()
 
 	// No message issue available
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["post_message"]
 
 	tests := []struct {
@@ -261,7 +261,7 @@ func TestCoordinatorServer_GetTaskStatusValidation(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["get_task_status"]
 
 	tests := []struct {
@@ -296,7 +296,7 @@ func TestCoordinatorServer_MarkTaskCompleteValidation(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["mark_task_complete"]
 
 	tests := []struct {
@@ -331,7 +331,7 @@ func TestCoordinatorServer_MarkTaskFailedValidation(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["mark_task_failed"]
 
 	tests := []struct {
@@ -376,7 +376,7 @@ func TestCoordinatorServer_ReadMessageLogNoIssue(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["read_message_log"]
 
 	_, err := handler(context.Background(), json.RawMessage(`{}`))
@@ -390,7 +390,7 @@ func TestCoordinatorServer_GetPool(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 
 	if cs.GetPool() != workerPool {
 		t.Error("GetPool() did not return the expected pool")
@@ -402,7 +402,7 @@ func TestCoordinatorServer_GetMessageIssue(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 
 	if cs.GetMessageIssue() != nil {
 		t.Error("GetMessageIssue() should return nil when no issue is set")
@@ -414,7 +414,7 @@ func TestCoordinatorServer_Instructions(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 
 	if cs.instructions == "" {
 		t.Error("Instructions should be set")
@@ -476,7 +476,7 @@ func TestCoordinatorServer_AssignTaskInvalidTaskID(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["assign_task"]
 
 	tests := []struct {
@@ -504,7 +504,7 @@ func TestCoordinatorServer_ListWorkers_NoWorkers(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 	handler := cs.handlers["list_workers"]
 
 	result, err := handler(context.Background(), nil)
@@ -522,7 +522,7 @@ func TestCoordinatorServer_ListWorkers_WithWorkers(t *testing.T) {
 	workerPool := pool.NewWorkerPool(pool.Config{})
 	defer workerPool.Close()
 
-	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", nil)
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil)
 
 	// Note: We cannot easily spawn real workers in a unit test without full Claude integration.
 	// This test verifies the handler executes without error when the pool is empty.

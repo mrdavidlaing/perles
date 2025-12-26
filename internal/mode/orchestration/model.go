@@ -104,6 +104,7 @@ type Model struct {
 	pool               *pool.WorkerPool
 	messageLog         *message.Issue
 	mcpServer          *http.Server // HTTP MCP server for in-process tool handling
+	mcpPort            int          // Dynamic port for MCP server
 	workDir            string
 	services           mode.Services
 	coordinatorMetrics *metrics.TokenMetrics // Token usage and cost data for coordinator
