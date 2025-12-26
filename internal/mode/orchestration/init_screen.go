@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/zjrosen/perles/internal/ui/shared/chainart"
 	"github.com/zjrosen/perles/internal/ui/styles"
@@ -141,7 +142,7 @@ func (m Model) renderInitScreen() string {
 	var phaseLines []string
 	for _, phase := range phaseOrder {
 		label := phaseLabels[phase]
-		indicator, labelStyle := m.getPhaseIndicatorAndStyle(phase, currentPhase)
+		indicator, style := m.getPhaseIndicatorAndStyle(phase, currentPhase)
 
 		// Append "(timed out)" suffix for the timeout case
 		if currentPhase == InitTimedOut && phase == InitWorkersReady {
@@ -157,7 +158,19 @@ func (m Model) renderInitScreen() string {
 			}
 		}
 
-		line := indicator + " " + labelStyle.Render(label)
+		// Only color the indicator icon, not the label text
+		// For completed, in-progress, and failed phases: use default text color for label
+		// For pending phases: use muted style for label (no visual indicator to highlight)
+		// Pending phases have whitespace-only indicators (after stripping ANSI codes)
+		isPending := strings.TrimSpace(ansi.Strip(indicator)) == ""
+		var line string
+		if isPending {
+			// Pending: use muted style for label
+			line = indicator + " " + style.Render(label)
+		} else {
+			// Completed, in-progress, or failed: icon is already styled, label uses default color
+			line = indicator + " " + label
+		}
 		phaseLines = append(phaseLines, line)
 	}
 	// Join phase lines and center the block
