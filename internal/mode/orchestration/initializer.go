@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -155,9 +156,7 @@ func (i *Initializer) SpinnerData() (phase InitPhase, workersSpawned, expectedWo
 
 	// Return a copy of confirmedWorkers to avoid races
 	confirmed := make(map[string]bool, len(i.confirmedWorkers))
-	for k, v := range i.confirmedWorkers {
-		confirmed[k] = v
-	}
+	maps.Copy(confirmed, i.confirmedWorkers)
 
 	return i.phase, i.workersSpawned, i.cfg.ExpectedWorkers, confirmed
 }
@@ -362,8 +361,9 @@ func (i *Initializer) createWorkspace() error {
 	i.mu.Unlock()
 
 	// 4. Start MCP server with dynamic port
-	// Create listener on :0 to get a random available port
-	listener, err := net.Listen("tcp", ":0")
+	// Create listener on localhost:0 to get a random available port
+	// Using localhost (127.0.0.1) to avoid binding to all interfaces
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return fmt.Errorf("failed to create MCP listener: %w", err)
 	}
@@ -371,7 +371,7 @@ func (i *Initializer) createWorkspace() error {
 	// Extract the assigned port
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
-		listener.Close()
+		_ = listener.Close()
 		return fmt.Errorf("failed to get TCP address from listener")
 	}
 	port := tcpAddr.Port
@@ -459,7 +459,7 @@ func (i *Initializer) spawnWorkers() {
 		return
 	}
 
-	for j := 0; j < expected; j++ {
+	for j := range expected {
 		workerID, err := mcpCoordServer.SpawnIdleWorker()
 		if err != nil {
 			log.Error("initializer", "Failed to spawn worker", "index", j, "error", err)

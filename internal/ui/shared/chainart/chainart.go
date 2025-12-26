@@ -268,7 +268,7 @@ func buildProgressIntactChain(completedPhases int, _ []lipgloss.Color, dimmedSty
 
 	var parts []string
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		// Determine color for this link
 		var style lipgloss.Style
 		if i < completedPhases {
@@ -301,7 +301,7 @@ func buildBrokenChainAtPosition(brokenPos, completedPhases int, _ []lipgloss.Col
 
 	var parts []string
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		var style lipgloss.Style
 		if i < completedPhases {
 			// Completed: green
