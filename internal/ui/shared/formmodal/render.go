@@ -125,7 +125,11 @@ func (m Model) renderField(index int, width int) string {
 			if focused && i == fs.listCursor {
 				prefix = styles.SelectionIndicatorStyle.Render(">")
 			}
-			rows = append(rows, prefix+" "+item.label)
+			radio := "( )"
+			if item.selected {
+				radio = "(●)"
+			}
+			rows = append(rows, prefix+radio+" "+item.label)
 		}
 		if len(rows) == 0 {
 			rows = []string{" (no items)"}
