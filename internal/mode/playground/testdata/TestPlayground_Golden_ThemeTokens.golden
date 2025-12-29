@@ -12,8 +12,8 @@
 │   logoverlay               │  │    border.highlight #54A0FF                                      │
 │   markdown                 │  │                                                                  │
 │   chainart                 │  │ Status                                                           │
-│ ● Theme Tokens             │  │    status.success #73F59F                                        │
-│                            │  │    status.warning #FECA57                                        │
+│   issuebadge               │  │    status.success #73F59F                                        │
+│ ● Theme Tokens             │  │    status.warning #FECA57                                        │
 │                            │  │    status.error #FF8787                                          │
 │                            │  │                                                                  │
 │                            │  │ Selection                                                        │

@@ -25,6 +25,7 @@ import (
 	"github.com/zjrosen/perles/internal/ui/modals/labeleditor"
 	"github.com/zjrosen/perles/internal/ui/shared/colorpicker"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
+	"github.com/zjrosen/perles/internal/ui/shared/issuebadge"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
 	"github.com/zjrosen/perles/internal/ui/shared/panes"
 	"github.com/zjrosen/perles/internal/ui/shared/picker"
@@ -2277,22 +2278,11 @@ func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		prefix = styles.SelectionIndicatorStyle.Render(">")
 	}
 
-	typeText := styles.GetTypeIndicator(issue.Type)
-	typeStyle := styles.GetTypeStyle(issue.Type)
-
-	priorityText := fmt.Sprintf("[P%d]", issue.Priority)
-	priorityStyle := styles.GetPriorityStyle(issue.Priority)
-
-	idStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
-	idText := fmt.Sprintf("[%s]", issue.ID)
+	// Use shared issuebadge component for type/priority/id
+	badge := issuebadge.RenderBadge(issue)
 
 	// Build left prefix (before title)
-	leftPrefix := fmt.Sprintf("%s%s%s%s ",
-		prefix,
-		typeStyle.Render(typeText),
-		priorityStyle.Render(priorityText),
-		idStyle.Render(idText),
-	)
+	leftPrefix := prefix + badge + " "
 
 	// Build right metadata: comment indicator + timestamp (comments first for alignment)
 	metaStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)

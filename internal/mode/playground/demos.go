@@ -10,12 +10,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/zjrosen/perles/internal/beads"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/pubsub"
 	"github.com/zjrosen/perles/internal/ui/shared/chainart"
 	"github.com/zjrosen/perles/internal/ui/shared/colorpicker"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
+	"github.com/zjrosen/perles/internal/ui/shared/issuebadge"
 	"github.com/zjrosen/perles/internal/ui/shared/logoverlay"
 	"github.com/zjrosen/perles/internal/ui/shared/markdown"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
@@ -99,6 +101,11 @@ func GetComponentDemos() []ComponentDemo {
 			Name:        "chainart",
 			Description: "ASCII chain progress art",
 			Create:      createChainartDemo,
+		},
+		{
+			Name:        "issuebadge",
+			Description: "Issue type/priority/id badge component",
+			Create:      createIssueBadgeDemo,
 		},
 		{
 			Name:        "Theme Tokens",
@@ -1326,6 +1333,141 @@ func (m *LogoverlayDemoModel) Reset() DemoModel {
 }
 
 func (m *LogoverlayDemoModel) NeedsEscKey() bool { return false }
+
+// =============================================================================
+// IssueBadge Demo
+// =============================================================================
+
+// IssueBadgeDemoModel demonstrates the issuebadge component.
+type IssueBadgeDemoModel struct {
+	selectedIdx int // Currently selected example
+	width       int
+	height      int
+}
+
+// sampleIssues provides examples for the demo, showcasing all issue types and priorities.
+var sampleIssues = []beads.Issue{
+	// All 5 issue types
+	{ID: "demo-e01", Type: beads.TypeEpic, Priority: 1, TitleText: "Epic: User Authentication System"},
+	{ID: "demo-t02", Type: beads.TypeTask, Priority: 2, TitleText: "Task: Implement login form validation"},
+	{ID: "demo-f03", Type: beads.TypeFeature, Priority: 1, TitleText: "Feature: Add dark mode support"},
+	{ID: "demo-b04", Type: beads.TypeBug, Priority: 0, TitleText: "Bug: Fix memory leak in cache"},
+	{ID: "demo-c05", Type: beads.TypeChore, Priority: 3, TitleText: "Chore: Update dependencies"},
+	// All 5 priority levels
+	{ID: "demo-p0", Type: beads.TypeBug, Priority: 0, TitleText: "P0 Critical: Security vulnerability"},
+	{ID: "demo-p1", Type: beads.TypeFeature, Priority: 1, TitleText: "P1 High: Core feature request"},
+	{ID: "demo-p2", Type: beads.TypeTask, Priority: 2, TitleText: "P2 Medium: Standard work item"},
+	{ID: "demo-p3", Type: beads.TypeChore, Priority: 3, TitleText: "P3 Low: Nice to have improvement"},
+	{ID: "demo-p4", Type: beads.TypeTask, Priority: 4, TitleText: "P4 Backlog: Future consideration"},
+	// Long title for truncation demo
+	{ID: "demo-long", Type: beads.TypeFeature, Priority: 2, TitleText: "This is a very long title that will be truncated to demonstrate the MaxWidth configuration option in action"},
+}
+
+func createIssueBadgeDemo(width, height int) DemoModel {
+	return &IssueBadgeDemoModel{
+		selectedIdx: 0,
+		width:       width,
+		height:      height,
+	}
+}
+
+func (m *IssueBadgeDemoModel) Update(msg tea.Msg) (DemoModel, tea.Cmd, string) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "j", "down":
+			if m.selectedIdx < len(sampleIssues)-1 {
+				m.selectedIdx++
+			}
+			return m, nil, fmt.Sprintf("Selected: %s", sampleIssues[m.selectedIdx].ID)
+		case "k", "up":
+			if m.selectedIdx > 0 {
+				m.selectedIdx--
+			}
+			return m, nil, fmt.Sprintf("Selected: %s", sampleIssues[m.selectedIdx].ID)
+		}
+	}
+	return m, nil, ""
+}
+
+func (m *IssueBadgeDemoModel) View() string {
+	var sb strings.Builder
+
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.TextPrimaryColor)
+	sectionStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor).MarginTop(1)
+	instructionStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor).Italic(true)
+
+	// Header
+	sb.WriteString(headerStyle.Render("Issue Badge Component Demo"))
+	sb.WriteString("\n")
+	sb.WriteString(instructionStyle.Render("Use j/k to move selection"))
+	sb.WriteString("\n\n")
+
+	// Section 1: Issue Types
+	sb.WriteString(sectionStyle.Render("Issue Types (E/T/F/B/C):"))
+	sb.WriteString("\n")
+	for i := range 5 {
+		issue := sampleIssues[i]
+		line := issuebadge.Render(issue, issuebadge.Config{
+			ShowSelection: true,
+			Selected:      i == m.selectedIdx,
+		})
+		sb.WriteString(line)
+		sb.WriteString("\n")
+	}
+
+	// Section 2: Priority Levels
+	sb.WriteString("\n")
+	sb.WriteString(sectionStyle.Render("Priority Levels (P0-P4):"))
+	sb.WriteString("\n")
+	for i := 5; i < 10; i++ {
+		issue := sampleIssues[i]
+		line := issuebadge.Render(issue, issuebadge.Config{
+			ShowSelection: true,
+			Selected:      i == m.selectedIdx,
+		})
+		sb.WriteString(line)
+		sb.WriteString("\n")
+	}
+
+	// Section 3: Title Truncation
+	sb.WriteString("\n")
+	sb.WriteString(sectionStyle.Render("Title Truncation (MaxWidth=60):"))
+	sb.WriteString("\n")
+	truncatedIssue := sampleIssues[10]
+	truncatedLine := issuebadge.Render(truncatedIssue, issuebadge.Config{
+		ShowSelection: true,
+		Selected:      m.selectedIdx == 10,
+		MaxWidth:      60,
+	})
+	sb.WriteString(truncatedLine)
+	sb.WriteString("\n")
+
+	// Section 4: Badge Only (no title)
+	sb.WriteString("\n")
+	sb.WriteString(sectionStyle.Render("Badge Only (RenderBadge):"))
+	sb.WriteString("\n")
+	for i := range 5 {
+		badge := issuebadge.RenderBadge(sampleIssues[i])
+		sb.WriteString(badge)
+		sb.WriteString(" ")
+	}
+	sb.WriteString("\n")
+
+	return sb.String()
+}
+
+func (m *IssueBadgeDemoModel) SetSize(width, height int) DemoModel {
+	m.width = width
+	m.height = height
+	return m
+}
+
+func (m *IssueBadgeDemoModel) Reset() DemoModel {
+	return createIssueBadgeDemo(m.width, m.height)
+}
+
+func (m *IssueBadgeDemoModel) NeedsEscKey() bool { return false }
 
 // =============================================================================
 // Theme Tokens Demo

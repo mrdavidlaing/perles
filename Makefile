@@ -47,6 +47,7 @@ test-update:
 		./internal/ui/nobeads/... \
 		./internal/ui/outdated/... \
 		./internal/ui/shared/colorpicker/... \
+		./internal/ui/shared/issuebadge/... \
 		./internal/ui/shared/logoverlay/... \
 		./internal/ui/shared/modal/... \
 		./internal/ui/shared/overlay/... \
