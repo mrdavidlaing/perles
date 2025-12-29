@@ -1089,16 +1089,20 @@ func (m Model) updateStatusFromCoordinator(status coordinator.Status) Model {
 // Workers connect via HTTP to /worker/{workerID} and all share the coordinator's
 // message issue instance, solving the in-memory cache isolation problem.
 type workerServerCache struct {
-	msgIssue *message.Issue
-	servers  map[string]*mcp.WorkerServer
-	mu       sync.RWMutex
+	msgIssue      *message.Issue
+	stateCallback mcp.WorkerStateCallback
+	servers       map[string]*mcp.WorkerServer
+	mu            sync.RWMutex
 }
 
 // newWorkerServerCache creates a new worker server cache.
-func newWorkerServerCache(msgIssue *message.Issue) *workerServerCache {
+// The stateCallback allows workers to update coordinator state when they report
+// implementation complete or review verdicts.
+func newWorkerServerCache(msgIssue *message.Issue, stateCallback mcp.WorkerStateCallback) *workerServerCache {
 	return &workerServerCache{
-		msgIssue: msgIssue,
-		servers:  make(map[string]*mcp.WorkerServer),
+		msgIssue:      msgIssue,
+		stateCallback: stateCallback,
+		servers:       make(map[string]*mcp.WorkerServer),
 	}
 }
 
@@ -1134,6 +1138,10 @@ func (c *workerServerCache) getOrCreate(workerID string) *mcp.WorkerServer {
 	}
 
 	ws = mcp.NewWorkerServer(workerID, c.msgIssue)
+	// Set the state callback so workers can update coordinator state
+	if c.stateCallback != nil {
+		ws.SetStateCallback(c.stateCallback)
+	}
 	c.servers[workerID] = ws
 	log.Debug(log.CatOrch, "Created worker server", "subsystem", "update", "workerID", workerID)
 	return ws

@@ -168,6 +168,77 @@ func TestWorker_SessionIDMethods(t *testing.T) {
 	require.Equal(t, "session-xyz", w.GetSessionID())
 }
 
+func TestWorker_PhaseMethods(t *testing.T) {
+	w := newWorker("worker-1", 10)
+
+	// Worker starts with PhaseIdle
+	require.Equal(t, poolevents.PhaseIdle, w.GetPhase())
+
+	// Set to implementing
+	w.SetPhase(poolevents.PhaseImplementing)
+	require.Equal(t, poolevents.PhaseImplementing, w.GetPhase())
+
+	// Set to awaiting review
+	w.SetPhase(poolevents.PhaseAwaitingReview)
+	require.Equal(t, poolevents.PhaseAwaitingReview, w.GetPhase())
+
+	// Set to reviewing
+	w.SetPhase(poolevents.PhaseReviewing)
+	require.Equal(t, poolevents.PhaseReviewing, w.GetPhase())
+
+	// Set to addressing feedback
+	w.SetPhase(poolevents.PhaseAddressingFeedback)
+	require.Equal(t, poolevents.PhaseAddressingFeedback, w.GetPhase())
+
+	// Set to committing
+	w.SetPhase(poolevents.PhaseCommitting)
+	require.Equal(t, poolevents.PhaseCommitting, w.GetPhase())
+
+	// Set back to idle
+	w.SetPhase(poolevents.PhaseIdle)
+	require.Equal(t, poolevents.PhaseIdle, w.GetPhase())
+}
+
+func TestWorker_Phase_ConcurrentAccess(t *testing.T) {
+	w := newWorker("worker-1", 10)
+
+	var wg sync.WaitGroup
+
+	// Concurrent phase writes
+	phases := []poolevents.WorkerPhase{
+		poolevents.PhaseIdle,
+		poolevents.PhaseImplementing,
+		poolevents.PhaseAwaitingReview,
+		poolevents.PhaseReviewing,
+		poolevents.PhaseAddressingFeedback,
+		poolevents.PhaseCommitting,
+	}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				w.SetPhase(phases[j%len(phases)])
+			}
+		}(i)
+	}
+
+	// Concurrent phase reads
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				_ = w.GetPhase()
+			}
+		}()
+	}
+
+	wg.Wait()
+	// Should not panic - verifies thread safety
+}
+
 func TestWorker_ErrorMethods(t *testing.T) {
 	w := newWorker("worker-1", 10)
 

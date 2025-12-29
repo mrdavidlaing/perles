@@ -364,3 +364,16 @@ func (p *WorkerPool) ReadyWorkers() []*Worker {
 	}
 	return ready
 }
+
+// AddTestWorker adds a worker directly to the pool for testing purposes.
+// This bypasses the normal spawn process and should only be used in tests.
+// The worker is created in WorkerWorking status with the given ID.
+func (p *WorkerPool) AddTestWorker(id string, status WorkerStatus) *Worker {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	worker := newWorker(id, 100)
+	worker.Status = status
+	p.workers[id] = worker
+	return worker
+}

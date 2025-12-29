@@ -32,8 +32,9 @@ type Worker struct {
 	Process       client.HeadlessProcess
 	SessionID     string
 	Status        WorkerStatus
-	StartedAt     time.Time // When worker was spawned
-	TaskStartedAt time.Time // When current task was assigned
+	Phase         events.WorkerPhase // Current workflow phase (idle, implementing, reviewing, etc.)
+	StartedAt     time.Time          // When worker was spawned
+	TaskStartedAt time.Time          // When current task was assigned
 	Output        *OutputBuffer
 	LastError     error
 	metrics       *metrics.TokenMetrics // Current token metrics
@@ -43,10 +44,12 @@ type Worker struct {
 
 // newWorker creates a new worker with the given ID.
 // Worker starts in Working state as it will immediately process its initial prompt.
+// Phase starts as Idle until a task is assigned.
 func newWorker(id string, bufferCapacity int) *Worker {
 	return &Worker{
 		ID:        id,
 		Status:    WorkerWorking,
+		Phase:     events.PhaseIdle,
 		StartedAt: time.Now(),
 		Output:    NewOutputBuffer(bufferCapacity),
 	}
@@ -120,6 +123,20 @@ func (w *Worker) GetTaskID() string {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.TaskID
+}
+
+// GetPhase returns the current workflow phase thread-safely.
+func (w *Worker) GetPhase() events.WorkerPhase {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.Phase
+}
+
+// SetPhase updates the workflow phase thread-safely.
+func (w *Worker) SetPhase(phase events.WorkerPhase) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.Phase = phase
 }
 
 // GetStartedAt returns when the worker was spawned thread-safely.

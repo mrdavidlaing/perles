@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 )
 
@@ -107,7 +108,7 @@ func (m *mockMessageStore) Append(from, to, content string, msgType message.Mess
 	return &entry, nil
 }
 
-// TestWorkerServer_RegistersAllTools verifies all 3 worker tools are registered.
+// TestWorkerServer_RegistersAllTools verifies all 5 worker tools are registered.
 func TestWorkerServer_RegistersAllTools(t *testing.T) {
 	ws := NewWorkerServer("WORKER.1", nil)
 
@@ -115,6 +116,8 @@ func TestWorkerServer_RegistersAllTools(t *testing.T) {
 		"check_messages",
 		"post_message",
 		"signal_ready",
+		"report_implementation_complete",
+		"report_review_verdict",
 	}
 
 	for _, toolName := range expectedTools {
@@ -626,5 +629,422 @@ func TestWorkerServer_SignalReadySchema(t *testing.T) {
 	}
 	if len(tool.InputSchema.Properties) != 0 {
 		t.Errorf("signal_ready should have 0 properties, got %d", len(tool.InputSchema.Properties))
+	}
+}
+
+// mockStateCallback implements WorkerStateCallback for testing.
+type mockStateCallback struct {
+	workerPhases map[string]events.WorkerPhase
+	calls        []stateCallbackCall
+	mu           sync.RWMutex
+
+	// Error injection
+	getPhaseError                 error
+	onImplementationCompleteError error
+	onReviewVerdictError          error
+}
+
+type stateCallbackCall struct {
+	Method   string
+	WorkerID string
+	Summary  string
+	Verdict  string
+	Comments string
+}
+
+func newMockStateCallback() *mockStateCallback {
+	return &mockStateCallback{
+		workerPhases: make(map[string]events.WorkerPhase),
+		calls:        make([]stateCallbackCall, 0),
+	}
+}
+
+func (m *mockStateCallback) setPhase(workerID string, phase events.WorkerPhase) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.workerPhases[workerID] = phase
+}
+
+func (m *mockStateCallback) GetWorkerPhase(workerID string) (events.WorkerPhase, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, stateCallbackCall{Method: "GetWorkerPhase", WorkerID: workerID})
+	if m.getPhaseError != nil {
+		return "", m.getPhaseError
+	}
+	phase, ok := m.workerPhases[workerID]
+	if !ok {
+		return events.PhaseIdle, nil
+	}
+	return phase, nil
+}
+
+func (m *mockStateCallback) OnImplementationComplete(workerID, summary string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, stateCallbackCall{Method: "OnImplementationComplete", WorkerID: workerID, Summary: summary})
+	if m.onImplementationCompleteError != nil {
+		return m.onImplementationCompleteError
+	}
+	// Update phase as coordinator would
+	m.workerPhases[workerID] = events.PhaseAwaitingReview
+	return nil
+}
+
+func (m *mockStateCallback) OnReviewVerdict(workerID, verdict, comments string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, stateCallbackCall{Method: "OnReviewVerdict", WorkerID: workerID, Verdict: verdict, Comments: comments})
+	if m.onReviewVerdictError != nil {
+		return m.onReviewVerdictError
+	}
+	// Update phase as coordinator would
+	m.workerPhases[workerID] = events.PhaseIdle
+	return nil
+}
+
+// TestWorkerServer_ReportImplementationComplete_NoCallback tests error when callback not set.
+func TestWorkerServer_ReportImplementationComplete_NoCallback(t *testing.T) {
+	store := newMockMessageStore()
+	ws := NewWorkerServer("WORKER.1", store)
+	handler := ws.handlers["report_implementation_complete"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"summary": "completed feature X"}`))
+	if err == nil {
+		t.Fatal("Expected error when callback not configured")
+	}
+	if !strings.Contains(err.Error(), "state callback not configured") {
+		t.Errorf("Expected 'state callback not configured' error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportImplementationComplete_MissingSummary tests validation.
+func TestWorkerServer_ReportImplementationComplete_MissingSummary(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_implementation_complete"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("Expected error for missing summary")
+	}
+	if !strings.Contains(err.Error(), "summary is required") {
+		t.Errorf("Expected 'summary is required' error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportImplementationComplete_WrongPhase tests phase validation.
+func TestWorkerServer_ReportImplementationComplete_WrongPhase(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	callback.setPhase("WORKER.1", events.PhaseIdle) // Not implementing
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_implementation_complete"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"summary": "done"}`))
+	if err == nil {
+		t.Fatal("Expected error for wrong phase")
+	}
+	if !strings.Contains(err.Error(), "not in implementing or addressing_feedback phase") {
+		t.Errorf("Expected phase error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportImplementationComplete_HappyPath tests successful completion.
+func TestWorkerServer_ReportImplementationComplete_HappyPath(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	callback.setPhase("WORKER.1", events.PhaseImplementing)
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_implementation_complete"]
+
+	result, err := handler(context.Background(), json.RawMessage(`{"summary": "Added feature X with tests"}`))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify callback was called
+	if len(callback.calls) != 2 { // GetWorkerPhase + OnImplementationComplete
+		t.Errorf("Expected 2 callback calls, got %d", len(callback.calls))
+	}
+	// Find the OnImplementationComplete call
+	found := false
+	for _, call := range callback.calls {
+		if call.Method == "OnImplementationComplete" {
+			found = true
+			if call.WorkerID != "WORKER.1" {
+				t.Errorf("WorkerID = %q, want %q", call.WorkerID, "WORKER.1")
+			}
+			if call.Summary != "Added feature X with tests" {
+				t.Errorf("Summary = %q, want %q", call.Summary, "Added feature X with tests")
+			}
+		}
+	}
+	if !found {
+		t.Error("OnImplementationComplete callback not called")
+	}
+
+	// Verify message was posted to coordinator
+	if len(store.appendCalls) != 1 {
+		t.Errorf("Expected 1 message posted, got %d", len(store.appendCalls))
+	}
+	if !strings.Contains(store.appendCalls[0].Content, "Implementation complete") {
+		t.Errorf("Message should contain 'Implementation complete', got: %s", store.appendCalls[0].Content)
+	}
+
+	// Verify structured response
+	if result == nil || len(result.Content) == 0 {
+		t.Fatal("Expected result with content")
+	}
+	if !strings.Contains(result.Content[0].Text, "awaiting_review") {
+		t.Errorf("Response should contain 'awaiting_review', got: %s", result.Content[0].Text)
+	}
+}
+
+// TestWorkerServer_ReportImplementationComplete_AddressingFeedback tests completion from addressing_feedback phase.
+func TestWorkerServer_ReportImplementationComplete_AddressingFeedback(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	callback.setPhase("WORKER.1", events.PhaseAddressingFeedback)
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_implementation_complete"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"summary": "Fixed review feedback"}`))
+	if err != nil {
+		t.Fatalf("Should succeed from addressing_feedback phase: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdict_NoCallback tests error when callback not set.
+func TestWorkerServer_ReportReviewVerdict_NoCallback(t *testing.T) {
+	store := newMockMessageStore()
+	ws := NewWorkerServer("WORKER.1", store)
+	handler := ws.handlers["report_review_verdict"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"verdict": "APPROVED", "comments": "LGTM"}`))
+	if err == nil {
+		t.Fatal("Expected error when callback not configured")
+	}
+	if !strings.Contains(err.Error(), "state callback not configured") {
+		t.Errorf("Expected 'state callback not configured' error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdict_MissingVerdict tests validation.
+func TestWorkerServer_ReportReviewVerdict_MissingVerdict(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_review_verdict"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"comments": "LGTM"}`))
+	if err == nil {
+		t.Fatal("Expected error for missing verdict")
+	}
+	if !strings.Contains(err.Error(), "verdict is required") {
+		t.Errorf("Expected 'verdict is required' error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdict_MissingComments tests validation.
+func TestWorkerServer_ReportReviewVerdict_MissingComments(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_review_verdict"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"verdict": "APPROVED"}`))
+	if err == nil {
+		t.Fatal("Expected error for missing comments")
+	}
+	if !strings.Contains(err.Error(), "comments is required") {
+		t.Errorf("Expected 'comments is required' error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdict_InvalidVerdict tests invalid verdict value.
+func TestWorkerServer_ReportReviewVerdict_InvalidVerdict(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	callback.setPhase("WORKER.1", events.PhaseReviewing)
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_review_verdict"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"verdict": "MAYBE", "comments": "Not sure"}`))
+	if err == nil {
+		t.Fatal("Expected error for invalid verdict")
+	}
+	if !strings.Contains(err.Error(), "must be 'APPROVED' or 'DENIED'") {
+		t.Errorf("Expected verdict validation error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdict_WrongPhase tests phase validation.
+func TestWorkerServer_ReportReviewVerdict_WrongPhase(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	callback.setPhase("WORKER.1", events.PhaseImplementing) // Not reviewing
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_review_verdict"]
+
+	_, err := handler(context.Background(), json.RawMessage(`{"verdict": "APPROVED", "comments": "LGTM"}`))
+	if err == nil {
+		t.Fatal("Expected error for wrong phase")
+	}
+	if !strings.Contains(err.Error(), "not in reviewing phase") {
+		t.Errorf("Expected phase error, got: %v", err)
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdict_Approved tests successful approval.
+func TestWorkerServer_ReportReviewVerdict_Approved(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	callback.setPhase("WORKER.1", events.PhaseReviewing)
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_review_verdict"]
+
+	result, err := handler(context.Background(), json.RawMessage(`{"verdict": "APPROVED", "comments": "Code looks great, tests pass"}`))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify callback was called
+	found := false
+	for _, call := range callback.calls {
+		if call.Method == "OnReviewVerdict" {
+			found = true
+			if call.Verdict != "APPROVED" {
+				t.Errorf("Verdict = %q, want %q", call.Verdict, "APPROVED")
+			}
+			if call.Comments != "Code looks great, tests pass" {
+				t.Errorf("Comments = %q, want %q", call.Comments, "Code looks great, tests pass")
+			}
+		}
+	}
+	if !found {
+		t.Error("OnReviewVerdict callback not called")
+	}
+
+	// Verify message was posted
+	if len(store.appendCalls) != 1 {
+		t.Errorf("Expected 1 message posted, got %d", len(store.appendCalls))
+	}
+	if !strings.Contains(store.appendCalls[0].Content, "Review verdict: APPROVED") {
+		t.Errorf("Message should contain verdict, got: %s", store.appendCalls[0].Content)
+	}
+
+	// Verify structured response
+	if result == nil || len(result.Content) == 0 {
+		t.Fatal("Expected result with content")
+	}
+	if !strings.Contains(result.Content[0].Text, "APPROVED") {
+		t.Errorf("Response should contain 'APPROVED', got: %s", result.Content[0].Text)
+	}
+	if !strings.Contains(result.Content[0].Text, "idle") {
+		t.Errorf("Response should contain 'idle' phase, got: %s", result.Content[0].Text)
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdict_Denied tests successful denial.
+func TestWorkerServer_ReportReviewVerdict_Denied(t *testing.T) {
+	store := newMockMessageStore()
+	callback := newMockStateCallback()
+	callback.setPhase("WORKER.1", events.PhaseReviewing)
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetStateCallback(callback)
+	handler := ws.handlers["report_review_verdict"]
+
+	result, err := handler(context.Background(), json.RawMessage(`{"verdict": "DENIED", "comments": "Missing error handling in line 50"}`))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify callback was called with DENIED
+	found := false
+	for _, call := range callback.calls {
+		if call.Method == "OnReviewVerdict" && call.Verdict == "DENIED" {
+			found = true
+			if !strings.Contains(call.Comments, "Missing error handling") {
+				t.Errorf("Comments should be passed correctly, got: %s", call.Comments)
+			}
+		}
+	}
+	if !found {
+		t.Error("OnReviewVerdict callback not called with DENIED")
+	}
+
+	// Verify structured response contains DENIED
+	if !strings.Contains(result.Content[0].Text, "DENIED") {
+		t.Errorf("Response should contain 'DENIED', got: %s", result.Content[0].Text)
+	}
+}
+
+// TestWorkerServer_ReportImplementationCompleteSchema verifies tool schema.
+func TestWorkerServer_ReportImplementationCompleteSchema(t *testing.T) {
+	ws := NewWorkerServer("WORKER.1", nil)
+
+	tool, ok := ws.tools["report_implementation_complete"]
+	if !ok {
+		t.Fatal("report_implementation_complete tool not registered")
+	}
+
+	if len(tool.InputSchema.Required) != 1 {
+		t.Errorf("report_implementation_complete should have 1 required parameter, got %d", len(tool.InputSchema.Required))
+	}
+	if tool.InputSchema.Required[0] != "summary" {
+		t.Errorf("Required parameter should be 'summary', got %q", tool.InputSchema.Required[0])
+	}
+
+	if _, ok := tool.InputSchema.Properties["summary"]; !ok {
+		t.Error("'summary' property should be defined")
+	}
+}
+
+// TestWorkerServer_ReportReviewVerdictSchema verifies tool schema.
+func TestWorkerServer_ReportReviewVerdictSchema(t *testing.T) {
+	ws := NewWorkerServer("WORKER.1", nil)
+
+	tool, ok := ws.tools["report_review_verdict"]
+	if !ok {
+		t.Fatal("report_review_verdict tool not registered")
+	}
+
+	if len(tool.InputSchema.Required) != 2 {
+		t.Errorf("report_review_verdict should have 2 required parameters, got %d", len(tool.InputSchema.Required))
+	}
+
+	requiredSet := make(map[string]bool)
+	for _, r := range tool.InputSchema.Required {
+		requiredSet[r] = true
+	}
+	if !requiredSet["verdict"] {
+		t.Error("'verdict' should be required")
+	}
+	if !requiredSet["comments"] {
+		t.Error("'comments' should be required")
+	}
+
+	if _, ok := tool.InputSchema.Properties["verdict"]; !ok {
+		t.Error("'verdict' property should be defined")
+	}
+	if _, ok := tool.InputSchema.Properties["comments"]; !ok {
+		t.Error("'comments' property should be defined")
 	}
 }

@@ -9,9 +9,11 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/client"
+	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/pool"
 )
@@ -19,6 +21,54 @@ import (
 // taskIDPattern validates bd task IDs to prevent command injection.
 // Valid formats: "prefix-xxxx" or "prefix-xxxx.N" (for subtasks)
 var taskIDPattern = regexp.MustCompile(`^[a-zA-Z]+-[a-zA-Z0-9]{2,10}(\.\d+)?$`)
+
+// WorkerRole identifies what role a worker plays in the workflow.
+type WorkerRole string
+
+const (
+	// RoleImplementer means the worker is implementing a task.
+	RoleImplementer WorkerRole = "implementer"
+	// RoleReviewer means the worker is reviewing another worker's implementation.
+	RoleReviewer WorkerRole = "reviewer"
+)
+
+// WorkerAssignment tracks what a worker is currently doing.
+type WorkerAssignment struct {
+	TaskID        string             // bd task ID being worked on
+	Role          WorkerRole         // implementer or reviewer
+	Phase         events.WorkerPhase // Current workflow phase
+	AssignedAt    time.Time          // When this assignment started
+	ImplementerID string             // For reviewers: who implemented (empty for implementers)
+	ReviewerID    string             // For implementers: who is reviewing (empty until assigned)
+}
+
+// TaskWorkflowStatus tracks where a task is in the workflow.
+type TaskWorkflowStatus string
+
+const (
+	// TaskImplementing means the task is being implemented.
+	TaskImplementing TaskWorkflowStatus = "implementing"
+	// TaskInReview means the task is being reviewed.
+	TaskInReview TaskWorkflowStatus = "in_review"
+	// TaskApproved means the review approved the implementation.
+	TaskApproved TaskWorkflowStatus = "approved"
+	// TaskDenied means the review denied the implementation.
+	TaskDenied TaskWorkflowStatus = "denied"
+	// TaskCommitting means the implementer is creating a git commit.
+	TaskCommitting TaskWorkflowStatus = "committing"
+	// TaskCompleted means the task is finished.
+	TaskCompleted TaskWorkflowStatus = "completed"
+)
+
+// TaskAssignment tracks all workers involved with a task.
+type TaskAssignment struct {
+	TaskID          string             // bd task ID
+	Implementer     string             // Worker ID implementing
+	Reviewer        string             // Worker ID reviewing (empty until assigned)
+	Status          TaskWorkflowStatus // Current task workflow status
+	StartedAt       time.Time          // When implementation started
+	ReviewStartedAt time.Time          // When review started (zero until assigned)
+}
 
 // CoordinatorServer is an MCP server that exposes orchestration tools to the coordinator agent.
 // It provides tools for spawning workers, managing tasks, and communicating via message issues.
@@ -35,6 +85,11 @@ type CoordinatorServer struct {
 	workerTaskMap map[string]string
 	taskMapMu     sync.RWMutex // protects workerTaskMap
 
+	// Enhanced state tracking for deterministic orchestration
+	workerAssignments map[string]*WorkerAssignment // workerID -> assignment
+	taskAssignments   map[string]*TaskAssignment   // taskID -> assignment
+	assignmentsMu     sync.RWMutex                 // protects workerAssignments and taskAssignments
+
 	// dedup tracks recent messages to prevent duplicate sends to workers
 	dedup *MessageDeduplicator
 }
@@ -46,15 +101,17 @@ type CoordinatorServer struct {
 // that will be passed to workers when they are spawned.
 func NewCoordinatorServer(aiClient client.HeadlessClient, workerPool *pool.WorkerPool, msgIssue *message.Issue, workDir string, port int, extensions map[string]any) *CoordinatorServer {
 	cs := &CoordinatorServer{
-		Server:        NewServer("perles-orchestrator", "1.0.0", WithInstructions(coordinatorInstructions)),
-		client:        aiClient,
-		pool:          workerPool,
-		msgIssue:      msgIssue,
-		workDir:       workDir,
-		port:          port,
-		extensions:    extensions,
-		workerTaskMap: make(map[string]string),
-		dedup:         NewMessageDeduplicator(DefaultDeduplicationWindow),
+		Server:            NewServer("perles-orchestrator", "1.0.0", WithInstructions(coordinatorInstructions)),
+		client:            aiClient,
+		pool:              workerPool,
+		msgIssue:          msgIssue,
+		workDir:           workDir,
+		port:              port,
+		extensions:        extensions,
+		workerTaskMap:     make(map[string]string),
+		workerAssignments: make(map[string]*WorkerAssignment),
+		taskAssignments:   make(map[string]*TaskAssignment),
+		dedup:             NewMessageDeduplicator(DefaultDeduplicationWindow),
 	}
 
 	cs.registerTools()
@@ -98,6 +155,7 @@ func (cs *CoordinatorServer) registerTools() {
 			Properties: map[string]*PropertySchema{
 				"worker_id": {Type: "string", Description: "The worker ID to assign (e.g., 'worker-1')"},
 				"task_id":   {Type: "string", Description: "The bd task ID to work on (e.g., 'perles-abc.1')"},
+				"summary":   {Type: "string", Description: "Optional detailed instructions or context to include with the task assignment. Use for task-specific guidance, key files to modify, or implementation hints."},
 			},
 			Required: []string{"worker_id", "task_id"},
 		},
@@ -246,12 +304,73 @@ func (cs *CoordinatorServer) registerTools() {
 			Required: []string{"summary"},
 		},
 	}, cs.handlePrepareHandoff)
+
+	// query_worker_state - Query current state of workers with role/phase details
+	cs.RegisterTool(Tool{
+		Name:        "query_worker_state",
+		Description: "Query current state of workers with role/phase details. Use before assignments to check availability and prevent duplicates.",
+		InputSchema: &InputSchema{
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"worker_id": {Type: "string", Description: "Specific worker to query (omit for all workers)"},
+				"task_id":   {Type: "string", Description: "Query workers assigned to specific task (omit for all)"},
+			},
+			Required: []string{},
+		},
+	}, cs.handleQueryWorkerState)
+
+	// assign_task_review - Assign a worker to review completed implementation
+	cs.RegisterTool(Tool{
+		Name:        "assign_task_review",
+		Description: "Assign a worker to review completed implementation. Validates reviewer is ready and different from implementer.",
+		InputSchema: &InputSchema{
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"reviewer_id":    {Type: "string", Description: "Worker ID to assign as reviewer (e.g., 'worker-2')"},
+				"task_id":        {Type: "string", Description: "The bd task ID being reviewed"},
+				"implementer_id": {Type: "string", Description: "Worker ID who implemented the task"},
+				"summary":        {Type: "string", Description: "Brief summary of what was implemented"},
+			},
+			Required: []string{"reviewer_id", "task_id", "implementer_id", "summary"},
+		},
+	}, cs.handleAssignTaskReview)
+
+	// assign_review_feedback - Send review feedback to implementer requiring changes
+	cs.RegisterTool(Tool{
+		Name:        "assign_review_feedback",
+		Description: "Send review feedback to implementer requiring changes. Used when reviewer denies and implementer needs to fix issues.",
+		InputSchema: &InputSchema{
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"implementer_id": {Type: "string", Description: "Worker ID to send feedback to"},
+				"task_id":        {Type: "string", Description: "The bd task ID"},
+				"feedback":       {Type: "string", Description: "Specific feedback about required changes"},
+			},
+			Required: []string{"implementer_id", "task_id", "feedback"},
+		},
+	}, cs.handleAssignReviewFeedback)
+
+	// approve_commit - Approve implementation and instruct worker to commit
+	cs.RegisterTool(Tool{
+		Name:        "approve_commit",
+		Description: "Approve implementation and instruct worker to commit. Called after reviewer approves.",
+		InputSchema: &InputSchema{
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"implementer_id": {Type: "string", Description: "Worker ID to instruct to commit"},
+				"task_id":        {Type: "string", Description: "The bd task ID"},
+				"commit_message": {Type: "string", Description: "Suggested commit message (optional)"},
+			},
+			Required: []string{"implementer_id", "task_id"},
+		},
+	}, cs.handleApproveCommit)
 }
 
 // Tool argument structs for JSON parsing.
 type assignTaskArgs struct {
 	WorkerID string `json:"worker_id"`
 	TaskID   string `json:"task_id"`
+	Summary  string `json:"summary,omitempty"` // Optional instructions/context for the worker
 }
 
 type replaceWorkerArgs struct {
@@ -284,6 +403,30 @@ type readMessageLogArgs struct {
 
 type prepareHandoffArgs struct {
 	Summary string `json:"summary"`
+}
+
+type queryWorkerStateArgs struct {
+	WorkerID string `json:"worker_id,omitempty"`
+	TaskID   string `json:"task_id,omitempty"`
+}
+
+type assignTaskReviewArgs struct {
+	ReviewerID    string `json:"reviewer_id"`
+	TaskID        string `json:"task_id"`
+	ImplementerID string `json:"implementer_id"`
+	Summary       string `json:"summary"`
+}
+
+type assignReviewFeedbackArgs struct {
+	ImplementerID string `json:"implementer_id"`
+	TaskID        string `json:"task_id"`
+	Feedback      string `json:"feedback"`
+}
+
+type approveCommitArgs struct {
+	ImplementerID string `json:"implementer_id"`
+	TaskID        string `json:"task_id"`
+	CommitMessage string `json:"commit_message,omitempty"`
 }
 
 // SpawnIdleWorker spawns a new idle worker in the pool.
@@ -351,6 +494,11 @@ func (cs *CoordinatorServer) handleAssignTask(ctx context.Context, rawArgs json.
 		return nil, fmt.Errorf("invalid task_id format: %s", args.TaskID)
 	}
 
+	// Validate assignment using new state tracking
+	if err := cs.validateTaskAssignment(args.WorkerID, args.TaskID); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
 	// Get task details from bd
 	taskInfo, err := cs.getTaskInfo(args.TaskID)
 	if err != nil {
@@ -365,21 +513,42 @@ func (cs *CoordinatorServer) handleAssignTask(ctx context.Context, rawArgs json.
 		return nil, fmt.Errorf("failed to assign task: %w", err)
 	}
 
-	// Track worker → task mapping
+	// Track worker → task mapping (legacy, kept for backward compatibility)
 	cs.taskMapMu.Lock()
 	cs.workerTaskMap[args.WorkerID] = args.TaskID
 	cs.taskMapMu.Unlock()
 
-	// Get worker's session ID
+	// Create assignment records for new state tracking
+	now := time.Now()
+	cs.assignmentsMu.Lock()
+	cs.workerAssignments[args.WorkerID] = &WorkerAssignment{
+		TaskID:     args.TaskID,
+		Role:       RoleImplementer,
+		Phase:      events.PhaseImplementing,
+		AssignedAt: now,
+	}
+	cs.taskAssignments[args.TaskID] = &TaskAssignment{
+		TaskID:      args.TaskID,
+		Implementer: args.WorkerID,
+		Status:      TaskImplementing,
+		StartedAt:   now,
+	}
+	cs.assignmentsMu.Unlock()
+
+	// Set worker Phase to Implementing and get session ID
 	worker := cs.pool.GetWorker(args.WorkerID)
 	if worker == nil {
 		return nil, fmt.Errorf("worker not found: %s", args.WorkerID)
 	}
+	worker.SetPhase(events.PhaseImplementing)
 
 	sessionID := worker.GetSessionID()
 	if sessionID == "" {
 		return nil, fmt.Errorf("worker %s has no session ID yet", args.WorkerID)
 	}
+
+	// Update BD status to in_progress (best-effort)
+	cs.updateBDStatus(args.TaskID, "in_progress")
 
 	// Generate MCP config for worker
 	mcpConfig, err := cs.generateWorkerMCPConfig(args.WorkerID)
@@ -388,7 +557,7 @@ func (cs *CoordinatorServer) handleAssignTask(ctx context.Context, rawArgs json.
 	}
 
 	// Build task assignment prompt
-	prompt := TaskAssignmentPrompt(args.TaskID, taskInfo.Title, taskInfo.Description, taskInfo.Acceptance)
+	prompt := TaskAssignmentPrompt(args.TaskID, taskInfo.Title, args.Summary)
 
 	// Resume worker with task assignment
 	proc, err := cs.client.Spawn(ctx, client.Config{
@@ -426,12 +595,26 @@ func (cs *CoordinatorServer) handleReplaceWorker(ctx context.Context, rawArgs js
 		return nil, fmt.Errorf("worker_id is required")
 	}
 
+	// Clean up assignment state before retiring worker
+	cs.assignmentsMu.Lock()
+	if wa, ok := cs.workerAssignments[args.WorkerID]; ok && wa != nil {
+		// If worker had a task, note it may be orphaned
+		// The task assignment remains but implementer/reviewer reference is now invalid
+		// detectOrphanedTasks() will find this
+		log.Debug(log.CatMCP, "Retiring worker with active assignment",
+			"workerID", args.WorkerID,
+			"taskID", wa.TaskID,
+			"phase", wa.Phase)
+	}
+	delete(cs.workerAssignments, args.WorkerID)
+	cs.assignmentsMu.Unlock()
+
 	// Retire the old worker
 	if err := cs.pool.RetireWorker(args.WorkerID); err != nil {
 		return nil, fmt.Errorf("failed to retire worker: %w", err)
 	}
 
-	// Clear task mapping for old worker
+	// Clear task mapping for old worker (legacy, kept for backward compatibility)
 	cs.taskMapMu.Lock()
 	delete(cs.workerTaskMap, args.WorkerID)
 	cs.taskMapMu.Unlock()
@@ -603,7 +786,8 @@ func (cs *CoordinatorServer) handleGetTaskStatus(_ context.Context, rawArgs json
 	return SuccessResult(strings.TrimSpace(stdout.String())), nil
 }
 
-// handleMarkTaskComplete marks a task as complete in bd.
+// handleMarkTaskComplete marks a task as complete in bd and updates internal state.
+// This performs the TaskCommitting -> TaskCompleted transition and cleans up worker state.
 func (cs *CoordinatorServer) handleMarkTaskComplete(_ context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
 	var args taskIDArgs
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
@@ -617,7 +801,21 @@ func (cs *CoordinatorServer) handleMarkTaskComplete(_ context.Context, rawArgs j
 		return nil, fmt.Errorf("invalid task_id format: %s", args.TaskID)
 	}
 
-	// Run bd update to set status to closed
+	// Validate task exists and is in correct state
+	cs.assignmentsMu.RLock()
+	ta, ok := cs.taskAssignments[args.TaskID]
+	if !ok {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("task %s not found in assignments", args.TaskID)
+	}
+	if ta.Status != TaskCommitting {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("task %s is not in committing status (current: %s)", args.TaskID, ta.Status)
+	}
+	implementerID := ta.Implementer
+	cs.assignmentsMu.RUnlock()
+
+	// Run bd update to set status to closed (external state first)
 	cmd := exec.Command("bd", "update", args.TaskID, "--status", "closed", "--json") //nolint:gosec // G204: TaskID validated above
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -627,8 +825,42 @@ func (cs *CoordinatorServer) handleMarkTaskComplete(_ context.Context, rawArgs j
 		return nil, fmt.Errorf("bd update failed: %s", strings.TrimSpace(stderr.String()))
 	}
 
-	log.Debug(log.CatMCP, "Marked task complete", "taskID", args.TaskID)
-	return SuccessResult(fmt.Sprintf("Task %s marked as closed", args.TaskID)), nil
+	// Update internal state atomically
+	cs.assignmentsMu.Lock()
+	if ta, ok := cs.taskAssignments[args.TaskID]; ok {
+		ta.Status = TaskCompleted
+	}
+	if implAssignment, ok := cs.workerAssignments[implementerID]; ok {
+		implAssignment.Phase = events.PhaseIdle
+		implAssignment.TaskID = ""
+	}
+	cs.assignmentsMu.Unlock()
+
+	// Update pool worker's phase (best-effort, worker may be gone)
+	if implementer := cs.pool.GetWorker(implementerID); implementer != nil {
+		implementer.SetPhase(events.PhaseIdle)
+	}
+
+	// Add BD comment for audit trail
+	cs.addBDComment(args.TaskID, "Task completed")
+
+	log.Debug(log.CatMCP, "Marked task complete", "taskID", args.TaskID, "implementerID", implementerID)
+
+	// Return structured response
+	response := map[string]any{
+		"status":  "success",
+		"message": fmt.Sprintf("Task %s marked as completed", args.TaskID),
+		"task_state": map[string]string{
+			"task_id": args.TaskID,
+			"status":  string(TaskCompleted),
+		},
+		"implementer_state": map[string]string{
+			"worker_id": implementerID,
+			"phase":     string(events.PhaseIdle),
+		},
+	}
+	data, _ := json.MarshalIndent(response, "", "  ")
+	return StructuredResult(string(data), response), nil
 }
 
 // handleMarkTaskFailed adds a failure comment to a task in bd.
@@ -747,12 +979,18 @@ func (cs *CoordinatorServer) handleListWorkers(_ context.Context, _ json.RawMess
 		PID           int    `json:"pid,omitempty"`     // Process ID of Claude process
 		TaskID        string `json:"task_id,omitempty"` // Current task (empty if ready)
 		Status        string `json:"status"`            // ready, working, retired
+		Phase         string `json:"phase"`             // idle, implementing, awaiting_review, reviewing, etc.
+		Role          string `json:"role,omitempty"`    // implementer, reviewer (empty if idle)
 		SessionID     string `json:"session_id"`
 		StartedAt     string `json:"started_at"`
 		ContextTokens int    `json:"context_tokens,omitempty"` // Total context used
 		ContextWindow int    `json:"context_window,omitempty"` // Max context window
 		ContextUsage  string `json:"context_usage,omitempty"`  // Human-readable usage (e.g., "27k/200k")
 	}
+
+	// Get workerAssignments under lock for phase/role lookup
+	cs.assignmentsMu.RLock()
+	defer cs.assignmentsMu.RUnlock()
 
 	infos := make([]workerInfo, 0, len(workers))
 	for _, w := range workers {
@@ -761,8 +999,17 @@ func (cs *CoordinatorServer) handleListWorkers(_ context.Context, _ json.RawMess
 			PID:       w.GetPID(),
 			TaskID:    w.GetTaskID(),
 			Status:    w.GetStatus().String(),
+			Phase:     string(events.PhaseIdle), // Default to idle
 			SessionID: w.GetSessionID(),
 			StartedAt: w.GetStartedAt().Format("15:04:05"),
+		}
+
+		// Get phase and role from assignment if worker has one
+		if wa, ok := cs.workerAssignments[w.ID]; ok && wa != nil {
+			info.Phase = string(wa.Phase)
+			if wa.Role != "" {
+				info.Role = string(wa.Role)
+			}
 		}
 
 		// Get context info from metrics if available
@@ -832,4 +1079,698 @@ func formatContextUsage(contextTokens, contextWindow int) string {
 // Valid formats: "prefix-xxxx" or "prefix-xxxx.N" (for subtasks)
 func isValidTaskID(taskID string) bool {
 	return taskIDPattern.MatchString(taskID)
+}
+
+// validateTaskAssignment checks if a task can be assigned to a worker.
+// Returns error if:
+// - Task already has an implementer assigned
+// - Worker already has an active assignment
+// - Worker is not in Ready status
+func (cs *CoordinatorServer) validateTaskAssignment(workerID, taskID string) error {
+	cs.assignmentsMu.RLock()
+	defer cs.assignmentsMu.RUnlock()
+
+	// 1. Check if task already has an implementer
+	if ta, ok := cs.taskAssignments[taskID]; ok && ta.Implementer != "" {
+		return fmt.Errorf("task %s already assigned to %s", taskID, ta.Implementer)
+	}
+
+	// 2. Check if worker is already assigned to something
+	if wa, ok := cs.workerAssignments[workerID]; ok && wa.TaskID != "" {
+		return fmt.Errorf("worker %s already assigned to task %s", workerID, wa.TaskID)
+	}
+
+	// 3. Check worker is Ready
+	worker := cs.pool.GetWorker(workerID)
+	if worker == nil {
+		return fmt.Errorf("worker %s not found", workerID)
+	}
+	if worker.GetStatus() != pool.WorkerReady {
+		return fmt.Errorf("worker %s is not ready (status: %v)", workerID, worker.GetStatus())
+	}
+
+	return nil
+}
+
+// validateReviewAssignment checks if a reviewer can be assigned to a task.
+// Returns error if:
+// - Reviewer is the same as implementer
+// - Task doesn't exist or implementer mismatch
+// - Implementer is not in AwaitingReview phase
+// - Task already has a reviewer assigned
+// - Reviewer is not in Ready status
+func (cs *CoordinatorServer) validateReviewAssignment(reviewerID, taskID, implementerID string) error {
+	cs.assignmentsMu.RLock()
+	defer cs.assignmentsMu.RUnlock()
+
+	// 1. Reviewer must not be the implementer
+	if reviewerID == implementerID {
+		return fmt.Errorf("reviewer cannot be the same as implementer")
+	}
+
+	// 2. Task must exist and have matching implementer
+	ta, ok := cs.taskAssignments[taskID]
+	if !ok || ta.Implementer != implementerID {
+		return fmt.Errorf("task %s not found or implementer mismatch", taskID)
+	}
+
+	// 3. Implementer must be in AwaitingReview phase
+	implAssignment := cs.workerAssignments[implementerID]
+	if implAssignment == nil || implAssignment.Phase != events.PhaseAwaitingReview {
+		var phase events.WorkerPhase
+		if implAssignment != nil {
+			phase = implAssignment.Phase
+		}
+		return fmt.Errorf("implementer %s is not awaiting review (phase: %v)", implementerID, phase)
+	}
+
+	// 4. Task must not already have a reviewer
+	if ta.Reviewer != "" {
+		return fmt.Errorf("task %s already has reviewer %s", taskID, ta.Reviewer)
+	}
+
+	// 5. Reviewer must be Ready
+	reviewer := cs.pool.GetWorker(reviewerID)
+	if reviewer == nil || reviewer.GetStatus() != pool.WorkerReady {
+		return fmt.Errorf("reviewer %s is not ready", reviewerID)
+	}
+
+	return nil
+}
+
+// detectOrphanedTasks finds tasks whose assigned workers have been retired.
+// Returns list of orphaned task IDs.
+// Used by coordinator agent via periodic health check (exposed via export_test.go).
+//
+//nolint:unused // Reserved for coordinator agent health monitoring
+func (cs *CoordinatorServer) detectOrphanedTasks() []string {
+	cs.assignmentsMu.RLock()
+	defer cs.assignmentsMu.RUnlock()
+
+	var orphans []string
+	for taskID, ta := range cs.taskAssignments {
+		// Check implementer
+		if ta.Implementer != "" {
+			implWorker := cs.pool.GetWorker(ta.Implementer)
+			if implWorker == nil || implWorker.GetStatus() == pool.WorkerRetired {
+				orphans = append(orphans, taskID)
+				continue
+			}
+		}
+		// Check reviewer
+		if ta.Reviewer != "" {
+			revWorker := cs.pool.GetWorker(ta.Reviewer)
+			if revWorker == nil || revWorker.GetStatus() == pool.WorkerRetired {
+				orphans = append(orphans, taskID)
+			}
+		}
+	}
+	return orphans
+}
+
+// MaxTaskDuration is the maximum time a worker should spend on a task before being considered stuck.
+const MaxTaskDuration = 30 * time.Minute
+
+// checkStuckWorkers finds workers that have exceeded MaxTaskDuration on their current task.
+// Returns list of stuck worker IDs.
+// Used by coordinator agent via periodic health check (exposed via export_test.go).
+//
+//nolint:unused // Reserved for coordinator agent health monitoring
+func (cs *CoordinatorServer) checkStuckWorkers() []string {
+	cs.assignmentsMu.RLock()
+	defer cs.assignmentsMu.RUnlock()
+
+	var stuck []string
+	for workerID, wa := range cs.workerAssignments {
+		if wa.TaskID != "" && time.Since(wa.AssignedAt) > MaxTaskDuration {
+			stuck = append(stuck, workerID)
+		}
+	}
+	return stuck
+}
+
+// workerStateInfo represents worker state in query_worker_state response.
+type workerStateInfo struct {
+	WorkerID     string `json:"worker_id"`
+	Status       string `json:"status"`
+	Phase        string `json:"phase"`
+	Role         string `json:"role,omitempty"`
+	TaskID       string `json:"task_id,omitempty"`
+	ContextUsage string `json:"context_usage,omitempty"`
+	StartedAt    string `json:"started_at"`
+}
+
+// taskAssignmentInfo represents task assignment in query_worker_state response.
+type taskAssignmentInfo struct {
+	Implementer string `json:"implementer"`
+	Reviewer    string `json:"reviewer,omitempty"`
+	Status      string `json:"status"`
+}
+
+// workerStateResponse is the response for query_worker_state tool.
+type workerStateResponse struct {
+	Workers         []workerStateInfo             `json:"workers"`
+	TaskAssignments map[string]taskAssignmentInfo `json:"task_assignments"`
+	ReadyWorkers    []string                      `json:"ready_workers"`
+}
+
+// handleQueryWorkerState returns detailed worker state including phase and role.
+func (cs *CoordinatorServer) handleQueryWorkerState(_ context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
+	var args queryWorkerStateArgs
+	if len(rawArgs) > 0 {
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+	}
+
+	if cs.pool == nil {
+		return nil, fmt.Errorf("worker pool not available")
+	}
+
+	// Get all active workers
+	workers := cs.pool.ActiveWorkers()
+
+	// Build response
+	response := workerStateResponse{
+		Workers:         make([]workerStateInfo, 0),
+		TaskAssignments: make(map[string]taskAssignmentInfo),
+		ReadyWorkers:    make([]string, 0),
+	}
+
+	cs.assignmentsMu.RLock()
+	defer cs.assignmentsMu.RUnlock()
+
+	for _, w := range workers {
+		// Filter by worker_id if specified
+		if args.WorkerID != "" && w.ID != args.WorkerID {
+			continue
+		}
+
+		// Get assignment info if exists
+		wa := cs.workerAssignments[w.ID]
+
+		// Filter by task_id if specified
+		if args.TaskID != "" {
+			if wa == nil || wa.TaskID != args.TaskID {
+				continue
+			}
+		}
+
+		// Build worker info
+		info := workerStateInfo{
+			WorkerID:  w.ID,
+			Status:    w.GetStatus().String(),
+			Phase:     string(events.PhaseIdle), // Default to idle
+			StartedAt: w.GetStartedAt().Format("15:04:05"),
+		}
+
+		// Add assignment details if exists
+		if wa != nil {
+			info.Phase = string(wa.Phase)
+			info.Role = string(wa.Role)
+			info.TaskID = wa.TaskID
+		}
+
+		// Add context usage
+		if m := w.GetMetrics(); m != nil && m.ContextTokens > 0 && m.ContextWindow > 0 {
+			info.ContextUsage = formatContextUsage(m.ContextTokens, m.ContextWindow)
+		}
+
+		response.Workers = append(response.Workers, info)
+
+		// Track ready workers
+		if w.GetStatus() == pool.WorkerReady && (wa == nil || wa.TaskID == "") {
+			response.ReadyWorkers = append(response.ReadyWorkers, w.ID)
+		}
+	}
+
+	// Build task assignments map
+	for taskID, ta := range cs.taskAssignments {
+		// Filter by task_id if specified
+		if args.TaskID != "" && taskID != args.TaskID {
+			continue
+		}
+
+		response.TaskAssignments[taskID] = taskAssignmentInfo{
+			Implementer: ta.Implementer,
+			Reviewer:    ta.Reviewer,
+			Status:      string(ta.Status),
+		}
+	}
+
+	data, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("marshaling response: %w", err)
+	}
+
+	return StructuredResult(string(data), response), nil
+}
+
+// handleAssignTaskReview assigns a reviewer to a completed implementation.
+func (cs *CoordinatorServer) handleAssignTaskReview(ctx context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
+	var args assignTaskReviewArgs
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	// Validate required fields
+	if args.ReviewerID == "" {
+		return nil, fmt.Errorf("reviewer_id is required")
+	}
+	if args.TaskID == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+	if !isValidTaskID(args.TaskID) {
+		return nil, fmt.Errorf("invalid task_id format: %s", args.TaskID)
+	}
+	if args.ImplementerID == "" {
+		return nil, fmt.Errorf("implementer_id is required")
+	}
+	if args.Summary == "" {
+		return nil, fmt.Errorf("summary is required")
+	}
+
+	// Validate the review assignment
+	if err := cs.validateReviewAssignment(args.ReviewerID, args.TaskID, args.ImplementerID); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get reviewer worker
+	reviewer := cs.pool.GetWorker(args.ReviewerID)
+	if reviewer == nil {
+		return nil, fmt.Errorf("reviewer not found: %s", args.ReviewerID)
+	}
+
+	sessionID := reviewer.GetSessionID()
+	if sessionID == "" {
+		return nil, fmt.Errorf("reviewer %s has no session ID yet", args.ReviewerID)
+	}
+
+	// Update state atomically
+	cs.assignmentsMu.Lock()
+
+	// Create reviewer assignment
+	cs.workerAssignments[args.ReviewerID] = &WorkerAssignment{
+		TaskID:        args.TaskID,
+		Role:          RoleReviewer,
+		Phase:         events.PhaseReviewing,
+		AssignedAt:    time.Now(),
+		ImplementerID: args.ImplementerID,
+	}
+
+	// Update task assignment with reviewer
+	if ta, ok := cs.taskAssignments[args.TaskID]; ok {
+		ta.Reviewer = args.ReviewerID
+		ta.Status = TaskInReview
+		ta.ReviewStartedAt = time.Now()
+	}
+
+	// Update implementer's assignment to note who is reviewing
+	if implAssignment, ok := cs.workerAssignments[args.ImplementerID]; ok {
+		implAssignment.ReviewerID = args.ReviewerID
+	}
+
+	cs.assignmentsMu.Unlock()
+
+	// Generate MCP config for reviewer
+	mcpConfig, err := cs.generateWorkerMCPConfig(args.ReviewerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate MCP config: %w", err)
+	}
+
+	// Build review prompt
+	prompt := ReviewAssignmentPrompt(args.TaskID, args.ImplementerID, args.Summary)
+
+	// Resume reviewer with review assignment
+	proc, err := cs.client.Spawn(ctx, client.Config{
+		WorkDir:         cs.workDir,
+		SessionID:       sessionID,
+		Prompt:          prompt,
+		MCPConfig:       mcpConfig,
+		SkipPermissions: true,
+		DisallowedTools: []string{"AskUserQuestion"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send review to reviewer: %w", err)
+	}
+
+	// Resume reviewer in pool
+	if err := cs.pool.ResumeWorker(args.ReviewerID, proc); err != nil {
+		return nil, fmt.Errorf("failed to resume reviewer: %w", err)
+	}
+
+	// Emit event for TUI
+	cs.pool.EmitIncomingMessage(args.ReviewerID, args.TaskID, prompt)
+
+	// Add BD comment for audit trail
+	cs.addBDComment(args.TaskID, fmt.Sprintf("Review assigned to %s", args.ReviewerID))
+
+	log.Debug(log.CatMCP, "Assigned review", "reviewerID", args.ReviewerID, "taskID", args.TaskID, "implementerID", args.ImplementerID)
+
+	// Return structured response
+	response := map[string]any{
+		"status":  "success",
+		"message": fmt.Sprintf("Review of %s assigned to %s", args.TaskID, args.ReviewerID),
+		"reviewer_state": map[string]string{
+			"worker_id": args.ReviewerID,
+			"phase":     string(events.PhaseReviewing),
+			"task_id":   args.TaskID,
+		},
+	}
+	data, _ := json.MarshalIndent(response, "", "  ")
+	return StructuredResult(string(data), response), nil
+}
+
+// handleAssignReviewFeedback sends review feedback to implementer requiring changes.
+func (cs *CoordinatorServer) handleAssignReviewFeedback(ctx context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
+	var args assignReviewFeedbackArgs
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	// Validate required fields
+	if args.ImplementerID == "" {
+		return nil, fmt.Errorf("implementer_id is required")
+	}
+	if args.TaskID == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+	if !isValidTaskID(args.TaskID) {
+		return nil, fmt.Errorf("invalid task_id format: %s", args.TaskID)
+	}
+	if args.Feedback == "" {
+		return nil, fmt.Errorf("feedback is required")
+	}
+
+	// Validate state
+	cs.assignmentsMu.RLock()
+	ta, ok := cs.taskAssignments[args.TaskID]
+	if !ok {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("task %s not found in assignments", args.TaskID)
+	}
+	if ta.Implementer != args.ImplementerID {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("worker %s is not the implementer of task %s", args.ImplementerID, args.TaskID)
+	}
+	if ta.Status != TaskDenied {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("task %s is not in denied status (current: %s)", args.TaskID, ta.Status)
+	}
+	cs.assignmentsMu.RUnlock()
+
+	// Get implementer worker
+	implementer := cs.pool.GetWorker(args.ImplementerID)
+	if implementer == nil {
+		return nil, fmt.Errorf("implementer not found: %s", args.ImplementerID)
+	}
+
+	sessionID := implementer.GetSessionID()
+	if sessionID == "" {
+		return nil, fmt.Errorf("implementer %s has no session ID yet", args.ImplementerID)
+	}
+
+	// Update state atomically
+	cs.assignmentsMu.Lock()
+	if implAssignment, ok := cs.workerAssignments[args.ImplementerID]; ok {
+		implAssignment.Phase = events.PhaseAddressingFeedback
+	}
+	cs.assignmentsMu.Unlock()
+
+	// Generate MCP config for implementer
+	mcpConfig, err := cs.generateWorkerMCPConfig(args.ImplementerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate MCP config: %w", err)
+	}
+
+	// Build feedback prompt
+	prompt := ReviewFeedbackPrompt(args.TaskID, args.Feedback)
+
+	// Resume implementer with feedback
+	proc, err := cs.client.Spawn(ctx, client.Config{
+		WorkDir:         cs.workDir,
+		SessionID:       sessionID,
+		Prompt:          prompt,
+		MCPConfig:       mcpConfig,
+		SkipPermissions: true,
+		DisallowedTools: []string{"AskUserQuestion"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send feedback to implementer: %w", err)
+	}
+
+	// Resume implementer in pool
+	if err := cs.pool.ResumeWorker(args.ImplementerID, proc); err != nil {
+		return nil, fmt.Errorf("failed to resume implementer: %w", err)
+	}
+
+	// Emit event for TUI
+	cs.pool.EmitIncomingMessage(args.ImplementerID, args.TaskID, prompt)
+
+	// Add BD comment for audit trail
+	cs.addBDComment(args.TaskID, fmt.Sprintf("Review feedback sent to %s: %s", args.ImplementerID, args.Feedback))
+
+	log.Debug(log.CatMCP, "Sent review feedback", "implementerID", args.ImplementerID, "taskID", args.TaskID)
+
+	// Return structured response
+	response := map[string]any{
+		"status":  "success",
+		"message": fmt.Sprintf("Feedback sent to %s for %s", args.ImplementerID, args.TaskID),
+		"implementer_state": map[string]string{
+			"worker_id": args.ImplementerID,
+			"phase":     string(events.PhaseAddressingFeedback),
+			"task_id":   args.TaskID,
+		},
+	}
+	data, _ := json.MarshalIndent(response, "", "  ")
+	return StructuredResult(string(data), response), nil
+}
+
+// handleApproveCommit approves implementation and instructs worker to commit.
+func (cs *CoordinatorServer) handleApproveCommit(ctx context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
+	var args approveCommitArgs
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	// Validate required fields
+	if args.ImplementerID == "" {
+		return nil, fmt.Errorf("implementer_id is required")
+	}
+	if args.TaskID == "" {
+		return nil, fmt.Errorf("task_id is required")
+	}
+	if !isValidTaskID(args.TaskID) {
+		return nil, fmt.Errorf("invalid task_id format: %s", args.TaskID)
+	}
+
+	// Validate state
+	cs.assignmentsMu.RLock()
+	ta, ok := cs.taskAssignments[args.TaskID]
+	if !ok {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("task %s not found in assignments", args.TaskID)
+	}
+	if ta.Implementer != args.ImplementerID {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("worker %s is not the implementer of task %s", args.ImplementerID, args.TaskID)
+	}
+	if ta.Status != TaskApproved {
+		cs.assignmentsMu.RUnlock()
+		return nil, fmt.Errorf("task %s is not in approved status (current: %s)", args.TaskID, ta.Status)
+	}
+	cs.assignmentsMu.RUnlock()
+
+	// Get implementer worker
+	implementer := cs.pool.GetWorker(args.ImplementerID)
+	if implementer == nil {
+		return nil, fmt.Errorf("implementer not found: %s", args.ImplementerID)
+	}
+
+	sessionID := implementer.GetSessionID()
+	if sessionID == "" {
+		return nil, fmt.Errorf("implementer %s has no session ID yet", args.ImplementerID)
+	}
+
+	// Update state atomically
+	cs.assignmentsMu.Lock()
+	if implAssignment, ok := cs.workerAssignments[args.ImplementerID]; ok {
+		implAssignment.Phase = events.PhaseCommitting
+	}
+	if ta, ok := cs.taskAssignments[args.TaskID]; ok {
+		ta.Status = TaskCommitting
+	}
+	cs.assignmentsMu.Unlock()
+
+	// Generate MCP config for implementer
+	mcpConfig, err := cs.generateWorkerMCPConfig(args.ImplementerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate MCP config: %w", err)
+	}
+
+	// Build commit prompt
+	prompt := CommitApprovalPrompt(args.TaskID, args.CommitMessage)
+
+	// Resume implementer with commit instruction
+	proc, err := cs.client.Spawn(ctx, client.Config{
+		WorkDir:         cs.workDir,
+		SessionID:       sessionID,
+		Prompt:          prompt,
+		MCPConfig:       mcpConfig,
+		SkipPermissions: true,
+		DisallowedTools: []string{"AskUserQuestion"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send commit instruction to implementer: %w", err)
+	}
+
+	// Resume implementer in pool
+	if err := cs.pool.ResumeWorker(args.ImplementerID, proc); err != nil {
+		return nil, fmt.Errorf("failed to resume implementer: %w", err)
+	}
+
+	// Emit event for TUI
+	cs.pool.EmitIncomingMessage(args.ImplementerID, args.TaskID, prompt)
+
+	// Add BD comment for audit trail
+	cs.addBDComment(args.TaskID, "Commit approved")
+
+	log.Debug(log.CatMCP, "Approved commit", "implementerID", args.ImplementerID, "taskID", args.TaskID)
+
+	// Return structured response
+	response := map[string]any{
+		"status":  "success",
+		"message": fmt.Sprintf("Commit approved for %s", args.TaskID),
+		"implementer_state": map[string]string{
+			"worker_id": args.ImplementerID,
+			"phase":     string(events.PhaseCommitting),
+			"task_id":   args.TaskID,
+		},
+	}
+	data, _ := json.MarshalIndent(response, "", "  ")
+	return StructuredResult(string(data), response), nil
+}
+
+// addBDComment adds a comment to a task in bd for audit trail.
+// Errors are logged but not returned (best-effort).
+func (cs *CoordinatorServer) addBDComment(taskID, comment string) {
+	cmd := exec.Command("bd", "comment", taskID, "--author", "coordinator", "--", comment) //nolint:gosec // G204: TaskID validated by caller
+	cmd.Dir = cs.workDir
+	if err := cmd.Run(); err != nil {
+		log.Warn(log.CatMCP, "Failed to add BD comment", "taskID", taskID, "error", err)
+	}
+}
+
+// updateBDStatus updates a task's status in bd.
+// Errors are logged but not returned (best-effort).
+func (cs *CoordinatorServer) updateBDStatus(taskID, status string) {
+	cmd := exec.Command("bd", "update", taskID, "--status", status) //nolint:gosec // G204: TaskID validated by caller
+	cmd.Dir = cs.workDir
+	if err := cmd.Run(); err != nil {
+		log.Warn(log.CatMCP, "Failed to update BD status", "taskID", taskID, "status", status, "error", err)
+	}
+}
+
+// WorkerStateCallback implementation - allows workers to update coordinator state.
+// These methods are called by worker MCP tools (report_implementation_complete, report_review_verdict).
+
+// GetWorkerPhase returns the current phase for a worker.
+// Implements WorkerStateCallback interface.
+func (cs *CoordinatorServer) GetWorkerPhase(workerID string) (events.WorkerPhase, error) {
+	cs.assignmentsMu.RLock()
+	defer cs.assignmentsMu.RUnlock()
+
+	wa, ok := cs.workerAssignments[workerID]
+	if !ok || wa == nil {
+		return events.PhaseIdle, nil
+	}
+	return wa.Phase, nil
+}
+
+// OnImplementationComplete is called when a worker reports implementation is done.
+// Updates the worker's phase to AwaitingReview and adds BD comment.
+// Implements WorkerStateCallback interface.
+func (cs *CoordinatorServer) OnImplementationComplete(workerID, summary string) error {
+	cs.assignmentsMu.Lock()
+	defer cs.assignmentsMu.Unlock()
+
+	// Get worker assignment
+	wa, ok := cs.workerAssignments[workerID]
+	if !ok || wa == nil {
+		return fmt.Errorf("worker %s has no active assignment", workerID)
+	}
+
+	// Validate phase - allow both implementing and addressing_feedback
+	if wa.Phase != events.PhaseImplementing && wa.Phase != events.PhaseAddressingFeedback {
+		return fmt.Errorf("worker %s is not in implementing or addressing_feedback phase (current: %s)", workerID, wa.Phase)
+	}
+
+	// Update worker phase
+	wa.Phase = events.PhaseAwaitingReview
+
+	// Update pool worker's phase as well
+	if worker := cs.pool.GetWorker(workerID); worker != nil {
+		worker.SetPhase(events.PhaseAwaitingReview)
+	}
+
+	// Add BD comment for audit trail
+	if wa.TaskID != "" {
+		cs.addBDComment(wa.TaskID, fmt.Sprintf("Implementation complete by %s: %s", workerID, summary))
+	}
+
+	log.Debug(log.CatMCP, "Worker implementation complete", "workerID", workerID, "taskID", wa.TaskID, "summary", summary)
+	return nil
+}
+
+// OnReviewVerdict is called when a reviewer reports their verdict.
+// Updates the task status to Approved or Denied, transitions reviewer to Idle.
+// Implements WorkerStateCallback interface.
+func (cs *CoordinatorServer) OnReviewVerdict(workerID, verdict, comments string) error {
+	cs.assignmentsMu.Lock()
+	defer cs.assignmentsMu.Unlock()
+
+	// Get worker assignment
+	wa, ok := cs.workerAssignments[workerID]
+	if !ok || wa == nil {
+		return fmt.Errorf("worker %s has no active assignment", workerID)
+	}
+
+	// Validate phase
+	if wa.Phase != events.PhaseReviewing {
+		return fmt.Errorf("worker %s is not in reviewing phase (current: %s)", workerID, wa.Phase)
+	}
+
+	// Validate verdict
+	if verdict != "APPROVED" && verdict != "DENIED" {
+		return fmt.Errorf("invalid verdict: %s (must be APPROVED or DENIED)", verdict)
+	}
+
+	taskID := wa.TaskID
+
+	// Update task status based on verdict
+	if ta, ok := cs.taskAssignments[taskID]; ok {
+		if verdict == "APPROVED" {
+			ta.Status = TaskApproved
+		} else {
+			ta.Status = TaskDenied
+		}
+	}
+
+	// Transition reviewer to Idle
+	wa.Phase = events.PhaseIdle
+	wa.TaskID = ""
+	wa.ImplementerID = ""
+
+	// Update pool worker's phase
+	if worker := cs.pool.GetWorker(workerID); worker != nil {
+		worker.SetPhase(events.PhaseIdle)
+	}
+
+	// Add BD comment for audit trail
+	if taskID != "" {
+		cs.addBDComment(taskID, fmt.Sprintf("Review verdict by %s: %s - %s", workerID, verdict, comments))
+	}
+
+	log.Debug(log.CatMCP, "Worker review verdict", "workerID", workerID, "taskID", taskID, "verdict", verdict, "comments", comments)
+	return nil
 }

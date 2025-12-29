@@ -378,7 +378,8 @@ func (i *Initializer) createWorkspace() error {
 
 	// Create coordinator server with the dynamic port
 	mcpCoordServer := mcp.NewCoordinatorServer(aiClient, workerPool, msgLog, i.cfg.WorkDir, port, extensions)
-	workerServers := newWorkerServerCache(msgLog)
+	// Pass the coordinator server as the state callback so workers can update coordinator state
+	workerServers := newWorkerServerCache(msgLog, mcpCoordServer)
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpCoordServer.ServeHTTP())
