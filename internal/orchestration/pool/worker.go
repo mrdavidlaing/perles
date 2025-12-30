@@ -72,11 +72,11 @@ func (w *Worker) AssignTask(taskID string) error {
 }
 
 // CompleteTask marks the current task as complete and returns to Ready state.
+// Note: TaskID is preserved for display purposes as historical context.
 func (w *Worker) CompleteTask() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	w.TaskID = ""
 	w.Status = WorkerReady
 	w.TaskStartedAt = time.Time{}
 }
@@ -87,7 +87,6 @@ func (w *Worker) Retire() {
 	defer w.mu.Unlock()
 
 	w.Status = WorkerRetired
-	w.TaskID = ""
 }
 
 // GetStatus returns the current status thread-safely.
@@ -137,6 +136,14 @@ func (w *Worker) SetPhase(phase events.WorkerPhase) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.Phase = phase
+}
+
+// SetTaskID updates the task ID thread-safely.
+// This is used by the coordinator to set task ID (e.g., when assigning a reviewer).
+func (w *Worker) SetTaskID(taskID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.TaskID = taskID
 }
 
 // GetStartedAt returns when the worker was spawned thread-safely.
@@ -404,7 +411,8 @@ func (w *Worker) handleProcessComplete(proc client.HeadlessProcess, broker *pubs
 	case client.StatusCompleted:
 		// Process completed normally - worker returns to Ready
 		finalStatus = WorkerReady
-		w.TaskID = "" // Clear current task
+		// TaskID is intentionally NOT cleared - coordinator manages task ID lifecycle
+		// This allows TUI to display task context through phase transitions
 		w.TaskStartedAt = time.Time{}
 	case client.StatusCancelled:
 		// Cancelled - retire the worker

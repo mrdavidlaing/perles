@@ -297,10 +297,65 @@ func TestWorker_CompleteTask(t *testing.T) {
 	w.AssignTask("task-abc")
 	require.Equal(t, WorkerWorking, w.GetStatus())
 
-	// Complete task - returns to Ready
+	// Complete task - returns to Ready but preserves task ID
 	w.CompleteTask()
-	require.Equal(t, "", w.TaskID)
+	require.Equal(t, "task-abc", w.TaskID) // Task ID preserved for TUI display
 	require.Equal(t, WorkerReady, w.GetStatus())
+}
+
+func TestWorker_SetTaskID(t *testing.T) {
+	w := newWorker("worker-1", 10)
+
+	// Initially no task
+	require.Empty(t, w.GetTaskID())
+
+	// SetTaskID sets the task ID
+	w.SetTaskID("task-xyz")
+	require.Equal(t, "task-xyz", w.GetTaskID())
+
+	// Can change task ID
+	w.SetTaskID("task-abc")
+	require.Equal(t, "task-abc", w.GetTaskID())
+
+	// Can clear task ID
+	w.SetTaskID("")
+	require.Empty(t, w.GetTaskID())
+}
+
+func TestWorker_TaskIDPreservedAcrossPhaseTransitions(t *testing.T) {
+	w := newWorker("worker-1", 10)
+	broker := pubsub.NewBroker[WorkerEvent]()
+	defer broker.Close()
+
+	ctx := context.Background()
+	events := broker.Subscribe(ctx)
+
+	// Create mock process
+	proc := newWorkerTestProcess()
+
+	// Set task ID before starting
+	w.TaskID = "task-lifecycle"
+	w.Phase = poolevents.PhaseImplementing
+
+	// Start worker
+	done := make(chan bool)
+	go func() {
+		w.start(ctx, proc, broker)
+		done <- true
+	}()
+
+	// Wait for spawn event
+	<-events
+
+	// Complete process successfully
+	proc.Complete()
+
+	// Wait for worker to finish
+	<-done
+
+	// Task ID should be preserved after process completion
+	require.Equal(t, WorkerReady, w.GetStatus())
+	require.Equal(t, "task-lifecycle", w.TaskID, "Task ID should be preserved through phase transitions")
 }
 
 func TestWorker_Retire(t *testing.T) {

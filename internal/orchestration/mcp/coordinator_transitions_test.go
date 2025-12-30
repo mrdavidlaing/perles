@@ -1,9 +1,12 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zjrosen/perles/internal/mocks"
@@ -783,4 +786,315 @@ func TestMarkTaskComplete_PoolWorkerPhaseUpdate(t *testing.T) {
 
 	// Verify
 	require.Equal(t, events.PhaseIdle, worker.GetPhase(), "Pool worker phase mismatch")
+}
+
+// ============================================================================
+// Pool Worker Phase Sync Tests
+//
+// These tests verify that coordinator handlers sync pool worker phase
+// via pool.SetWorkerPhase for TUI display consistency.
+// ============================================================================
+
+// TestOnImplementationComplete_SyncsPoolWorkerPhase verifies OnImplementationComplete
+// calls pool.SetWorkerPhase to sync the pool worker's phase for TUI display.
+func TestOnImplementationComplete_SyncsPoolWorkerPhase(t *testing.T) {
+	workerPool := pool.NewWorkerPool(pool.Config{})
+	defer workerPool.Close()
+
+	mockExec := mocks.NewMockBeadsExecutor(t)
+	// AddComment is called for audit trail - allow any call
+	mockExec.On("AddComment", "perles-abc.1", "coordinator", mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil, mockExec)
+	worker := workerPool.AddTestWorker("implementer", pool.WorkerReady)
+
+	// Set initial phase
+	worker.SetPhase(events.PhaseImplementing)
+	require.Equal(t, events.PhaseImplementing, worker.GetPhase(), "Pre-condition: phase should be implementing")
+
+	// Setup coordinator state
+	cs.SetWorkerAssignment("implementer", &WorkerAssignment{
+		TaskID:     "perles-abc.1",
+		Role:       RoleImplementer,
+		Phase:      events.PhaseImplementing,
+		AssignedAt: time.Now(),
+	})
+
+	// Call OnImplementationComplete
+	err := cs.OnImplementationComplete("implementer", "Implementation done")
+	require.NoError(t, err, "OnImplementationComplete should not error")
+
+	// Verify pool worker phase was synced to AwaitingReview
+	require.Equal(t, events.PhaseAwaitingReview, worker.GetPhase(),
+		"Pool worker phase should be synced to AwaitingReview after OnImplementationComplete")
+}
+
+// TestOnReviewVerdict_SyncsPoolWorkerPhase verifies OnReviewVerdict
+// calls pool.SetWorkerPhase to set reviewer phase to Idle.
+func TestOnReviewVerdict_SyncsPoolWorkerPhase(t *testing.T) {
+	workerPool := pool.NewWorkerPool(pool.Config{})
+	defer workerPool.Close()
+
+	mockExec := mocks.NewMockBeadsExecutor(t)
+	// AddComment is called for audit trail - allow any call
+	mockExec.On("AddComment", "perles-abc.1", "coordinator", mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil, mockExec)
+	reviewer := workerPool.AddTestWorker("reviewer", pool.WorkerReady)
+
+	// Set initial phase
+	reviewer.SetPhase(events.PhaseReviewing)
+	require.Equal(t, events.PhaseReviewing, reviewer.GetPhase(), "Pre-condition: phase should be reviewing")
+
+	// Setup coordinator state
+	cs.SetWorkerAssignment("reviewer", &WorkerAssignment{
+		TaskID:        "perles-abc.1",
+		Role:          RoleReviewer,
+		Phase:         events.PhaseReviewing,
+		ImplementerID: "implementer",
+		AssignedAt:    time.Now(),
+	})
+	cs.SetTaskAssignment("perles-abc.1", &TaskAssignment{
+		TaskID:      "perles-abc.1",
+		Implementer: "implementer",
+		Reviewer:    "reviewer",
+		Status:      TaskInReview,
+	})
+
+	// Call OnReviewVerdict with APPROVED
+	err := cs.OnReviewVerdict("reviewer", "APPROVED", "Looks good")
+	require.NoError(t, err, "OnReviewVerdict should not error")
+
+	// Verify pool worker phase was synced to Idle
+	require.Equal(t, events.PhaseIdle, reviewer.GetPhase(),
+		"Pool worker phase should be synced to Idle after OnReviewVerdict")
+}
+
+// TestOnReviewVerdict_SyncsPoolWorkerPhase_Denied verifies OnReviewVerdict
+// also syncs phase to Idle when review is DENIED.
+func TestOnReviewVerdict_SyncsPoolWorkerPhase_Denied(t *testing.T) {
+	workerPool := pool.NewWorkerPool(pool.Config{})
+	defer workerPool.Close()
+
+	mockExec := mocks.NewMockBeadsExecutor(t)
+	// AddComment is called for audit trail - allow any call
+	mockExec.On("AddComment", "perles-abc.1", "coordinator", mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil, mockExec)
+	reviewer := workerPool.AddTestWorker("reviewer", pool.WorkerReady)
+
+	// Set initial phase
+	reviewer.SetPhase(events.PhaseReviewing)
+
+	// Setup coordinator state
+	cs.SetWorkerAssignment("reviewer", &WorkerAssignment{
+		TaskID:        "perles-abc.1",
+		Role:          RoleReviewer,
+		Phase:         events.PhaseReviewing,
+		ImplementerID: "implementer",
+		AssignedAt:    time.Now(),
+	})
+	cs.SetTaskAssignment("perles-abc.1", &TaskAssignment{
+		TaskID:      "perles-abc.1",
+		Implementer: "implementer",
+		Reviewer:    "reviewer",
+		Status:      TaskInReview,
+	})
+
+	// Call OnReviewVerdict with DENIED
+	err := cs.OnReviewVerdict("reviewer", "DENIED", "Needs fixes")
+	require.NoError(t, err, "OnReviewVerdict should not error")
+
+	// Verify pool worker phase was synced to Idle (reviewer goes idle after review)
+	require.Equal(t, events.PhaseIdle, reviewer.GetPhase(),
+		"Pool worker phase should be synced to Idle after OnReviewVerdict (even when denied)")
+}
+
+// TestOnImplementationComplete_FromAddressingFeedback_SyncsPoolWorkerPhase verifies
+// OnImplementationComplete syncs phase when transitioning from AddressingFeedback.
+func TestOnImplementationComplete_FromAddressingFeedback_SyncsPoolWorkerPhase(t *testing.T) {
+	workerPool := pool.NewWorkerPool(pool.Config{})
+	defer workerPool.Close()
+
+	mockExec := mocks.NewMockBeadsExecutor(t)
+	// AddComment is called for audit trail - allow any call
+	mockExec.On("AddComment", "perles-abc.1", "coordinator", mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil, mockExec)
+	worker := workerPool.AddTestWorker("implementer", pool.WorkerReady)
+
+	// Set initial phase to AddressingFeedback
+	worker.SetPhase(events.PhaseAddressingFeedback)
+	require.Equal(t, events.PhaseAddressingFeedback, worker.GetPhase(), "Pre-condition: phase should be addressing_feedback")
+
+	// Setup coordinator state
+	cs.SetWorkerAssignment("implementer", &WorkerAssignment{
+		TaskID:     "perles-abc.1",
+		Role:       RoleImplementer,
+		Phase:      events.PhaseAddressingFeedback,
+		AssignedAt: time.Now(),
+	})
+
+	// Call OnImplementationComplete
+	err := cs.OnImplementationComplete("implementer", "Fixed the issues")
+	require.NoError(t, err, "OnImplementationComplete should not error")
+
+	// Verify pool worker phase was synced to AwaitingReview
+	require.Equal(t, events.PhaseAwaitingReview, worker.GetPhase(),
+		"Pool worker phase should be synced to AwaitingReview after OnImplementationComplete from AddressingFeedback")
+}
+
+// ============================================================================
+// Handler Phase Sync Tests
+//
+// These tests verify that the coordinator handler functions (assign_task_review,
+// assign_review_feedback, approve_commit) call pool.SetWorkerPhase to sync
+// the pool worker's phase before attempting to spawn/resume workers.
+// ============================================================================
+
+// TestHandleAssignTaskReview_SyncsPoolWorkerPhase verifies handleAssignTaskReview
+// calls pool.SetWorkerPhase to set reviewer phase to PhaseReviewing.
+func TestHandleAssignTaskReview_SyncsPoolWorkerPhase(t *testing.T) {
+	workerPool := pool.NewWorkerPool(pool.Config{})
+	defer workerPool.Close()
+
+	mockExec := mocks.NewMockBeadsExecutor(t)
+	// AddComment may be called - allow any call
+	mockExec.On("AddComment", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil, mockExec)
+
+	// Create implementer (working on task) and reviewer (ready)
+	implementer := workerPool.AddTestWorker("worker-1", pool.WorkerWorking)
+	implementer.SetPhase(events.PhaseAwaitingReview)
+	implementer.SessionID = "test-session-1" // Set session ID for test
+
+	reviewer := workerPool.AddTestWorker("worker-2", pool.WorkerReady)
+	reviewer.SetPhase(events.PhaseIdle)
+	reviewer.SessionID = "test-session-2" // Set session ID for test
+
+	// Verify pre-condition: reviewer phase is Idle
+	require.Equal(t, events.PhaseIdle, reviewer.GetPhase(), "Pre-condition: reviewer phase should be idle")
+
+	// Setup coordinator state: task awaiting review
+	cs.SetTaskAssignment("perles-abc.1", &TaskAssignment{
+		TaskID:      "perles-abc.1",
+		Implementer: "worker-1",
+		Status:      TaskImplementing, // Not in review yet
+	})
+	cs.SetWorkerAssignment("worker-1", &WorkerAssignment{
+		TaskID: "perles-abc.1",
+		Role:   RoleImplementer,
+		Phase:  events.PhaseAwaitingReview,
+	})
+
+	// Call the handler - it will fail when trying to resume worker (no Claude client),
+	// but the phase sync should happen BEFORE that
+	handler := cs.handlers["assign_task_review"]
+	args := `{"reviewer_id": "worker-2", "task_id": "perles-abc.1", "implementer_id": "worker-1", "summary": "Test implementation"}`
+	_, err := handler(context.Background(), json.RawMessage(args))
+
+	// Handler may fail at some point during execution (e.g., resuming worker),
+	// but we only care that the phase was synced
+	_ = err // Ignore error - we're testing phase sync happened
+
+	// IMPORTANT: Verify pool worker phase was synced to PhaseReviewing
+	require.Equal(t, events.PhaseReviewing, reviewer.GetPhase(),
+		"Pool worker phase should be synced to PhaseReviewing by handleAssignTaskReview")
+}
+
+// TestHandleAssignReviewFeedback_SyncsPoolWorkerPhase verifies handleAssignReviewFeedback
+// calls pool.SetWorkerPhase to set implementer phase to PhaseAddressingFeedback.
+func TestHandleAssignReviewFeedback_SyncsPoolWorkerPhase(t *testing.T) {
+	workerPool := pool.NewWorkerPool(pool.Config{})
+	defer workerPool.Close()
+
+	mockExec := mocks.NewMockBeadsExecutor(t)
+	// AddComment may be called - allow any call
+	mockExec.On("AddComment", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil, mockExec)
+
+	// Create implementer (awaiting review after denial)
+	implementer := workerPool.AddTestWorker("worker-1", pool.WorkerReady)
+	implementer.SetPhase(events.PhaseAwaitingReview)
+	implementer.SessionID = "test-session-1" // Set session ID for test
+
+	// Verify pre-condition: implementer phase is AwaitingReview
+	require.Equal(t, events.PhaseAwaitingReview, implementer.GetPhase(), "Pre-condition: implementer phase should be awaiting_review")
+
+	// Setup coordinator state: task denied, implementer awaiting feedback
+	cs.SetTaskAssignment("perles-abc.1", &TaskAssignment{
+		TaskID:      "perles-abc.1",
+		Implementer: "worker-1",
+		Reviewer:    "worker-2",
+		Status:      TaskDenied, // Review was denied
+	})
+	cs.SetWorkerAssignment("worker-1", &WorkerAssignment{
+		TaskID: "perles-abc.1",
+		Role:   RoleImplementer,
+		Phase:  events.PhaseAwaitingReview,
+	})
+
+	// Call the handler - it will fail when trying to resume worker (no Claude client),
+	// but the phase sync should happen BEFORE that
+	handler := cs.handlers["assign_review_feedback"]
+	args := `{"implementer_id": "worker-1", "task_id": "perles-abc.1", "feedback": "Please fix the error handling"}`
+	_, err := handler(context.Background(), json.RawMessage(args))
+
+	// Handler may fail at some point during execution (e.g., resuming worker),
+	// but we only care that the phase was synced
+	_ = err // Ignore error - we're testing phase sync happened
+
+	// IMPORTANT: Verify pool worker phase was synced to PhaseAddressingFeedback
+	require.Equal(t, events.PhaseAddressingFeedback, implementer.GetPhase(),
+		"Pool worker phase should be synced to PhaseAddressingFeedback by handleAssignReviewFeedback")
+}
+
+// TestHandleApproveCommit_SyncsPoolWorkerPhase verifies handleApproveCommit
+// calls pool.SetWorkerPhase to set implementer phase to PhaseCommitting.
+func TestHandleApproveCommit_SyncsPoolWorkerPhase(t *testing.T) {
+	workerPool := pool.NewWorkerPool(pool.Config{})
+	defer workerPool.Close()
+
+	mockExec := mocks.NewMockBeadsExecutor(t)
+	// AddComment may be called - allow any call
+	mockExec.On("AddComment", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	cs := NewCoordinatorServer(claude.NewClient(), workerPool, nil, "/tmp/test", 8765, nil, mockExec)
+
+	// Create implementer (review approved, ready to commit)
+	implementer := workerPool.AddTestWorker("worker-1", pool.WorkerWorking)
+	implementer.SetPhase(events.PhaseAwaitingReview)
+	implementer.SessionID = "test-session-1" // Set session ID for test
+
+	// Verify pre-condition: implementer phase is AwaitingReview
+	require.Equal(t, events.PhaseAwaitingReview, implementer.GetPhase(), "Pre-condition: implementer phase should be awaiting_review")
+
+	// Setup coordinator state: task approved, ready for commit
+	cs.SetTaskAssignment("perles-abc.1", &TaskAssignment{
+		TaskID:      "perles-abc.1",
+		Implementer: "worker-1",
+		Reviewer:    "worker-2",
+		Status:      TaskApproved, // Review was approved
+	})
+	cs.SetWorkerAssignment("worker-1", &WorkerAssignment{
+		TaskID: "perles-abc.1",
+		Role:   RoleImplementer,
+		Phase:  events.PhaseAwaitingReview,
+	})
+
+	// Call the handler - it will fail when trying to resume worker (no Claude client),
+	// but the phase sync should happen BEFORE that
+	handler := cs.handlers["approve_commit"]
+	args := `{"implementer_id": "worker-1", "task_id": "perles-abc.1"}`
+	_, err := handler(context.Background(), json.RawMessage(args))
+
+	// Handler may fail at some point during execution (e.g., resuming worker),
+	// but we only care that the phase was synced
+	_ = err // Ignore error - we're testing phase sync happened
+
+	// IMPORTANT: Verify pool worker phase was synced to PhaseCommitting
+	require.Equal(t, events.PhaseCommitting, implementer.GetPhase(),
+		"Pool worker phase should be synced to PhaseCommitting by handleApproveCommit")
 }

@@ -677,3 +677,133 @@ func TestWorkerPool_EmitIncomingMessage(t *testing.T) {
 		require.Fail(t, "timeout waiting for incoming message event")
 	}
 }
+
+func TestWorkerPool_SetWorkerPhase(t *testing.T) {
+	pool := NewWorkerPool(Config{})
+	defer pool.Close()
+
+	// Add a worker with a task
+	pool.mu.Lock()
+	worker := newWorker("w1", 100)
+	worker.Status = WorkerWorking
+	worker.TaskID = "task-123"
+	worker.Phase = events.PhaseImplementing
+	pool.workers["w1"] = worker
+	pool.mu.Unlock()
+
+	// Update phase
+	err := pool.SetWorkerPhase("w1", events.PhaseAwaitingReview)
+	require.NoError(t, err)
+
+	// Verify phase was updated
+	require.Equal(t, events.PhaseAwaitingReview, pool.GetWorker("w1").GetPhase())
+}
+
+func TestWorkerPool_SetWorkerPhase_NotFound(t *testing.T) {
+	pool := NewWorkerPool(Config{})
+	defer pool.Close()
+
+	err := pool.SetWorkerPhase("does-not-exist", events.PhaseReviewing)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+func TestWorkerPool_SetWorkerPhase_PreservesTaskID(t *testing.T) {
+	pool := NewWorkerPool(Config{})
+	defer pool.Close()
+
+	// Add a worker with a task
+	pool.mu.Lock()
+	worker := newWorker("w1", 100)
+	worker.Status = WorkerWorking
+	worker.TaskID = "task-456"
+	worker.Phase = events.PhaseImplementing
+	pool.workers["w1"] = worker
+	pool.mu.Unlock()
+
+	// Update phase multiple times
+	err := pool.SetWorkerPhase("w1", events.PhaseAwaitingReview)
+	require.NoError(t, err)
+
+	err = pool.SetWorkerPhase("w1", events.PhaseAddressingFeedback)
+	require.NoError(t, err)
+
+	err = pool.SetWorkerPhase("w1", events.PhaseCommitting)
+	require.NoError(t, err)
+
+	// Verify task ID was preserved throughout all phase changes
+	w := pool.GetWorker("w1")
+	require.Equal(t, "task-456", w.GetTaskID())
+	require.Equal(t, events.PhaseCommitting, w.GetPhase())
+}
+
+func TestWorkerPool_SetWorkerTaskID(t *testing.T) {
+	pool := NewWorkerPool(Config{})
+	defer pool.Close()
+
+	// Add a worker
+	pool.mu.Lock()
+	worker := newWorker("w1", 100)
+	worker.Status = WorkerReady
+	pool.workers["w1"] = worker
+	pool.mu.Unlock()
+
+	// Set task ID
+	err := pool.SetWorkerTaskID("w1", "task-reviewer")
+	require.NoError(t, err)
+
+	// Verify task ID was set
+	require.Equal(t, "task-reviewer", pool.GetWorker("w1").GetTaskID())
+}
+
+func TestWorkerPool_SetWorkerTaskID_NotFound(t *testing.T) {
+	pool := NewWorkerPool(Config{})
+	defer pool.Close()
+
+	err := pool.SetWorkerTaskID("does-not-exist", "task-123")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+func TestWorkerPool_TaskIDPreservedThroughProcessCompletion(t *testing.T) {
+	mockClient := mocks.NewMockHeadlessClient(t)
+	proc := newTestProcess()
+
+	mockClient.EXPECT().Spawn(mock.Anything, mock.Anything).Return(proc, nil)
+
+	pool := NewWorkerPool(Config{
+		Client:     mockClient,
+		MaxWorkers: 4,
+	})
+	defer pool.Close()
+
+	// Spawn worker
+	workerID, err := pool.SpawnWorker(client.Config{WorkDir: "/test", Prompt: "init"})
+	require.NoError(t, err)
+
+	// Complete initial processing
+	proc.SendInitEvent("sess-123", "/test")
+	proc.Complete()
+
+	// Wait for worker to become Ready
+	time.Sleep(50 * time.Millisecond)
+
+	// Assign task
+	err = pool.AssignTaskToWorker(workerID, "task-lifecycle")
+	require.NoError(t, err)
+
+	// Set phase
+	err = pool.SetWorkerPhase(workerID, events.PhaseImplementing)
+	require.NoError(t, err)
+
+	// Simulate another process completion (like when AI responds to a message)
+	// In real scenario, this happens when ResumeWorker's process completes
+	worker := pool.GetWorker(workerID)
+
+	// Directly call CompleteTask to simulate what handleProcessComplete does
+	worker.CompleteTask()
+
+	// Verify task ID is preserved
+	require.Equal(t, "task-lifecycle", worker.GetTaskID(), "Task ID should be preserved after process completion")
+	require.Equal(t, WorkerReady, worker.GetStatus())
+}

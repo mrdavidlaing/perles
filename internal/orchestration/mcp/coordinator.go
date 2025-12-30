@@ -798,11 +798,6 @@ func (cs *CoordinatorServer) handleMarkTaskComplete(_ context.Context, rawArgs j
 	}
 	cs.assignmentsMu.Unlock()
 
-	// Update pool worker's phase (best-effort, worker may be gone)
-	if implementer := cs.pool.GetWorker(implementerID); implementer != nil {
-		implementer.SetPhase(events.PhaseIdle)
-	}
-
 	// Add BD comment for audit trail
 	if err := cs.beadsExecutor.AddComment(args.TaskID, "coordinator", "Task completed"); err != nil {
 		log.Debug(log.CatMCP, "bd comment failed", "taskID", args.TaskID, "error", err)
@@ -1353,6 +1348,14 @@ func (cs *CoordinatorServer) handleAssignTaskReview(ctx context.Context, rawArgs
 
 	cs.assignmentsMu.Unlock()
 
+	// Sync pool worker phase and task ID for TUI display
+	if err := cs.pool.SetWorkerPhase(args.ReviewerID, events.PhaseReviewing); err != nil {
+		log.Warn(log.CatMCP, "Failed to set reviewer phase", "reviewerID", args.ReviewerID, "error", err)
+	}
+	if err := cs.pool.SetWorkerTaskID(args.ReviewerID, args.TaskID); err != nil {
+		log.Warn(log.CatMCP, "Failed to set reviewer task ID", "reviewerID", args.ReviewerID, "error", err)
+	}
+
 	// Generate MCP config for reviewer
 	mcpConfig, err := cs.generateWorkerMCPConfig(args.ReviewerID)
 	if err != nil {
@@ -1459,6 +1462,11 @@ func (cs *CoordinatorServer) handleAssignReviewFeedback(ctx context.Context, raw
 		implAssignment.Phase = events.PhaseAddressingFeedback
 	}
 	cs.assignmentsMu.Unlock()
+
+	// Sync pool worker phase for TUI display
+	if err := cs.pool.SetWorkerPhase(args.ImplementerID, events.PhaseAddressingFeedback); err != nil {
+		log.Warn(log.CatMCP, "Failed to set implementer phase", "implementerID", args.ImplementerID, "error", err)
+	}
 
 	// Generate MCP config for implementer
 	mcpConfig, err := cs.generateWorkerMCPConfig(args.ImplementerID)
@@ -1567,6 +1575,11 @@ func (cs *CoordinatorServer) handleApproveCommit(ctx context.Context, rawArgs js
 	}
 	cs.assignmentsMu.Unlock()
 
+	// Sync pool worker phase for TUI display
+	if err := cs.pool.SetWorkerPhase(args.ImplementerID, events.PhaseCommitting); err != nil {
+		log.Warn(log.CatMCP, "Failed to set implementer phase", "implementerID", args.ImplementerID, "error", err)
+	}
+
 	// Generate MCP config for implementer
 	mcpConfig, err := cs.generateWorkerMCPConfig(args.ImplementerID)
 	if err != nil {
@@ -1655,9 +1668,9 @@ func (cs *CoordinatorServer) OnImplementationComplete(workerID, summary string) 
 	// Update worker phase
 	wa.Phase = events.PhaseAwaitingReview
 
-	// Update pool worker's phase as well
-	if worker := cs.pool.GetWorker(workerID); worker != nil {
-		worker.SetPhase(events.PhaseAwaitingReview)
+	// Sync pool worker phase for TUI display
+	if err := cs.pool.SetWorkerPhase(workerID, events.PhaseAwaitingReview); err != nil {
+		log.Warn(log.CatMCP, "Failed to set worker phase", "workerID", workerID, "error", err)
 	}
 
 	// Add BD comment for audit trail
@@ -1705,14 +1718,15 @@ func (cs *CoordinatorServer) OnReviewVerdict(workerID, verdict, comments string)
 		}
 	}
 
-	// Transition reviewer to Idle
+	// Transition reviewer to Idle (coordinator state only)
+	// Note: Task ID is NOT cleared from pool worker - it persists as historical context
 	wa.Phase = events.PhaseIdle
 	wa.TaskID = ""
 	wa.ImplementerID = ""
 
-	// Update pool worker's phase
-	if worker := cs.pool.GetWorker(workerID); worker != nil {
-		worker.SetPhase(events.PhaseIdle)
+	// Sync pool worker phase to Idle for TUI display (task ID preserved)
+	if err := cs.pool.SetWorkerPhase(workerID, events.PhaseIdle); err != nil {
+		log.Warn(log.CatMCP, "Failed to set reviewer phase", "workerID", workerID, "error", err)
 	}
 
 	// Add BD comment for audit trail
