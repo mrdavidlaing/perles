@@ -2042,3 +2042,211 @@ func TestSession_AllFourBrokersFromAllBrokers(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(mcpData), "test_tool")
 }
+
+// Tests for WriteWorkerReflection
+
+func TestWriteWorkerReflection_Success(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-success"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	// Write a reflection
+	content := []byte("# Worker Reflection\n\n**Worker:** worker-1\n**Task:** perles-abc.1\n\n## Summary\n\nImplemented user validation with regex patterns.\n")
+	filePath, err := session.WriteWorkerReflection("worker-1", "perles-abc.1", content)
+	require.NoError(t, err)
+	require.NotEmpty(t, filePath)
+
+	// Verify file path
+	expectedPath := filepath.Join(sessionDir, "workers", "worker-1", "reflection.md")
+	require.Equal(t, expectedPath, filePath)
+
+	// Verify file exists and has correct content
+	data, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	require.Equal(t, content, data)
+
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+}
+
+func TestWriteWorkerReflection_CreatesWorkerDirectory(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-creates-dir"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Worker directory shouldn't exist yet
+	workerPath := filepath.Join(sessionDir, "workers", "worker-new")
+	_, err = os.Stat(workerPath)
+	require.True(t, os.IsNotExist(err))
+
+	// Write reflection - should create directory
+	content := []byte("# Reflection")
+	filePath, err := session.WriteWorkerReflection("worker-new", "task-123", content)
+	require.NoError(t, err)
+	require.NotEmpty(t, filePath)
+
+	// Worker directory should now exist
+	info, err := os.Stat(workerPath)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+
+	// reflection.md should exist
+	reflectionPath := filepath.Join(workerPath, "reflection.md")
+	_, err = os.Stat(reflectionPath)
+	require.NoError(t, err)
+
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+}
+
+func TestWriteWorkerReflection_SessionClosed(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-closed"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Close the session first
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+
+	// Writing after close should fail
+	content := []byte("# Reflection")
+	_, err = session.WriteWorkerReflection("worker-1", "task-123", content)
+	require.Error(t, err)
+	require.Equal(t, os.ErrClosed, err)
+}
+
+func TestWriteWorkerReflection_OverwritesExisting(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-overwrite"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Write first reflection
+	content1 := []byte("# First Reflection\n\nOriginal content")
+	filePath1, err := session.WriteWorkerReflection("worker-1", "task-1", content1)
+	require.NoError(t, err)
+
+	// Verify first content
+	data1, err := os.ReadFile(filePath1)
+	require.NoError(t, err)
+	require.Equal(t, content1, data1)
+
+	// Write second reflection (different task) - should overwrite
+	content2 := []byte("# Second Reflection\n\nUpdated content for different task")
+	filePath2, err := session.WriteWorkerReflection("worker-1", "task-2", content2)
+	require.NoError(t, err)
+
+	// Paths should be the same (same worker, single reflection.md file)
+	require.Equal(t, filePath1, filePath2)
+
+	// Verify content was overwritten
+	data2, err := os.ReadFile(filePath2)
+	require.NoError(t, err)
+	require.Equal(t, content2, data2)
+
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+}
+
+func TestWriteWorkerReflection_FilePermissions(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-permissions"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Write a reflection
+	content := []byte("# Reflection\n\nTest content for permission check")
+	filePath, err := session.WriteWorkerReflection("worker-1", "task-123", content)
+	require.NoError(t, err)
+
+	// Verify file permissions are 0600 (owner read/write only)
+	info, err := os.Stat(filePath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0600), info.Mode().Perm())
+
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+}
+
+func TestWriteWorkerReflection_EmptyContent(t *testing.T) {
+	// Edge case: Empty content should write an empty file (valid, not an error)
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-empty"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Write empty content
+	content := []byte{}
+	filePath, err := session.WriteWorkerReflection("worker-1", "task-123", content)
+	require.NoError(t, err)
+	require.NotEmpty(t, filePath)
+
+	// Verify file exists and is empty
+	data, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	require.Empty(t, data)
+
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+}
+
+func TestWriteWorkerReflection_MultipleWorkers(t *testing.T) {
+	// Verify each worker gets their own reflection.md file with no cross-contamination
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-multiple"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Write reflections for multiple workers
+	content1 := []byte("# Reflection Worker 1\n\nWorker-1 specific content")
+	content2 := []byte("# Reflection Worker 2\n\nWorker-2 specific content")
+	content3 := []byte("# Reflection Worker 3\n\nWorker-3 specific content")
+
+	path1, err := session.WriteWorkerReflection("worker-1", "task-1", content1)
+	require.NoError(t, err)
+
+	path2, err := session.WriteWorkerReflection("worker-2", "task-2", content2)
+	require.NoError(t, err)
+
+	path3, err := session.WriteWorkerReflection("worker-3", "task-3", content3)
+	require.NoError(t, err)
+
+	// Verify paths are different
+	require.NotEqual(t, path1, path2)
+	require.NotEqual(t, path2, path3)
+	require.NotEqual(t, path1, path3)
+
+	// Verify each file has correct content
+	data1, err := os.ReadFile(path1)
+	require.NoError(t, err)
+	require.Equal(t, content1, data1)
+
+	data2, err := os.ReadFile(path2)
+	require.NoError(t, err)
+	require.Equal(t, content2, data2)
+
+	data3, err := os.ReadFile(path3)
+	require.NoError(t, err)
+	require.Equal(t, content3, data3)
+
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+}

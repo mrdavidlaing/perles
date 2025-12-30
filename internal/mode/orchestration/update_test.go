@@ -10,6 +10,8 @@ import (
 
 	"github.com/zjrosen/perles/internal/orchestration/claude"
 	"github.com/zjrosen/perles/internal/orchestration/coordinator"
+	"github.com/zjrosen/perles/internal/orchestration/events"
+	"github.com/zjrosen/perles/internal/orchestration/mcp"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/pool"
 	"github.com/zjrosen/perles/internal/orchestration/session"
@@ -1280,3 +1282,134 @@ func createTestSession(t *testing.T, tmpDir string) (*session.Session, error) {
 	t.Helper()
 	return session.New("test-session-id", tmpDir)
 }
+
+// TestWorkerServerCache_WiresReflectionWriter verifies that the workerServerCache
+// correctly wires the ReflectionWriter to WorkerServer instances.
+func TestWorkerServerCache_WiresReflectionWriter(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a real session as the reflection writer
+	sess, err := session.New("test-session", tmpDir)
+	require.NoError(t, err)
+	defer sess.Close(session.StatusCompleted)
+
+	// Create message issue
+	msgIssue := message.New()
+
+	// Create cache with session as reflection writer
+	cache := newWorkerServerCache(msgIssue, nil, sess)
+
+	// Create a worker server via getOrCreate
+	ws := cache.getOrCreate("worker-1")
+	require.NotNil(t, ws, "WorkerServer should be created")
+
+	// Verify the handler for post_reflections is registered
+	// (which confirms the tool is available)
+	_, ok := ws.GetHandler("post_reflections")
+	require.True(t, ok, "post_reflections handler should be registered")
+
+	// Verify we can write a reflection (this confirms wiring is correct)
+	// Use the handler directly since it's the integration point
+	handler, ok := ws.GetHandler("post_reflections")
+	require.True(t, ok)
+
+	// Call the handler with valid args
+	args := []byte(`{
+		"task_id": "perles-test.1",
+		"summary": "This is a test reflection summary that is long enough"
+	}`)
+	result, err := handler(context.Background(), args)
+
+	// Should succeed because ReflectionWriter is wired
+	require.NoError(t, err, "post_reflections should succeed with wired ReflectionWriter")
+	require.NotNil(t, result)
+}
+
+// TestWorkerServerCache_NilReflectionWriter verifies graceful handling when
+// ReflectionWriter is nil (e.g., when session is not available).
+func TestWorkerServerCache_NilReflectionWriter(t *testing.T) {
+	msgIssue := message.New()
+
+	// Create cache without reflection writer
+	cache := newWorkerServerCache(msgIssue, nil, nil)
+
+	// Create a worker server
+	ws := cache.getOrCreate("worker-1")
+	require.NotNil(t, ws)
+
+	// Get the handler
+	handler, ok := ws.GetHandler("post_reflections")
+	require.True(t, ok)
+
+	// Call the handler with valid args - should fail gracefully (not panic)
+	args := []byte(`{
+		"task_id": "perles-test.1",
+		"summary": "This is a test reflection summary that is long enough"
+	}`)
+	_, err := handler(context.Background(), args)
+
+	// Should return error about nil writer, not panic
+	require.Error(t, err, "should return error when ReflectionWriter is nil")
+	require.Contains(t, err.Error(), "reflection writer not configured")
+}
+
+// TestWorkerServerCache_MultipleWorkers verifies that multiple workers share the
+// same ReflectionWriter instance.
+func TestWorkerServerCache_MultipleWorkers(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sess, err := session.New("test-session", tmpDir)
+	require.NoError(t, err)
+	defer sess.Close(session.StatusCompleted)
+
+	msgIssue := message.New()
+	cache := newWorkerServerCache(msgIssue, nil, sess)
+
+	// Create multiple workers
+	ws1 := cache.getOrCreate("worker-1")
+	ws2 := cache.getOrCreate("worker-2")
+
+	require.NotNil(t, ws1)
+	require.NotNil(t, ws2)
+	require.NotEqual(t, ws1, ws2, "Different workers should have different servers")
+
+	// Both should have working post_reflections
+	handler1, ok := ws1.GetHandler("post_reflections")
+	require.True(t, ok)
+	handler2, ok := ws2.GetHandler("post_reflections")
+	require.True(t, ok)
+
+	// Both should be able to write reflections
+	args1 := []byte(`{
+		"task_id": "perles-test.1",
+		"summary": "Worker 1 test reflection summary that is long enough"
+	}`)
+	args2 := []byte(`{
+		"task_id": "perles-test.2",
+		"summary": "Worker 2 test reflection summary that is long enough"
+	}`)
+
+	_, err = handler1(context.Background(), args1)
+	require.NoError(t, err, "Worker 1 should write reflection")
+
+	_, err = handler2(context.Background(), args2)
+	require.NoError(t, err, "Worker 2 should write reflection")
+}
+
+// mockStateCallback implements mcp.WorkerStateCallback for testing.
+type mockStateCallback struct{}
+
+func (m *mockStateCallback) GetWorkerPhase(_ string) (events.WorkerPhase, error) {
+	return events.PhaseIdle, nil
+}
+
+func (m *mockStateCallback) OnImplementationComplete(_, _ string) error {
+	return nil
+}
+
+func (m *mockStateCallback) OnReviewVerdict(_, _, _ string) error {
+	return nil
+}
+
+// Ensure mockStateCallback implements the interface
+var _ mcp.WorkerStateCallback = (*mockStateCallback)(nil)

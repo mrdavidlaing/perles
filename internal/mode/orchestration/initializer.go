@@ -417,7 +417,8 @@ func (i *Initializer) createWorkspace() error {
 	// Create coordinator server with the dynamic port
 	mcpCoordServer := mcp.NewCoordinatorServer(aiClient, workerPool, msgLog, i.cfg.WorkDir, port, extensions, beads.NewRealExecutor(i.cfg.WorkDir))
 	// Pass the coordinator server as the state callback so workers can update coordinator state
-	workerServers := newWorkerServerCache(msgLog, mcpCoordServer)
+	// Pass the session as the reflection writer so workers can save reflections
+	workerServers := newWorkerServerCache(msgLog, mcpCoordServer, sess)
 
 	// Attach session to MCP broker now that mcpCoordServer exists
 	sess.AttachMCPBroker(i.ctx, mcpCoordServer.Broker())

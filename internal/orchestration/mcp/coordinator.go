@@ -1631,7 +1631,7 @@ func (cs *CoordinatorServer) handleApproveCommit(ctx context.Context, rawArgs js
 	// Return structured response
 	response := map[string]any{
 		"status":  "success",
-		"message": fmt.Sprintf("Commit approved for %s", args.TaskID),
+		"message": fmt.Sprintf("Commit approved for %s. Implementer %s instructed to commit.", args.TaskID, args.ImplementerID),
 		"implementer_state": map[string]string{
 			"worker_id": args.ImplementerID,
 			"phase":     string(events.PhaseCommitting),

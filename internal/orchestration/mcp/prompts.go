@@ -129,9 +129,28 @@ Suggested commit message:
 %s`, commitMessage)
 	}
 
-	prompt += `
+	prompt += fmt.Sprintf(`
 
-After committing, report via post_message to COORDINATOR with the commit hash.`
+## After Committing
+
+Please reflect on your work using post_reflections. This helps capture valuable learnings for future sessions.
+
+**What to include:**
+- **summary**: What you actually implemented (not just the task title)
+- **insights**: Patterns, techniques, or approaches that worked well
+- **mistakes**: Any errors you made and had to correct (helps avoid repeating them)
+- **learnings**: Key takeaways - architectural decisions, gotchas, or tips for similar work
+
+Example:
+post_reflections(
+    task_id="%s",
+    summary="Added validation layer with regex patterns for user input sanitization",
+    insights="Using table-driven tests made edge case coverage much easier",
+    mistakes="Initially forgot to handle empty string case, caught by reviewer",
+    learnings="This codebase prefers returning errors over panicking for invalid input"
+)
+
+Then report via post_message to COORDINATOR with the commit hash.`, taskID)
 
 	return prompt
 }

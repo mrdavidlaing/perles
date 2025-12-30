@@ -81,6 +81,7 @@ const (
 	messagesJSONLFile = "messages.jsonl"
 	mcpRequestsFile   = "mcp_requests.jsonl"
 	summaryFile       = "summary.md"
+	reflectionFile    = "reflection.md"
 )
 
 // New creates a new session with the given ID and directory.
@@ -791,4 +792,32 @@ func (s *Session) retireWorker(workerID string, retiredAt time.Time, finalPhase 
 			return
 		}
 	}
+}
+
+// WriteWorkerReflection writes a worker's reflection to their session directory.
+// Creates the worker directory if it doesn't exist (follows getOrCreateWorkerLog pattern).
+// Returns the full path where the reflection was saved.
+func (s *Session) WriteWorkerReflection(workerID, taskID string, content []byte) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return "", os.ErrClosed
+	}
+
+	// Ensure worker directory exists (lazy creation)
+	workerPath := filepath.Join(s.Dir, workersDir, workerID)
+	if err := os.MkdirAll(workerPath, 0750); err != nil {
+		return "", fmt.Errorf("creating worker directory: %w", err)
+	}
+
+	// Write reflection file (overwrites if exists - latest reflection wins)
+	reflectionPath := filepath.Join(workerPath, reflectionFile)
+	if err := os.WriteFile(reflectionPath, content, 0600); err != nil {
+		return "", fmt.Errorf("writing reflection file: %w", err)
+	}
+
+	log.Debug(log.CatOrch, "Wrote worker reflection", "workerID", workerID, "taskID", taskID, "path", reflectionPath)
+
+	return reflectionPath, nil
 }

@@ -86,6 +86,15 @@ func (s *Server) Broker() *pubsub.Broker[events.MCPEvent] {
 	return s.broker
 }
 
+// GetHandler returns the handler for the given tool name.
+// Returns the handler and true if found, nil and false otherwise.
+func (s *Server) GetHandler(name string) (ToolHandler, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	h, ok := s.handlers[name]
+	return h, ok
+}
+
 // Serve starts the server, reading from stdin and writing to stdout.
 func (s *Server) Serve(stdin io.Reader, stdout io.Writer) error {
 	s.mu.Lock()

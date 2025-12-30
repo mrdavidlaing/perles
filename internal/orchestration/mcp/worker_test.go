@@ -3,12 +3,15 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 )
@@ -109,7 +112,7 @@ func (m *mockMessageStore) Append(from, to, content string, msgType message.Mess
 	return &entry, nil
 }
 
-// TestWorkerServer_RegistersAllTools verifies all 5 worker tools are registered.
+// TestWorkerServer_RegistersAllTools verifies all 6 worker tools are registered.
 func TestWorkerServer_RegistersAllTools(t *testing.T) {
 	ws := NewWorkerServer("WORKER.1", nil)
 
@@ -119,6 +122,7 @@ func TestWorkerServer_RegistersAllTools(t *testing.T) {
 		"signal_ready",
 		"report_implementation_complete",
 		"report_review_verdict",
+		"post_reflections",
 	}
 
 	for _, toolName := range expectedTools {
@@ -821,4 +825,633 @@ func TestWorkerServer_ReportReviewVerdictSchema(t *testing.T) {
 	require.True(t, ok, "'verdict' property should be defined")
 	_, ok = tool.InputSchema.Properties["comments"]
 	require.True(t, ok, "'comments' property should be defined")
+}
+
+// ============================================================================
+// Tests for validateReflectionArgs
+// ============================================================================
+
+// TestValidateReflectionArgs_ValidInput tests that valid args pass validation.
+func TestValidateReflectionArgs_ValidInput(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:    "perles-abc123",
+		Summary:   "Implemented feature X with comprehensive tests and documentation.",
+		Insights:  "Found that approach Y works well for this use case.",
+		Mistakes:  "Initially forgot to handle edge case Z.",
+		Learnings: "The foo module requires careful handling of bar.",
+	}
+
+	err := validateReflectionArgs(args)
+	require.NoError(t, err, "Valid input should pass validation")
+}
+
+// TestValidateReflectionArgs_EmptyTaskID tests that empty task_id is rejected.
+func TestValidateReflectionArgs_EmptyTaskID(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:  "",
+		Summary: "A valid summary that is at least twenty chars.",
+	}
+
+	err := validateReflectionArgs(args)
+	require.Error(t, err, "Empty task_id should be rejected")
+	require.Contains(t, err.Error(), "task_id is required")
+}
+
+// TestValidateReflectionArgs_InvalidTaskIDFormat tests that path traversal is rejected.
+func TestValidateReflectionArgs_InvalidTaskIDFormat(t *testing.T) {
+	tests := []struct {
+		name    string
+		taskID  string
+		wantErr string
+	}{
+		{
+			name:    "path traversal with ..",
+			taskID:  "../../etc/passwd",
+			wantErr: "path traversal characters",
+		},
+		{
+			name:    "path with forward slash",
+			taskID:  "task/id",
+			wantErr: "path traversal characters",
+		},
+		{
+			name:    "double dots in middle",
+			taskID:  "task..id",
+			wantErr: "path traversal characters",
+		},
+		{
+			name:    "invalid format - no hyphen",
+			taskID:  "invalidtaskid",
+			wantErr: "invalid task_id format",
+		},
+		{
+			name:    "invalid format - special chars",
+			taskID:  "task-@#$%",
+			wantErr: "invalid task_id format",
+		},
+		{
+			name:    "too short suffix",
+			taskID:  "t-a",
+			wantErr: "invalid task_id format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := postReflectionsArgs{
+				TaskID:  tt.taskID,
+				Summary: "A valid summary that is at least twenty chars.",
+			}
+			err := validateReflectionArgs(args)
+			require.Error(t, err, "Invalid task_id %q should be rejected", tt.taskID)
+			require.Contains(t, err.Error(), tt.wantErr, "Error should mention expected issue")
+		})
+	}
+}
+
+// TestValidateReflectionArgs_ValidTaskIDFormats tests various valid task ID formats.
+func TestValidateReflectionArgs_ValidTaskIDFormats(t *testing.T) {
+	validTaskIDs := []string{
+		"perles-abc123",
+		"ms-e52",
+		"task-abc",
+		"bd-12345",
+		"perles-s157",
+		"perles-s157.1",
+		"ms-abc123.42",
+	}
+
+	for _, taskID := range validTaskIDs {
+		t.Run(taskID, func(t *testing.T) {
+			args := postReflectionsArgs{
+				TaskID:  taskID,
+				Summary: "A valid summary that is at least twenty chars.",
+			}
+			err := validateReflectionArgs(args)
+			require.NoError(t, err, "Valid task_id %q should pass validation", taskID)
+		})
+	}
+}
+
+// TestValidateReflectionArgs_SummaryTooShort tests that summary < 20 chars is rejected.
+func TestValidateReflectionArgs_SummaryTooShort(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:  "perles-abc123",
+		Summary: "Too short",
+	}
+
+	err := validateReflectionArgs(args)
+	require.Error(t, err, "Summary too short should be rejected")
+	require.Contains(t, err.Error(), "summary too short")
+	require.Contains(t, err.Error(), "min 20 chars")
+}
+
+// TestValidateReflectionArgs_ExactlyMinSummaryLength tests boundary at exactly 20 chars.
+func TestValidateReflectionArgs_ExactlyMinSummaryLength(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:  "perles-abc123",
+		Summary: strings.Repeat("x", MinSummaryLength), // Exactly 20 chars
+	}
+
+	err := validateReflectionArgs(args)
+	require.NoError(t, err, "Summary with exactly min length should pass")
+}
+
+// TestValidateReflectionArgs_EmptySummary tests that empty summary is rejected.
+func TestValidateReflectionArgs_EmptySummary(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:  "perles-abc123",
+		Summary: "",
+	}
+
+	err := validateReflectionArgs(args)
+	require.Error(t, err, "Empty summary should be rejected")
+	require.Contains(t, err.Error(), "summary is required")
+}
+
+// ============================================================================
+// Tests for buildReflectionMarkdown
+// ============================================================================
+
+// TestBuildReflectionMarkdown_AllFields tests markdown generation with all fields provided.
+func TestBuildReflectionMarkdown_AllFields(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:    "perles-abc123",
+		Summary:   "Implemented user validation with regex patterns.",
+		Insights:  "Pre-compiled regex is 10x faster.",
+		Mistakes:  "Initially forgot to handle empty strings.",
+		Learnings: "Always validate input at boundaries.",
+	}
+
+	md := buildReflectionMarkdown("WORKER.1", args)
+
+	// Verify header
+	assert.Contains(t, md, "# Worker Reflection")
+	assert.Contains(t, md, "**Worker:** WORKER.1")
+	assert.Contains(t, md, "**Task:** perles-abc123")
+	assert.Contains(t, md, "**Date:**")
+
+	// Verify all sections are present
+	assert.Contains(t, md, "## Summary")
+	assert.Contains(t, md, "Implemented user validation with regex patterns.")
+
+	assert.Contains(t, md, "## Insights")
+	assert.Contains(t, md, "Pre-compiled regex is 10x faster.")
+
+	assert.Contains(t, md, "## Mistakes & Lessons")
+	assert.Contains(t, md, "Initially forgot to handle empty strings.")
+
+	assert.Contains(t, md, "## Learnings")
+	assert.Contains(t, md, "Always validate input at boundaries.")
+}
+
+// TestBuildReflectionMarkdown_OnlySummary tests markdown generation with only required fields.
+func TestBuildReflectionMarkdown_OnlySummary(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:  "ms-e52",
+		Summary: "Fixed a critical bug in authentication flow.",
+	}
+
+	md := buildReflectionMarkdown("WORKER.2", args)
+
+	// Verify header
+	assert.Contains(t, md, "# Worker Reflection")
+	assert.Contains(t, md, "**Worker:** WORKER.2")
+	assert.Contains(t, md, "**Task:** ms-e52")
+
+	// Verify summary is present
+	assert.Contains(t, md, "## Summary")
+	assert.Contains(t, md, "Fixed a critical bug in authentication flow.")
+
+	// Verify optional sections are NOT present
+	assert.NotContains(t, md, "## Insights")
+	assert.NotContains(t, md, "## Mistakes & Lessons")
+	assert.NotContains(t, md, "## Learnings")
+}
+
+// TestBuildReflectionMarkdown_PartialOptionalFields tests with some optional fields.
+func TestBuildReflectionMarkdown_PartialOptionalFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       postReflectionsArgs
+		shouldHave []string
+		shouldNot  []string
+	}{
+		{
+			name: "only insights",
+			args: postReflectionsArgs{
+				TaskID:   "task-abc",
+				Summary:  "Completed the refactoring.",
+				Insights: "The new pattern is cleaner.",
+			},
+			shouldHave: []string{"## Summary", "## Insights"},
+			shouldNot:  []string{"## Mistakes & Lessons", "## Learnings"},
+		},
+		{
+			name: "only mistakes",
+			args: postReflectionsArgs{
+				TaskID:   "task-abc",
+				Summary:  "Completed the refactoring.",
+				Mistakes: "Broke tests initially.",
+			},
+			shouldHave: []string{"## Summary", "## Mistakes & Lessons"},
+			shouldNot:  []string{"## Insights", "## Learnings"},
+		},
+		{
+			name: "only learnings",
+			args: postReflectionsArgs{
+				TaskID:    "task-abc",
+				Summary:   "Completed the refactoring.",
+				Learnings: "Read the docs first.",
+			},
+			shouldHave: []string{"## Summary", "## Learnings"},
+			shouldNot:  []string{"## Insights", "## Mistakes & Lessons"},
+		},
+		{
+			name: "insights and learnings",
+			args: postReflectionsArgs{
+				TaskID:    "task-abc",
+				Summary:   "Completed the refactoring.",
+				Insights:  "Works well.",
+				Learnings: "Good to know.",
+			},
+			shouldHave: []string{"## Summary", "## Insights", "## Learnings"},
+			shouldNot:  []string{"## Mistakes & Lessons"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			md := buildReflectionMarkdown("WORKER.1", tt.args)
+
+			for _, s := range tt.shouldHave {
+				assert.Contains(t, md, s, "Should contain %q", s)
+			}
+			for _, s := range tt.shouldNot {
+				assert.NotContains(t, md, s, "Should NOT contain %q", s)
+			}
+		})
+	}
+}
+
+// TestBuildReflectionMarkdown_DateFormat tests that date is in expected format.
+func TestBuildReflectionMarkdown_DateFormat(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:  "perles-abc",
+		Summary: "Test summary for date format.",
+	}
+
+	md := buildReflectionMarkdown("WORKER.1", args)
+
+	// Date format should be YYYY-MM-DD HH:MM:SS (e.g., 2025-12-30 01:23:45)
+	// We can't check exact time, but we can verify the format pattern exists
+	assert.Regexp(t, `\*\*Date:\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`, md, "Date should be in expected format")
+}
+
+// TestBuildReflectionMarkdown_PreservesNewlines tests that content with newlines is preserved.
+func TestBuildReflectionMarkdown_PreservesNewlines(t *testing.T) {
+	args := postReflectionsArgs{
+		TaskID:  "task-abc",
+		Summary: "Line 1\nLine 2\nLine 3",
+	}
+
+	md := buildReflectionMarkdown("WORKER.1", args)
+
+	assert.Contains(t, md, "Line 1\nLine 2\nLine 3", "Newlines in content should be preserved")
+}
+
+// ============================================================================
+// Tests for handlePostReflections
+// ============================================================================
+
+// mockReflectionWriter implements ReflectionWriter for testing.
+type mockReflectionWriter struct {
+	mu         sync.Mutex
+	calls      []reflectionWriterCall
+	returnPath string
+	returnErr  error
+}
+
+type reflectionWriterCall struct {
+	WorkerID string
+	TaskID   string
+	Content  []byte
+}
+
+func newMockReflectionWriter() *mockReflectionWriter {
+	return &mockReflectionWriter{
+		returnPath: "/mock/path/reflection.md",
+	}
+}
+
+func (m *mockReflectionWriter) WriteWorkerReflection(workerID, taskID string, content []byte) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, reflectionWriterCall{
+		WorkerID: workerID,
+		TaskID:   taskID,
+		Content:  content,
+	})
+	return m.returnPath, m.returnErr
+}
+
+// TestHandlePostReflections_Success tests valid reflection saves and returns path.
+func TestHandlePostReflections_Success(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+	writer.returnPath = "/sessions/abc/workers/WORKER.1/reflection.md"
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "perles-abc123",
+		"summary": "Implemented feature X with comprehensive tests.",
+		"insights": "Found that pattern Y works well.",
+		"mistakes": "Initially forgot edge case Z.",
+		"learnings": "Always check for nil before dereferencing."
+	}`
+
+	result, err := handler(context.Background(), json.RawMessage(args))
+	require.NoError(t, err, "Unexpected error")
+
+	// Verify writer was called
+	require.Len(t, writer.calls, 1, "Expected 1 write call")
+	require.Equal(t, "WORKER.1", writer.calls[0].WorkerID, "WorkerID mismatch")
+	require.Equal(t, "perles-abc123", writer.calls[0].TaskID, "TaskID mismatch")
+	require.Contains(t, string(writer.calls[0].Content), "# Worker Reflection", "Content should be markdown")
+	require.Contains(t, string(writer.calls[0].Content), "Implemented feature X", "Content should contain summary")
+
+	// Verify message posted to coordinator
+	require.Len(t, store.appendCalls, 1, "Expected 1 message posted")
+	require.Contains(t, store.appendCalls[0].Content, "Reflection posted for task perles-abc123")
+
+	// Verify structured response
+	require.NotNil(t, result, "Expected result with content")
+	require.NotEmpty(t, result.Content, "Expected result with content")
+	text := result.Content[0].Text
+	require.Contains(t, text, `"status"`, "Response should contain status")
+	require.Contains(t, text, `"file_path"`, "Response should contain file_path")
+	require.Contains(t, text, `"success"`, "Status should be success")
+	require.Contains(t, text, writer.returnPath, "Response should contain file path")
+}
+
+// TestHandlePostReflections_EmptyTaskID tests that missing task_id returns error.
+func TestHandlePostReflections_EmptyTaskID(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "",
+		"summary": "A valid summary that is at least twenty chars."
+	}`
+
+	_, err := handler(context.Background(), json.RawMessage(args))
+	require.Error(t, err, "Expected error for empty task_id")
+	require.Contains(t, err.Error(), "task_id is required", "Error should mention task_id")
+}
+
+// TestHandlePostReflections_EmptySummary tests that missing summary returns error.
+func TestHandlePostReflections_EmptySummary(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "perles-abc123",
+		"summary": ""
+	}`
+
+	_, err := handler(context.Background(), json.RawMessage(args))
+	require.Error(t, err, "Expected error for empty summary")
+	require.Contains(t, err.Error(), "summary is required", "Error should mention summary")
+}
+
+// TestHandlePostReflections_InvalidTaskID tests that path traversal is rejected.
+func TestHandlePostReflections_InvalidTaskID(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "../../etc/passwd",
+		"summary": "A valid summary that is at least twenty chars."
+	}`
+
+	_, err := handler(context.Background(), json.RawMessage(args))
+	require.Error(t, err, "Expected error for path traversal")
+	require.Contains(t, err.Error(), "path traversal", "Error should mention path traversal")
+}
+
+// TestHandlePostReflections_SummaryTooShort tests validation for summary length.
+func TestHandlePostReflections_SummaryTooShort(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "perles-abc123",
+		"summary": "Too short"
+	}`
+
+	_, err := handler(context.Background(), json.RawMessage(args))
+	require.Error(t, err, "Expected error for summary too short")
+	require.Contains(t, err.Error(), "summary too short", "Error should mention summary too short")
+}
+
+// TestHandlePostReflections_NilReflectionWriter tests graceful error when writer not configured.
+func TestHandlePostReflections_NilReflectionWriter(t *testing.T) {
+	store := newMockMessageStore()
+
+	ws := NewWorkerServer("WORKER.1", store)
+	// Don't set reflection writer - leave it nil
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "perles-abc123",
+		"summary": "A valid summary that is at least twenty chars."
+	}`
+
+	_, err := handler(context.Background(), json.RawMessage(args))
+	require.Error(t, err, "Expected error for nil reflection writer")
+	require.Contains(t, err.Error(), "reflection writer not configured", "Error should mention reflection writer")
+}
+
+// TestHandlePostReflections_WriterError tests that writer errors are propagated.
+func TestHandlePostReflections_WriterError(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+	writer.returnErr = fmt.Errorf("disk full")
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "perles-abc123",
+		"summary": "A valid summary that is at least twenty chars."
+	}`
+
+	_, err := handler(context.Background(), json.RawMessage(args))
+	require.Error(t, err, "Expected error when writer fails")
+	require.Contains(t, err.Error(), "failed to save reflection", "Error should mention save failure")
+	require.Contains(t, err.Error(), "disk full", "Error should contain underlying error")
+}
+
+// TestHandlePostReflections_InvalidJSON tests that invalid JSON returns error.
+func TestHandlePostReflections_InvalidJSON(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	_, err := handler(context.Background(), json.RawMessage(`not json`))
+	require.Error(t, err, "Expected error for invalid JSON")
+	require.Contains(t, err.Error(), "invalid arguments", "Error should mention invalid arguments")
+}
+
+// TestHandlePostReflections_OnlyRequiredFields tests success with only required fields.
+func TestHandlePostReflections_OnlyRequiredFields(t *testing.T) {
+	store := newMockMessageStore()
+	writer := newMockReflectionWriter()
+
+	ws := NewWorkerServer("WORKER.1", store)
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "perles-abc123",
+		"summary": "A valid summary that is at least twenty chars."
+	}`
+
+	result, err := handler(context.Background(), json.RawMessage(args))
+	require.NoError(t, err, "Should succeed with only required fields")
+
+	// Verify content doesn't have optional sections
+	content := string(writer.calls[0].Content)
+	require.Contains(t, content, "## Summary", "Should have summary section")
+	require.NotContains(t, content, "## Insights", "Should not have insights section")
+	require.NotContains(t, content, "## Mistakes", "Should not have mistakes section")
+	require.NotContains(t, content, "## Learnings", "Should not have learnings section")
+
+	// Verify success response
+	require.Contains(t, result.Content[0].Text, "success", "Response should indicate success")
+}
+
+// TestHandlePostReflections_NoMessageStore tests success even without message store.
+func TestHandlePostReflections_NoMessageStore(t *testing.T) {
+	writer := newMockReflectionWriter()
+
+	ws := NewWorkerServer("WORKER.1", nil) // nil message store
+	ws.SetReflectionWriter(writer)
+	handler := ws.handlers["post_reflections"]
+
+	args := `{
+		"task_id": "perles-abc123",
+		"summary": "A valid summary that is at least twenty chars."
+	}`
+
+	result, err := handler(context.Background(), json.RawMessage(args))
+	require.NoError(t, err, "Should succeed even without message store")
+	require.Contains(t, result.Content[0].Text, "success", "Response should indicate success")
+
+	// Verify writer was still called
+	require.Len(t, writer.calls, 1, "Writer should still be called")
+}
+
+// ============================================================================
+// Tests for post_reflections tool registration
+// ============================================================================
+
+// TestPostReflectionsToolRegistered tests that post_reflections tool appears in registered tools.
+func TestPostReflectionsToolRegistered(t *testing.T) {
+	ws := NewWorkerServer("WORKER.1", nil)
+
+	tool, ok := ws.tools["post_reflections"]
+	require.True(t, ok, "post_reflections tool should be registered")
+
+	// Verify tool metadata
+	require.Equal(t, "post_reflections", tool.Name, "Tool name should be post_reflections")
+	require.NotEmpty(t, tool.Description, "Tool should have description")
+	require.Contains(t, strings.ToLower(tool.Description), "reflection", "Description should mention reflection")
+
+	// Verify input schema
+	require.NotNil(t, tool.InputSchema, "Tool should have input schema")
+	require.Equal(t, "object", tool.InputSchema.Type, "InputSchema type should be object")
+
+	// Verify required fields
+	requiredSet := make(map[string]bool)
+	for _, r := range tool.InputSchema.Required {
+		requiredSet[r] = true
+	}
+	require.True(t, requiredSet["task_id"], "task_id should be required")
+	require.True(t, requiredSet["summary"], "summary should be required")
+
+	// Verify all properties exist
+	_, hasTaskID := tool.InputSchema.Properties["task_id"]
+	require.True(t, hasTaskID, "task_id property should be defined")
+	_, hasSummary := tool.InputSchema.Properties["summary"]
+	require.True(t, hasSummary, "summary property should be defined")
+	_, hasInsights := tool.InputSchema.Properties["insights"]
+	require.True(t, hasInsights, "insights property should be defined")
+	_, hasMistakes := tool.InputSchema.Properties["mistakes"]
+	require.True(t, hasMistakes, "mistakes property should be defined")
+	_, hasLearnings := tool.InputSchema.Properties["learnings"]
+	require.True(t, hasLearnings, "learnings property should be defined")
+
+	// Verify output schema
+	require.NotNil(t, tool.OutputSchema, "Tool should have output schema")
+	_, hasStatus := tool.OutputSchema.Properties["status"]
+	require.True(t, hasStatus, "status output property should be defined")
+	_, hasFilePath := tool.OutputSchema.Properties["file_path"]
+	require.True(t, hasFilePath, "file_path output property should be defined")
+	_, hasMessage := tool.OutputSchema.Properties["message"]
+	require.True(t, hasMessage, "message output property should be defined")
+}
+
+// TestPostReflectionsToolHandlerRegistered tests that handler is registered.
+func TestPostReflectionsToolHandlerRegistered(t *testing.T) {
+	ws := NewWorkerServer("WORKER.1", nil)
+
+	_, ok := ws.handlers["post_reflections"]
+	require.True(t, ok, "post_reflections handler should be registered")
+}
+
+// TestWorkerServer_RegistersAllToolsIncludingPostReflections verifies all 6 worker tools are registered.
+func TestWorkerServer_RegistersAllToolsIncludingPostReflections(t *testing.T) {
+	ws := NewWorkerServer("WORKER.1", nil)
+
+	expectedTools := []string{
+		"check_messages",
+		"post_message",
+		"signal_ready",
+		"report_implementation_complete",
+		"report_review_verdict",
+		"post_reflections",
+	}
+
+	for _, toolName := range expectedTools {
+		_, ok := ws.tools[toolName]
+		require.True(t, ok, "Tool %q not registered", toolName)
+		_, ok = ws.handlers[toolName]
+		require.True(t, ok, "Handler for %q not registered", toolName)
+	}
+
+	require.Equal(t, len(expectedTools), len(ws.tools), "Tool count mismatch")
 }

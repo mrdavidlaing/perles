@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -1976,4 +1977,42 @@ func TestReadMessageLog_ReadAll(t *testing.T) {
 	err = json.Unmarshal([]byte(result.Content[0].Text), &resp)
 	require.NoError(t, err)
 	require.Equal(t, 0, resp.TotalCount, "readState should be unchanged after read_all=true")
+}
+
+// TestCommitApprovalPrompt_IncludesReflectionInstructions verifies that the
+// CommitApprovalPrompt includes post_reflections instructions for the worker.
+func TestCommitApprovalPrompt_IncludesReflectionInstructions(t *testing.T) {
+	taskID := "perles-abc.1"
+	prompt := CommitApprovalPrompt(taskID, "")
+
+	require.Contains(t, prompt, "post_reflections", "Prompt should include post_reflections instruction")
+	require.Contains(t, prompt, "After Committing", "Prompt should instruct to reflect after committing")
+	require.Contains(t, prompt, "summary=", "Prompt should show summary parameter")
+	require.Contains(t, prompt, "insights=", "Prompt should show insights parameter")
+	require.Contains(t, prompt, "mistakes=", "Prompt should show mistakes parameter")
+	require.Contains(t, prompt, "learnings=", "Prompt should show learnings parameter")
+}
+
+// TestCommitApprovalPrompt_TaskIDInterpolated verifies that the task ID is interpolated
+// into the post_reflections example in the prompt.
+func TestCommitApprovalPrompt_TaskIDInterpolated(t *testing.T) {
+	taskID := "perles-xyz.42"
+	prompt := CommitApprovalPrompt(taskID, "")
+
+	// The task ID should appear twice - once in the approval message, once in the example
+	occurrences := strings.Count(prompt, taskID)
+	require.GreaterOrEqual(t, occurrences, 2, "Task ID should appear at least twice (in message and example)")
+
+	// Verify it appears in the post_reflections example format
+	require.Contains(t, prompt, `task_id="`+taskID+`"`, "Task ID should be in the post_reflections example")
+}
+
+// TestCommitApprovalPrompt_WithCommitMessage verifies commit message is included when provided.
+func TestCommitApprovalPrompt_WithCommitMessage(t *testing.T) {
+	taskID := "perles-test.1"
+	commitMsg := "feat(orchestration): add reflection support"
+	prompt := CommitApprovalPrompt(taskID, commitMsg)
+
+	require.Contains(t, prompt, commitMsg, "Prompt should include the suggested commit message")
+	require.Contains(t, prompt, "Suggested commit message", "Prompt should have commit message section")
 }

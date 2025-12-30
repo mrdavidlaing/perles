@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -515,4 +516,395 @@ func TestIntegration_StuckWorkerDetection(t *testing.T) {
 	stuck := cs.checkStuckWorkers()
 	require.Len(t, stuck, 1, "Expected 1 stuck worker")
 	require.Equal(t, "worker-1", stuck[0], "Expected stuck worker worker-1")
+}
+
+// ============================================================================
+// Integration Tests for Reflection Workflow
+// ============================================================================
+//
+// Manual Verification Procedure for Reflection Workflow
+// ======================================================
+//
+// To manually verify the reflection workflow in a real orchestration session:
+//
+// 1. Start an orchestration session:
+//    $ perles orchestrate --task "Test task for reflection verification"
+//
+// 2. Assign a task to a worker and wait for implementation to complete.
+//
+// 3. When the coordinator prompts the worker to commit (after review approval),
+//    the worker should include reflections in their final response using:
+//    - Tool: post_reflections
+//    - Arguments:
+//      {
+//        "task_id": "perles-xxx.N",
+//        "summary": "What was accomplished",
+//        "insights": "Discoveries during implementation (optional)",
+//        "mistakes": "Any errors and lessons (optional)",
+//        "learnings": "General learnings (optional)"
+//      }
+//
+// 4. Verify the reflection file was created:
+//    $ cat .perles/sessions/<session-id>/workers/<worker-id>/reflection.md
+//
+// 5. The file should contain:
+//    - Header: # Worker Reflection
+//    - Metadata: Worker ID, Task ID, Date
+//    - Sections: Summary (always), Insights/Mistakes/Learnings (if provided)
+//
+// 6. After session completion, check all worker reflections:
+//    $ find .perles/sessions/<session-id>/workers -name reflection.md
+//
+// Automated Test Coverage
+// -----------------------
+// The following tests verify the reflection workflow programmatically:
+// - TestReflectionWorkflow_FullCycle: End-to-end MCP tool to file storage
+// - TestMultipleWorkersReflecting: Isolation between workers
+// - TestReflectionAfterSessionClose: Graceful error handling
+// - TestReflectionMarkdownStructure: Correct markdown format
+//
+
+// TestReflectionWorkflow_FullCycle tests the complete reflection workflow from
+// MCP tool call through session file storage. This verifies that:
+// 1. A WorkerServer can be created and wired with a ReflectionWriter (Session)
+// 2. The post_reflections tool call writes to the correct session file
+// 3. The file content matches the expected markdown format
+func TestReflectionWorkflow_FullCycle(t *testing.T) {
+	// Import session package for this test
+	// We need to use a real Session as ReflectionWriter
+
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-workflow"
+	sessionDir := baseDir + "/session"
+
+	// Create a real session to act as ReflectionWriter
+	sess, err := newTestSession(sessionID, sessionDir)
+	require.NoError(t, err, "Failed to create test session")
+	defer sess.Close()
+
+	// Create WorkerServer and wire the session as ReflectionWriter
+	workerID := "worker-1"
+	msgStore := newMockMessageStore()
+	ws := NewWorkerServer(workerID, msgStore)
+	ws.SetReflectionWriter(sess)
+
+	// Call post_reflections via the MCP tool handler
+	handler := ws.handlers["post_reflections"]
+	args := `{
+		"task_id": "perles-abc.1",
+		"summary": "Implemented user validation with comprehensive test coverage.",
+		"insights": "Pre-compiled regex patterns are significantly faster for repeated validations.",
+		"mistakes": "Initially forgot to handle empty string edge case.",
+		"learnings": "Always validate at system boundaries, not deep in the call stack."
+	}`
+
+	result, err := handler(context.Background(), json.RawMessage(args))
+	require.NoError(t, err, "post_reflections tool call failed")
+
+	// Verify success response
+	require.NotNil(t, result)
+	require.NotEmpty(t, result.Content)
+	responseText := result.Content[0].Text
+	require.Contains(t, responseText, `"status"`)
+	require.Contains(t, responseText, `"success"`)
+	require.Contains(t, responseText, `"file_path"`)
+
+	// Verify file was created in the correct location
+	expectedPath := sessionDir + "/workers/worker-1/reflection.md"
+	require.Contains(t, responseText, expectedPath, "Response should contain file path")
+
+	// Read and verify file content
+	content, err := readTestFile(expectedPath)
+	require.NoError(t, err, "Failed to read reflection file")
+
+	// Verify markdown content structure
+	require.Contains(t, content, "# Worker Reflection", "Should have header")
+	require.Contains(t, content, "**Worker:** worker-1", "Should have worker ID")
+	require.Contains(t, content, "**Task:** perles-abc.1", "Should have task ID")
+	require.Contains(t, content, "**Date:**", "Should have date")
+	require.Contains(t, content, "## Summary", "Should have Summary section")
+	require.Contains(t, content, "Implemented user validation", "Should have summary content")
+	require.Contains(t, content, "## Insights", "Should have Insights section")
+	require.Contains(t, content, "Pre-compiled regex", "Should have insights content")
+	require.Contains(t, content, "## Mistakes & Lessons", "Should have Mistakes section")
+	require.Contains(t, content, "Initially forgot", "Should have mistakes content")
+	require.Contains(t, content, "## Learnings", "Should have Learnings section")
+	require.Contains(t, content, "Always validate", "Should have learnings content")
+
+	// Verify message was posted to coordinator
+	require.Len(t, msgStore.appendCalls, 1, "Expected 1 message posted to coordinator")
+	require.Contains(t, msgStore.appendCalls[0].Content, "Reflection posted for task perles-abc.1")
+}
+
+// TestMultipleWorkersReflecting tests that multiple workers in the same session
+// can each post reflections without cross-contamination.
+func TestMultipleWorkersReflecting(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-multiple-workers-reflecting"
+	sessionDir := baseDir + "/session"
+
+	// Create a real session shared by multiple workers
+	sess, err := newTestSession(sessionID, sessionDir)
+	require.NoError(t, err, "Failed to create test session")
+	defer sess.Close()
+
+	// Create multiple WorkerServers, all sharing the same session as ReflectionWriter
+	workers := []struct {
+		id      string
+		taskID  string
+		summary string
+	}{
+		{"worker-1", "perles-abc.1", "Implemented feature X with comprehensive tests and documentation."},
+		{"worker-2", "perles-abc.2", "Fixed critical bug in authentication flow and added regression tests."},
+		{"worker-3", "perles-abc.3", "Refactored database layer for improved performance and maintainability."},
+	}
+
+	for _, w := range workers {
+		msgStore := newMockMessageStore()
+		ws := NewWorkerServer(w.id, msgStore)
+		ws.SetReflectionWriter(sess)
+
+		handler := ws.handlers["post_reflections"]
+		args := json.RawMessage(`{
+			"task_id": "` + w.taskID + `",
+			"summary": "` + w.summary + `"
+		}`)
+
+		result, err := handler(context.Background(), args)
+		require.NoError(t, err, "post_reflections failed for %s", w.id)
+		require.Contains(t, result.Content[0].Text, "success", "Expected success for %s", w.id)
+	}
+
+	// Verify each worker has their own reflection.md file
+	for _, w := range workers {
+		filePath := sessionDir + "/workers/" + w.id + "/reflection.md"
+		content, err := readTestFile(filePath)
+		require.NoError(t, err, "Failed to read reflection file for %s", w.id)
+
+		// Verify file contains only this worker's content (no cross-contamination)
+		require.Contains(t, content, "**Worker:** "+w.id, "Should have correct worker ID")
+		require.Contains(t, content, "**Task:** "+w.taskID, "Should have correct task ID")
+		require.Contains(t, content, w.summary, "Should have worker's summary")
+
+		// Verify no other worker's content is present
+		for _, other := range workers {
+			if other.id != w.id {
+				require.NotContains(t, content, "**Worker:** "+other.id,
+					"Worker %s's file should not contain worker %s's ID", w.id, other.id)
+			}
+		}
+	}
+}
+
+// TestReflectionAfterSessionClose tests that attempting to post a reflection
+// after the session is closed returns a graceful error (not a panic).
+func TestReflectionAfterSessionClose(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-session-closed"
+	sessionDir := baseDir + "/session"
+
+	// Create session
+	sess, err := newTestSession(sessionID, sessionDir)
+	require.NoError(t, err, "Failed to create test session")
+
+	// Create WorkerServer with session as ReflectionWriter
+	workerID := "worker-1"
+	msgStore := newMockMessageStore()
+	ws := NewWorkerServer(workerID, msgStore)
+	ws.SetReflectionWriter(sess)
+
+	// Close the session BEFORE attempting to post reflection
+	err = sess.Close()
+	require.NoError(t, err, "Failed to close session")
+
+	// Attempt to post reflection - should return error, not panic
+	handler := ws.handlers["post_reflections"]
+	args := `{
+		"task_id": "perles-abc.1",
+		"summary": "This should fail gracefully because session is closed."
+	}`
+
+	_, err = handler(context.Background(), json.RawMessage(args))
+	require.Error(t, err, "Expected error when writing to closed session")
+	require.Contains(t, err.Error(), "failed to save reflection", "Error should mention save failure")
+}
+
+// TestReflectionMarkdownStructure verifies the exact markdown format generated
+// by buildReflectionMarkdown for various field combinations.
+func TestReflectionMarkdownStructure(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-reflection-markdown-structure"
+	sessionDir := baseDir + "/session"
+
+	sess, err := newTestSession(sessionID, sessionDir)
+	require.NoError(t, err, "Failed to create test session")
+	defer sess.Close()
+
+	tests := []struct {
+		name          string
+		args          string
+		expectedParts []string
+		notExpected   []string
+	}{
+		{
+			name: "all_fields_present",
+			args: `{
+				"task_id": "perles-test.1",
+				"summary": "Full summary with all fields populated.",
+				"insights": "Important insight discovered.",
+				"mistakes": "Mistake made and lesson learned.",
+				"learnings": "General learning for future reference."
+			}`,
+			expectedParts: []string{
+				"# Worker Reflection",
+				"**Worker:** worker-test",
+				"**Task:** perles-test.1",
+				"**Date:**",
+				"## Summary",
+				"Full summary with all fields",
+				"## Insights",
+				"Important insight discovered",
+				"## Mistakes & Lessons",
+				"Mistake made and lesson",
+				"## Learnings",
+				"General learning for future",
+			},
+			notExpected: []string{},
+		},
+		{
+			name: "only_required_fields",
+			args: `{
+				"task_id": "perles-test.2",
+				"summary": "Summary only without optional fields populated."
+			}`,
+			expectedParts: []string{
+				"# Worker Reflection",
+				"**Worker:** worker-test",
+				"**Task:** perles-test.2",
+				"## Summary",
+				"Summary only without optional",
+			},
+			notExpected: []string{
+				"## Insights",
+				"## Mistakes & Lessons",
+				"## Learnings",
+			},
+		},
+		{
+			name: "partial_optional_fields",
+			args: `{
+				"task_id": "perles-test.3",
+				"summary": "Summary with only insights provided.",
+				"insights": "Insight without mistakes or learnings."
+			}`,
+			expectedParts: []string{
+				"## Summary",
+				"## Insights",
+				"Insight without mistakes",
+			},
+			notExpected: []string{
+				"## Mistakes & Lessons",
+				"## Learnings",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgStore := newMockMessageStore()
+			ws := NewWorkerServer("worker-test", msgStore)
+			ws.SetReflectionWriter(sess)
+
+			handler := ws.handlers["post_reflections"]
+			result, err := handler(context.Background(), json.RawMessage(tt.args))
+			require.NoError(t, err, "post_reflections failed")
+			require.Contains(t, result.Content[0].Text, "success")
+
+			// Read the file and verify structure
+			filePath := sessionDir + "/workers/worker-test/reflection.md"
+			content, err := readTestFile(filePath)
+			require.NoError(t, err, "Failed to read reflection file")
+
+			for _, expected := range tt.expectedParts {
+				require.Contains(t, content, expected, "Content should contain: %s", expected)
+			}
+
+			for _, notExpected := range tt.notExpected {
+				require.NotContains(t, content, notExpected, "Content should NOT contain: %s", notExpected)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Helper types and functions for reflection integration tests
+// ============================================================================
+
+// testSession wraps session.Session for testing purposes.
+// This provides a minimal implementation of ReflectionWriter interface.
+type testSession struct {
+	dir    string
+	closed bool
+	mu     sync.Mutex
+}
+
+func newTestSession(id, dir string) (*testSession, error) {
+	// Create directory structure
+	if err := createTestDir(dir); err != nil {
+		return nil, err
+	}
+	if err := createTestDir(dir + "/workers"); err != nil {
+		return nil, err
+	}
+	return &testSession{dir: dir}, nil
+}
+
+func (s *testSession) WriteWorkerReflection(workerID, taskID string, content []byte) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return "", errClosed
+	}
+
+	// Create worker directory if needed
+	workerPath := s.dir + "/workers/" + workerID
+	if err := createTestDir(workerPath); err != nil {
+		return "", err
+	}
+
+	// Write reflection file
+	reflectionPath := workerPath + "/reflection.md"
+	if err := writeTestFile(reflectionPath, content); err != nil {
+		return "", err
+	}
+
+	return reflectionPath, nil
+}
+
+func (s *testSession) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	return nil
+}
+
+// errClosed is returned when attempting to write to a closed session.
+var errClosed = os.ErrClosed
+
+// File operation helpers for tests
+func createTestDir(path string) error {
+	return os.MkdirAll(path, 0750)
+}
+
+func writeTestFile(path string, content []byte) error {
+	return os.WriteFile(path, content, 0600)
+}
+
+func readTestFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }

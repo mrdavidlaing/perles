@@ -4,11 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 )
+
+// Validation constants for post_reflections tool.
+const (
+	// MinSummaryLength is the minimum length for a reflection summary (at least a sentence).
+	MinSummaryLength = 20
+)
+
+// reflectionTaskIDPattern validates task IDs for reflections to prevent path traversal.
+// Matches patterns like: perles-abc123, ms-e52, task-abc.1
+var reflectionTaskIDPattern = regexp.MustCompile(`^[a-zA-Z]+-[a-zA-Z0-9]{2,10}(\.\d+)?$`)
 
 // MessageStore defines the interface for message storage operations.
 // This allows for dependency injection and easier testing.
@@ -32,13 +45,22 @@ type WorkerStateCallback interface {
 	OnReviewVerdict(workerID, verdict, comments string) error
 }
 
+// ReflectionWriter defines the interface for writing worker reflections.
+// This allows the session service to handle storage without tight coupling.
+type ReflectionWriter interface {
+	// WriteWorkerReflection saves a worker's reflection markdown to their session directory.
+	// Returns the file path where the reflection was saved.
+	WriteWorkerReflection(workerID, taskID string, content []byte) (string, error)
+}
+
 // WorkerServer is an MCP server that exposes communication tools to worker agents.
 // Each worker gets its own MCP server instance with a unique worker ID.
 type WorkerServer struct {
 	*Server
-	workerID      string
-	msgStore      MessageStore
-	stateCallback WorkerStateCallback
+	workerID         string
+	msgStore         MessageStore
+	stateCallback    WorkerStateCallback
+	reflectionWriter ReflectionWriter
 	// dedup tracks recent messages to prevent duplicate sends to coordinator
 	dedup *MessageDeduplicator
 }
@@ -65,6 +87,12 @@ func NewWorkerServer(workerID string, msgStore MessageStore) *WorkerServer {
 // This must be called before the worker tools can perform state transitions.
 func (ws *WorkerServer) SetStateCallback(callback WorkerStateCallback) {
 	ws.stateCallback = callback
+}
+
+// SetReflectionWriter sets the reflection writer for saving worker reflections.
+// This must be called before the post_reflections tool can be used.
+func (ws *WorkerServer) SetReflectionWriter(writer ReflectionWriter) {
+	ws.reflectionWriter = writer
 }
 
 // registerTools registers all worker tools with the MCP server.
@@ -152,6 +180,32 @@ func (ws *WorkerServer) registerTools() {
 			Required: []string{"verdict", "comments"},
 		},
 	}, ws.handleReportReviewVerdict)
+
+	// post_reflections - Save worker reflection to session directory
+	ws.RegisterTool(Tool{
+		Name:        "post_reflections",
+		Description: "Save your reflection and learnings from the completed task. Call this after committing to document insights, mistakes, and learnings for future sessions.",
+		InputSchema: &InputSchema{
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"task_id":   {Type: "string", Description: "The task ID this reflection is for"},
+				"summary":   {Type: "string", Description: "Brief summary of work completed (1-2 sentences)"},
+				"insights":  {Type: "string", Description: "What approaches worked well? Patterns worth remembering? (optional)"},
+				"mistakes":  {Type: "string", Description: "Errors made and lessons learned (optional)"},
+				"learnings": {Type: "string", Description: "General learnings for future workers in this codebase (optional)"},
+			},
+			Required: []string{"task_id", "summary"},
+		},
+		OutputSchema: &OutputSchema{
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"status":    {Type: "string", Description: "Success or error status"},
+				"file_path": {Type: "string", Description: "Path where reflection was saved"},
+				"message":   {Type: "string", Description: "Human-readable result message"},
+			},
+			Required: []string{"status", "message"},
+		},
+	}, ws.handlePostReflections)
 }
 
 // Tool argument structs for JSON parsing.
@@ -167,6 +221,15 @@ type reportImplementationCompleteArgs struct {
 type reportReviewVerdictArgs struct {
 	Verdict  string `json:"verdict"`
 	Comments string `json:"comments"`
+}
+
+// postReflectionsArgs defines the arguments for the post_reflections tool.
+type postReflectionsArgs struct {
+	TaskID    string `json:"task_id"`
+	Summary   string `json:"summary"`
+	Insights  string `json:"insights,omitempty"`
+	Mistakes  string `json:"mistakes,omitempty"`
+	Learnings string `json:"learnings,omitempty"`
 }
 
 // checkMessagesResponse is the structured response for check_messages.
@@ -379,6 +442,127 @@ func (ws *WorkerServer) handleReportReviewVerdict(_ context.Context, rawArgs jso
 		"verdict":  args.Verdict,
 		"phase":    string(events.PhaseIdle), // Reviewer returns to idle
 		"comments": args.Comments,
+	}
+	data, _ := json.MarshalIndent(response, "", "  ")
+	return StructuredResult(string(data), response), nil
+}
+
+// validateReflectionArgs validates the arguments for the post_reflections tool.
+// It checks task_id format (to prevent path traversal), summary length bounds,
+// and total content length.
+func validateReflectionArgs(args postReflectionsArgs) error {
+	// Validate task_id is not empty
+	if args.TaskID == "" {
+		return fmt.Errorf("task_id is required")
+	}
+
+	// Validate task_id format to prevent path traversal attacks
+	// Reject patterns containing ".." or "/" which could escape the session directory
+	if strings.Contains(args.TaskID, "..") || strings.Contains(args.TaskID, "/") {
+		return fmt.Errorf("invalid task_id format: contains path traversal characters")
+	}
+
+	// Validate task_id matches expected format
+	if !reflectionTaskIDPattern.MatchString(args.TaskID) {
+		return fmt.Errorf("invalid task_id format: %s", args.TaskID)
+	}
+
+	// Validate summary is not empty
+	if args.Summary == "" {
+		return fmt.Errorf("summary is required")
+	}
+
+	// Validate summary length bounds
+	if len(args.Summary) < MinSummaryLength {
+		return fmt.Errorf("summary too short (min %d chars, got %d)", MinSummaryLength, len(args.Summary))
+	}
+
+	return nil
+}
+
+// buildReflectionMarkdown generates the markdown content for a worker reflection.
+// It includes a metadata header and conditionally includes optional sections
+// (Insights, Mistakes & Lessons, Learnings) only if they are non-empty.
+func buildReflectionMarkdown(workerID string, args postReflectionsArgs) string {
+	var b strings.Builder
+
+	// Header with metadata
+	b.WriteString("# Worker Reflection\n\n")
+	b.WriteString(fmt.Sprintf("**Worker:** %s\n", workerID))
+	b.WriteString(fmt.Sprintf("**Task:** %s\n", args.TaskID))
+	b.WriteString(fmt.Sprintf("**Date:** %s\n\n", time.Now().Format("2006-01-02 15:04:05")))
+
+	// Summary section (always included)
+	b.WriteString("## Summary\n\n")
+	b.WriteString(args.Summary)
+	b.WriteString("\n\n")
+
+	// Insights section (optional)
+	if args.Insights != "" {
+		b.WriteString("## Insights\n\n")
+		b.WriteString(args.Insights)
+		b.WriteString("\n\n")
+	}
+
+	// Mistakes & Lessons section (optional)
+	if args.Mistakes != "" {
+		b.WriteString("## Mistakes & Lessons\n\n")
+		b.WriteString(args.Mistakes)
+		b.WriteString("\n\n")
+	}
+
+	// Learnings section (optional)
+	if args.Learnings != "" {
+		b.WriteString("## Learnings\n\n")
+		b.WriteString(args.Learnings)
+		b.WriteString("\n\n")
+	}
+
+	return b.String()
+}
+
+// handlePostReflections saves a worker's reflection to their session directory.
+func (ws *WorkerServer) handlePostReflections(_ context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
+	var args postReflectionsArgs
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	// Validate input using the dedicated validation function
+	if err := validateReflectionArgs(args); err != nil {
+		return nil, err
+	}
+
+	// Check that reflectionWriter is configured (graceful error, not panic)
+	if ws.reflectionWriter == nil {
+		return nil, fmt.Errorf("reflection writer not configured")
+	}
+
+	// Build markdown content
+	content := buildReflectionMarkdown(ws.workerID, args)
+
+	// Write to session directory
+	filePath, err := ws.reflectionWriter.WriteWorkerReflection(ws.workerID, args.TaskID, []byte(content))
+	if err != nil {
+		log.Debug(log.CatMCP, "Failed to write reflection", "workerID", ws.workerID, "error", err)
+		return nil, fmt.Errorf("failed to save reflection: %w", err)
+	}
+
+	// Optionally post info message to coordinator for tracking
+	if ws.msgStore != nil {
+		msg := fmt.Sprintf("Reflection posted for task %s", args.TaskID)
+		if _, err := ws.msgStore.Append(ws.workerID, message.ActorCoordinator, msg, message.MessageInfo); err != nil {
+			log.Warn(log.CatMCP, "Failed to notify coordinator of reflection", "error", err)
+		}
+	}
+
+	log.Debug(log.CatMCP, "Worker posted reflection", "workerID", ws.workerID, "taskID", args.TaskID, "path", filePath)
+
+	// Return structured response with status, file_path, message
+	response := map[string]any{
+		"status":    "success",
+		"file_path": filePath,
+		"message":   fmt.Sprintf("Reflection saved to %s", filePath),
 	}
 	data, _ := json.MarshalIndent(response, "", "  ")
 	return StructuredResult(string(data), response), nil
