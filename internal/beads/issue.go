@@ -72,6 +72,7 @@ type Issue struct {
 	LastActivity time.Time `json:"last_activity,omitzero"` // Timestamp for timeout detection
 	RoleType     string    `json:"role_type,omitempty"`    // Agent role (polecat|crew|witness|refinery|mayor|deacon)
 	Rig          string    `json:"rig,omitempty"`          // Rig name (empty for town-level agents)
+	MolType      string    `json:"mol_type,omitempty"`     // Molecule type classification
 
 	// Dependency tracking
 	BlockedBy      []string `json:"blocked_by"`

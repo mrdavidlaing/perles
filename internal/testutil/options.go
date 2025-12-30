@@ -39,6 +39,7 @@ type issueData struct {
 	lastActivity *time.Time
 	roleType     string
 	rig          string
+	molType      string
 }
 
 // defaultIssue returns an issueData with sensible defaults.
@@ -177,4 +178,9 @@ func RoleType(s string) IssueOption {
 // Rig sets the rig field for the issue.
 func Rig(s string) IssueOption {
 	return func(i *issueData) { i.rig = s }
+}
+
+// MolType sets the mol_type field for the issue.
+func MolType(s string) IssueOption {
+	return func(i *issueData) { i.molType = s }
 }

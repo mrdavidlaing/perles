@@ -39,6 +39,7 @@ CREATE TABLE issues (
 	last_activity DATETIME,
 	role_type TEXT DEFAULT '',
 	rig TEXT DEFAULT '',
+	mol_type TEXT DEFAULT '',
 	CHECK ((status = 'closed') = (closed_at IS NOT NULL) OR status IN ('deleted', 'tombstone'))
 );
 

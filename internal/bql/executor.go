@@ -162,7 +162,8 @@ func (e *Executor) executeBaseQuery(query *Query) ([]beads.Issue, error) {
 			i.agent_state,
 			i.last_activity,
 			i.role_type,
-			i.rig
+			i.rig,
+			i.mol_type
 		FROM issues i
 		WHERE i.status not in ('deleted', 'tombstone')
 	  AND i.deleted_at is null
@@ -265,6 +266,7 @@ func (e *Executor) scanIssuesBase(rows *sql.Rows) ([]beads.Issue, error) {
 			lastActivity       sql.NullTime
 			roleType           sql.NullString
 			rig                sql.NullString
+			molType            sql.NullString
 		)
 
 		err := rows.Scan(
@@ -292,6 +294,7 @@ func (e *Executor) scanIssuesBase(rows *sql.Rows) ([]beads.Issue, error) {
 			&lastActivity,
 			&roleType,
 			&rig,
+			&molType,
 		)
 		if err != nil {
 			log.ErrorErr(log.CatDB, "Scan failed", err)
@@ -348,6 +351,9 @@ func (e *Executor) scanIssuesBase(rows *sql.Rows) ([]beads.Issue, error) {
 		}
 		if rig.Valid {
 			issue.Rig = rig.String
+		}
+		if molType.Valid {
+			issue.MolType = molType.String
 		}
 
 		issues = append(issues, issue)

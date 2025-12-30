@@ -29,6 +29,7 @@ var ValidFields = map[string]FieldType{
 	"last_activity": FieldDate,
 	"role_type":     FieldString,
 	"rig":           FieldString,
+	"mol_type":      FieldString,
 	"created":       FieldDate,
 	"updated":       FieldDate,
 }
