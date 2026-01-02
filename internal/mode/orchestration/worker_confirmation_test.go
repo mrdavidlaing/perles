@@ -47,7 +47,7 @@ func TestNewWorkerConfirmation_DoneChannelOpen(t *testing.T) {
 
 	select {
 	case <-wc.Done():
-		t.Fatal("Done channel should not be closed initially")
+		require.FailNow(t, "Done channel should not be closed initially")
 	default:
 		// Expected - channel is open
 	}
@@ -145,7 +145,7 @@ func TestDone_ClosesWhenAllConfirmed(t *testing.T) {
 	// Channel should be open initially
 	select {
 	case <-wc.Done():
-		t.Fatal("Done channel should be open initially")
+		require.FailNow(t, "Done channel should be open initially")
 	default:
 	}
 
@@ -153,7 +153,7 @@ func TestDone_ClosesWhenAllConfirmed(t *testing.T) {
 	wc.Confirm("worker-1")
 	select {
 	case <-wc.Done():
-		t.Fatal("Done channel should still be open with 1/2 confirmed")
+		require.FailNow(t, "Done channel should still be open with 1/2 confirmed")
 	default:
 	}
 
@@ -164,7 +164,7 @@ func TestDone_ClosesWhenAllConfirmed(t *testing.T) {
 	case <-wc.Done():
 		// Expected - channel is closed
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("Done channel should be closed after all confirmed")
+		require.FailNow(t, "Done channel should be closed after all confirmed")
 	}
 }
 
@@ -190,7 +190,7 @@ func TestDone_CanBeSelectedOn(t *testing.T) {
 	case result := <-done:
 		require.True(t, result, "select should receive from Done()")
 	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for Done()")
+		require.FailNow(t, "timeout waiting for Done()")
 	}
 }
 
@@ -224,7 +224,7 @@ func TestDone_MultipleReceiversAllUnblock(t *testing.T) {
 		case <-received:
 			receivedCount++
 		case <-timeout:
-			t.Fatalf("timeout: only %d/%d receivers unblocked", receivedCount, numReceivers)
+			require.FailNow(t, "timeout: only %d/%d receivers unblocked", receivedCount, numReceivers)
 		}
 	}
 }
@@ -348,7 +348,7 @@ func TestConfirm_ThreadSafe_ConcurrentWithDone(t *testing.T) {
 	case <-done:
 		// Success
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout - possible deadlock")
+		require.FailNow(t, "timeout - possible deadlock")
 	}
 
 	// All Done() waiters should have received
@@ -454,7 +454,7 @@ func TestDone_ChannelNeverClosedTwice(t *testing.T) {
 	case <-wc.Done():
 		// Success
 	default:
-		t.Fatal("Done channel should be closed")
+		require.FailNow(t, "Done channel should be closed")
 	}
 }
 
