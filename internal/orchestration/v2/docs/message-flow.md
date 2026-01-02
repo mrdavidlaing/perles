@@ -131,9 +131,8 @@ The v2 system separates read and write operations for performance:
 ```mermaid
 flowchart TB
     subgraph Reads["Read Path (Fast)"]
-        R1["HandleListWorkers"]
-        R2["HandleQueryWorkerState"]
-        R3["HandleReadMessageLog"]
+        R1["HandleQueryWorkerState"]
+        R2["HandleReadMessageLog"]
     end
     
     subgraph Writes["Write Path (Ordered)"]

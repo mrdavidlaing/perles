@@ -79,6 +79,18 @@ func (r *MemoryTaskRepository) GetByImplementer(workerID string) ([]*TaskAssignm
 	return result, nil
 }
 
+// All returns all task assignments in the repository.
+func (r *MemoryTaskRepository) All() []*TaskAssignment {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]*TaskAssignment, 0, len(r.tasks))
+	for _, task := range r.tasks {
+		result = append(result, task)
+	}
+	return result
+}
+
 // Delete removes a task assignment from the repository.
 func (r *MemoryTaskRepository) Delete(taskID string) error {
 	r.mu.Lock()
@@ -285,6 +297,20 @@ func (r *MemoryProcessRepository) ReadyWorkers() []*Process {
 			if process.Phase == nil || *process.Phase == events.ProcessPhaseIdle {
 				result = append(result, process)
 			}
+		}
+	}
+	return result
+}
+
+// RetiredWorkers returns workers in terminal state (Retired or Failed).
+func (r *MemoryProcessRepository) RetiredWorkers() []*Process {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]*Process, 0)
+	for _, process := range r.processes {
+		if process.Role == RoleWorker && (process.Status == StatusRetired || process.Status == StatusFailed) {
+			result = append(result, process)
 		}
 	}
 	return result

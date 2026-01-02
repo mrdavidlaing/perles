@@ -24,7 +24,7 @@ const DefaultTimeout = 30 * time.Second
 // It parses MCP arguments, creates commands, submits them to the processor,
 // and converts results back to MCP format.
 //
-// For read-only operations (list_workers, query_worker_state), the adapter
+// For read-only operations (query_worker_state), the adapter
 // reads directly from repositories without going through the CommandProcessor,
 // since these operations don't mutate state and don't require FIFO ordering.
 type V2Adapter struct {
@@ -185,11 +185,10 @@ func (a *V2Adapter) HandleRetireProcess(ctx context.Context, args json.RawMessag
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	if parsed.WorkerID == "" {
-		return nil, fmt.Errorf("process_id is required")
-	}
-
 	cmd := command.NewRetireProcessCommand(command.SourceMCPTool, parsed.WorkerID, parsed.Reason)
+	if err := cmd.Validate(); err != nil {
+		return nil, fmt.Errorf("retire_process command validation failed: %w", err)
+	}
 
 	result, err := a.submitWithTimeout(ctx, cmd)
 	if err != nil {
@@ -210,11 +209,10 @@ func (a *V2Adapter) HandleReplaceProcess(ctx context.Context, args json.RawMessa
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	if parsed.WorkerID == "" {
-		return nil, fmt.Errorf("process_id is required")
-	}
-
 	cmd := command.NewReplaceProcessCommand(command.SourceMCPTool, parsed.WorkerID, parsed.Reason)
+	if err := cmd.Validate(); err != nil {
+		return nil, fmt.Errorf("replace_process command validation failed: %w", err)
+	}
 
 	result, err := a.submitWithTimeout(ctx, cmd)
 	if err != nil {
@@ -226,77 +224,6 @@ func (a *V2Adapter) HandleReplaceProcess(ctx context.Context, args json.RawMessa
 	}
 
 	return mcptypes.SuccessResult(fmt.Sprintf("Process %s replaced successfully", parsed.WorkerID)), nil
-}
-
-// HandleListWorkers handles the list_workers MCP tool call.
-// This is a read-only operation that reads directly from the ProcessRepository
-// without going through the CommandProcessor, since it doesn't mutate state.
-func (a *V2Adapter) HandleListWorkers(_ context.Context, _ json.RawMessage) (*mcptypes.ToolCallResult, error) {
-	if a.processRepo == nil {
-		return nil, fmt.Errorf("process repository not configured for read-only operations")
-	}
-
-	workers := a.processRepo.Workers()
-
-	// Return human-readable message when no workers exist (matches old coordinator behavior)
-	if len(workers) == 0 {
-		return mcptypes.SuccessResult("No active workers."), nil
-	}
-
-	// Format workers for JSON response
-	// Field names match coordinator.go handleListWorkers for backward compatibility
-	type workerInfo struct {
-		WorkerID      string `json:"worker_id"`
-		Status        string `json:"status"`
-		Phase         string `json:"phase"`
-		TaskID        string `json:"task_id,omitempty"`
-		SessionID     string `json:"session_id"`
-		StartedAt     string `json:"started_at"`
-		ContextTokens int    `json:"context_tokens,omitempty"`
-		ContextWindow int    `json:"context_window,omitempty"`
-		ContextUsage  string `json:"context_usage,omitempty"`
-		QueueSize     int    `json:"queue_size"`
-	}
-
-	workerList := make([]workerInfo, 0, len(workers))
-	for _, p := range workers {
-		queueSize := 0
-		if a.queueRepo != nil {
-			queueSize = a.queueRepo.Size(p.ID)
-		}
-		phase := ""
-		if p.Phase != nil {
-			phase = string(*p.Phase)
-		}
-		info := workerInfo{
-			WorkerID:  p.ID,
-			Status:    processStatusToWorkerStatus(p.Status),
-			Phase:     phase,
-			TaskID:    p.TaskID,
-			SessionID: p.SessionID,
-			StartedAt: p.CreatedAt.Format("15:04:05"),
-			QueueSize: queueSize,
-		}
-
-		// Add context metrics if available
-		if p.Metrics != nil {
-			info.ContextTokens = p.Metrics.ContextTokens
-			info.ContextWindow = p.Metrics.ContextWindow
-			if info.ContextTokens > 0 && info.ContextWindow > 0 {
-				info.ContextUsage = formatContextUsage(info.ContextTokens, info.ContextWindow)
-			}
-		}
-
-		workerList = append(workerList, info)
-	}
-
-	// Return JSON response
-	jsonBytes, err := json.Marshal(workerList)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal worker list: %w", err)
-	}
-
-	return mcptypes.SuccessResult(string(jsonBytes)), nil
 }
 
 // processStatusToWorkerStatus converts ProcessStatus to the string format expected by the API.
@@ -349,11 +276,22 @@ type workerStateInfo struct {
 	ReviewerID  string `json:"reviewer_id,omitempty"`
 }
 
+// taskAssignmentInfo represents a task assignment in the query_worker_state response.
+type taskAssignmentInfo struct {
+	TaskID          string `json:"task_id"`
+	Implementer     string `json:"implementer"`
+	Reviewer        string `json:"reviewer,omitempty"`
+	Status          string `json:"status"`
+	StartedAt       string `json:"started_at,omitempty"`
+	ReviewStartedAt string `json:"review_started_at,omitempty"`
+}
+
 // workerStateResponse is the response format for query_worker_state tool.
-// Matches coordinator.go response format for feature parity.
 type workerStateResponse struct {
-	Workers      []workerStateInfo `json:"workers"`
-	ReadyWorkers []string          `json:"ready_workers"`
+	Workers        []workerStateInfo             `json:"workers"`
+	ReadyWorkers   []string                      `json:"ready_workers"`
+	RetiredWorkers []string                      `json:"retired_workers"`
+	Tasks          map[string]taskAssignmentInfo `json:"tasks"`
 }
 
 // HandleQueryWorkerState handles the query_worker_state MCP tool call.
@@ -382,10 +320,38 @@ func (a *V2Adapter) HandleQueryWorkerState(_ context.Context, args json.RawMessa
 	// Get all active workers from repository
 	workers := a.processRepo.ActiveWorkers()
 
-	// Build response matching coordinator format
+	// Build response
 	response := workerStateResponse{
-		Workers:      make([]workerStateInfo, 0),
-		ReadyWorkers: make([]string, 0),
+		Workers:        make([]workerStateInfo, 0),
+		ReadyWorkers:   make([]string, 0),
+		RetiredWorkers: make([]string, 0),
+		Tasks:          make(map[string]taskAssignmentInfo),
+	}
+
+	// Populate retired workers
+	retiredWorkers := a.processRepo.RetiredWorkers()
+	for _, p := range retiredWorkers {
+		response.RetiredWorkers = append(response.RetiredWorkers, p.ID)
+	}
+
+	// Populate all tasks
+	if a.taskRepo != nil {
+		allTasks := a.taskRepo.All()
+		for _, task := range allTasks {
+			info := taskAssignmentInfo{
+				TaskID:      task.TaskID,
+				Implementer: task.Implementer,
+				Reviewer:    task.Reviewer,
+				Status:      string(task.Status),
+			}
+			if !task.StartedAt.IsZero() {
+				info.StartedAt = task.StartedAt.Format("2006-01-02T15:04:05Z07:00")
+			}
+			if !task.ReviewStartedAt.IsZero() {
+				info.ReviewStartedAt = task.ReviewStartedAt.Format("2006-01-02T15:04:05Z07:00")
+			}
+			response.Tasks[task.TaskID] = info
+		}
 	}
 
 	for _, p := range workers {
@@ -455,7 +421,7 @@ func (a *V2Adapter) HandleQueryWorkerState(_ context.Context, args json.RawMessa
 		return nil, fmt.Errorf("failed to marshal worker state: %w", err)
 	}
 
-	return mcptypes.SuccessResult(string(jsonBytes)), nil
+	return mcptypes.StructuredResult(string(jsonBytes), response), nil
 }
 
 // ===========================================================================

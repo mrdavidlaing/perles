@@ -10,7 +10,12 @@ func WorkerIdlePrompt(workerID string) string {
 Use signal_ready to tell the coordinator you are ready, then STOP.
 Do NOT run any other tools. Do NOT check for tasks. Do NOT start any work.
 
-You will receive task assignments from the coordinator in a follow-up message.`, workerID)
+You will receive task assignments from the coordinator in a follow-up message. Once you receive a 
+task assignment, you will exit IDLE state and begin working on the assigned task. 
+
+You **MUST** always end your turn with a tool call to either post_message or report_implementation_complete 
+to notify the coordinator of task completion. Failing to do so will result in lost tasks and confusion.
+`, workerID)
 }
 
 // WorkerSystemPrompt generates the system prompt for a worker agent.

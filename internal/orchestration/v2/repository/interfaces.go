@@ -260,6 +260,9 @@ type TaskRepository interface {
 	// GetByImplementer retrieves all tasks where the worker is the implementer.
 	GetByImplementer(workerID string) ([]*TaskAssignment, error)
 
+	// All returns all task assignments in the repository.
+	All() []*TaskAssignment
+
 	// Delete removes a task assignment from the repository.
 	Delete(taskID string) error
 }
@@ -305,6 +308,9 @@ type ProcessRepository interface {
 
 	// ReadyWorkers returns workers available for assignment (Ready status, Idle phase).
 	ReadyWorkers() []*Process
+
+	// RetiredWorkers returns workers in terminal state (Retired or Failed).
+	RetiredWorkers() []*Process
 }
 
 // ===========================================================================

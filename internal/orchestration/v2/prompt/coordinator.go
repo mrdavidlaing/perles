@@ -27,8 +27,7 @@ Primary Objective
 - Deliver correct, complete outcomes by delegating work, preventing duplication, tracking state, and merging worker outputs into a single coherent answer.
 
 Tools (MCP)
-- list_workers: view worker statuses (use sparingly).
-- query_worker_state: check a worker’s current phase/state (use sparingly).
+- query_worker_state: view all workers, tasks, and retired workers (use sparingly).
 - send_to_worker: follow-up on an existing task with the SAME worker.
 - assign_task: assign a bd task to exactly ONE ready worker.
 - read_message_log / post_message: shared log reading/posting.
@@ -96,7 +95,7 @@ func BuildReplacePrompt() string {
 	prompt.WriteString("Your workers are still running and all external state is preserved.\n\n")
 
 	prompt.WriteString("WHAT YOU HAVE ACCESS TO:\n")
-	prompt.WriteString("- `list_workers`: See current worker status and assignments\n")
+	prompt.WriteString("- `query_worker_state`: See all workers, tasks, and retired workers\n")
 	prompt.WriteString("- `read_message_log`: See recent activity (including handoff from previous coordinator)\n")
 	prompt.WriteString("- All standard coordinator tools\n\n")
 

@@ -546,33 +546,33 @@ func TestV2Integration_ReadOnlyRepoAccess(t *testing.T) {
 	worker1 := stack.spawnWorkerAndWaitReady(t)
 	worker2 := stack.spawnWorkerAndWaitReady(t)
 
-	// Test list_workers via adapter (should read directly from repo)
-	result, err := stack.adapter.HandleListWorkers(stack.ctx, nil)
+	// Test query_worker_state without filter (should return all workers)
+	result, err := stack.adapter.HandleQueryWorkerState(stack.ctx, nil)
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 
-	// Parse the JSON response from Content[0].Text
 	require.NotEmpty(t, result.Content)
-	var workers []map[string]interface{}
-	err = json.Unmarshal([]byte(result.Content[0].Text), &workers)
+	var stateResp struct {
+		Workers        []map[string]interface{}          `json:"workers"`
+		ReadyWorkers   []string                          `json:"ready_workers"`
+		RetiredWorkers []string                          `json:"retired_workers"`
+		Tasks          map[string]map[string]interface{} `json:"tasks"`
+	}
+	err = json.Unmarshal([]byte(result.Content[0].Text), &stateResp)
 	require.NoError(t, err)
-	assert.Len(t, workers, 2, "should list 2 workers")
+	assert.Len(t, stateResp.Workers, 2, "should list 2 workers")
 
-	// Test query_worker_state (now returns workers array format)
+	// Test query_worker_state with filter
 	queryArgs, _ := json.Marshal(map[string]string{"worker_id": worker1})
 	result, err = stack.adapter.HandleQueryWorkerState(stack.ctx, queryArgs)
 	require.NoError(t, err)
 	require.False(t, result.IsError)
 
 	require.NotEmpty(t, result.Content)
-	var stateResp struct {
-		Workers      []map[string]interface{} `json:"workers"`
-		ReadyWorkers []string                 `json:"ready_workers"`
-	}
 	err = json.Unmarshal([]byte(result.Content[0].Text), &stateResp)
 	require.NoError(t, err)
 	require.Len(t, stateResp.Workers, 1, "should have one worker")
-	assert.Equal(t, worker1, stateResp.Workers[0]["worker_id"]) // Note: field is now worker_id, not id
+	assert.Equal(t, worker1, stateResp.Workers[0]["worker_id"])
 	assert.Equal(t, "ready", stateResp.Workers[0]["status"])
 
 	// Query non-existent worker (now returns empty workers array, not error)
@@ -589,7 +589,7 @@ func TestV2Integration_ReadOnlyRepoAccess(t *testing.T) {
 	processedBefore := stack.processor.ProcessedCount()
 
 	// Do another read
-	_, _ = stack.adapter.HandleListWorkers(stack.ctx, nil)
+	_, _ = stack.adapter.HandleQueryWorkerState(stack.ctx, nil)
 
 	processedAfter := stack.processor.ProcessedCount()
 	assert.Equal(t, processedBefore, processedAfter, "read operations should not submit commands")

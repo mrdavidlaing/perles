@@ -168,6 +168,18 @@ func (r *mockProcessRepository) ReadyWorkers() []*repository.Process {
 	return result
 }
 
+func (r *mockProcessRepository) RetiredWorkers() []*repository.Process {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []*repository.Process
+	for _, p := range r.processes {
+		if p.Role == repository.RoleWorker && (p.Status == repository.StatusRetired || p.Status == repository.StatusFailed) {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
 // newTestProcessRepo creates a process repository with a coordinator for testing.
 func newTestProcessRepo() *mockProcessRepository {
 	repo := newMockProcessRepository()

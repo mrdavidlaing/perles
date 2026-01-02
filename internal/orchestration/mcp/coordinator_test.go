@@ -91,7 +91,6 @@ func TestCoordinatorServer_RegistersAllTools(t *testing.T) {
 		"mark_task_complete",
 		"mark_task_failed",
 		"read_message_log",
-		"list_workers",
 		"prepare_handoff",
 		"query_worker_state",
 		"assign_task_review",
@@ -508,46 +507,6 @@ func TestCoordinatorServer_AssignTaskRouting(t *testing.T) {
 	require.Equal(t, command.CmdAssignTask, cmds[0].Type())
 }
 
-// TestCoordinatorServer_ListWorkers_NoWorkers verifies list_workers returns appropriate message when no workers exist.
-// This test uses the v2 adapter since handleListWorkers delegates to it.
-func TestCoordinatorServer_ListWorkers_NoWorkers(t *testing.T) {
-	// Use NewTestCoordinatorServer which includes v2 adapter with repositories
-	tcs := NewTestCoordinatorServer(t)
-	defer tcs.Close()
-
-	handler := tcs.handlers["list_workers"]
-
-	result, err := handler(context.Background(), nil)
-	require.NoError(t, err, "Unexpected error")
-
-	require.Equal(t, "No active workers.", result.Content[0].Text, "Expected 'No active workers.'")
-}
-
-// TestCoordinatorServer_ListWorkers_WithWorkers verifies list_workers returns worker info JSON.
-// This test uses the v2 adapter since handleListWorkers delegates to it.
-func TestCoordinatorServer_ListWorkers_WithWorkers(t *testing.T) {
-	// Use NewTestCoordinatorServer which includes v2 adapter with repositories
-	tcs := NewTestCoordinatorServer(t)
-	defer tcs.Close()
-
-	// Add a worker to the v2 repository
-	_ = tcs.ProcessRepo.Save(&repository.Process{
-		ID:        "worker-1",
-		Role:      repository.RoleWorker,
-		Status:    repository.StatusReady,
-		Phase:     ptr(events.ProcessPhaseIdle),
-		SessionID: "session-1",
-	})
-
-	handler := tcs.handlers["list_workers"]
-
-	result, err := handler(context.Background(), nil)
-	require.NoError(t, err, "Unexpected error")
-
-	require.NotEmpty(t, result.Content[0].Text, "Expected non-empty result")
-	require.NotEqual(t, "No active workers.", result.Content[0].Text, "Expected worker list, not empty message")
-}
-
 // TestPrepareHandoff_PostsMessage verifies tool posts message with correct type and content.
 func TestPrepareHandoff_PostsMessage(t *testing.T) {
 	msgIssue := repository.NewMemoryMessageRepository()
@@ -904,115 +863,10 @@ func containsInternal(s, substr string) bool {
 }
 
 // ============================================================================
-// Phase 5 Tests: Updated assign_task and list_workers with state tracking
+// Phase 5 Tests: Updated assign_task with state tracking
 // Note: Business logic tests for assign_task (validates assignment, rejects duplicate,
 // rejects worker busy) are now in v2 handler tests since validation moved to v2.
 // ============================================================================
-
-// TestListWorkers_IncludesPhase verifies list_workers returns phase from v2 repository.
-// This test uses the v2 adapter since handleListWorkers delegates to it.
-func TestListWorkers_IncludesPhase(t *testing.T) {
-	// Use NewTestCoordinatorServer which includes v2 adapter with repositories
-	tcs := NewTestCoordinatorServer(t)
-	defer tcs.Close()
-
-	// Add a worker with phase to the v2 repository
-	_ = tcs.ProcessRepo.Save(&repository.Process{
-		ID:        "worker-1",
-		Role:      repository.RoleWorker,
-		Status:    repository.StatusWorking,
-		Phase:     ptr(events.ProcessPhaseImplementing),
-		SessionID: "session-1",
-	})
-
-	handler := tcs.handlers["list_workers"]
-	result, err := handler(context.Background(), nil)
-	require.NoError(t, err, "Unexpected error")
-
-	// Parse response
-	type workerInfo struct {
-		WorkerID string `json:"worker_id"`
-		Phase    string `json:"phase"`
-	}
-	var infos []workerInfo
-	err = json.Unmarshal([]byte(result.Content[0].Text), &infos)
-	require.NoError(t, err, "Failed to parse response")
-
-	require.Len(t, infos, 1, "Expected 1 worker")
-
-	info := infos[0]
-	require.Equal(t, "implementing", info.Phase, "Phase mismatch")
-}
-
-// TestListWorkers_ShowsIdlePhaseForNewWorker verifies new workers show idle phase.
-// This test uses the v2 adapter since handleListWorkers delegates to it.
-func TestListWorkers_ShowsIdlePhaseForNewWorker(t *testing.T) {
-	// Use NewTestCoordinatorServer which includes v2 adapter with repositories
-	tcs := NewTestCoordinatorServer(t)
-	defer tcs.Close()
-
-	// Add a worker with idle phase to the v2 repository
-	_ = tcs.ProcessRepo.Save(&repository.Process{
-		ID:        "worker-1",
-		Role:      repository.RoleWorker,
-		Status:    repository.StatusReady,
-		Phase:     ptr(events.ProcessPhaseIdle),
-		SessionID: "session-1",
-	})
-
-	handler := tcs.handlers["list_workers"]
-	result, err := handler(context.Background(), nil)
-	require.NoError(t, err, "Unexpected error")
-
-	// Parse response
-	type workerInfo struct {
-		WorkerID string `json:"worker_id"`
-		Phase    string `json:"phase"`
-	}
-	var infos []workerInfo
-	err = json.Unmarshal([]byte(result.Content[0].Text), &infos)
-	require.NoError(t, err, "Failed to parse response")
-
-	require.Len(t, infos, 1, "Expected 1 worker")
-
-	info := infos[0]
-	require.Equal(t, "idle", info.Phase, "Phase mismatch")
-}
-
-// TestListWorkers_ShowsReviewingPhase verifies reviewing phase is shown correctly.
-// This test uses the v2 adapter since handleListWorkers delegates to it.
-func TestListWorkers_ShowsReviewingPhase(t *testing.T) {
-	// Use NewTestCoordinatorServer which includes v2 adapter with repositories
-	tcs := NewTestCoordinatorServer(t)
-	defer tcs.Close()
-
-	// Add a worker with reviewing phase to the v2 repository
-	_ = tcs.ProcessRepo.Save(&repository.Process{
-		ID:        "worker-2",
-		Role:      repository.RoleWorker,
-		Status:    repository.StatusWorking,
-		Phase:     ptr(events.ProcessPhaseReviewing),
-		SessionID: "session-2",
-	})
-
-	handler := tcs.handlers["list_workers"]
-	result, err := handler(context.Background(), nil)
-	require.NoError(t, err, "Unexpected error")
-
-	// Parse response
-	type workerInfo struct {
-		WorkerID string `json:"worker_id"`
-		Phase    string `json:"phase"`
-	}
-	var infos []workerInfo
-	err = json.Unmarshal([]byte(result.Content[0].Text), &infos)
-	require.NoError(t, err, "Failed to parse response")
-
-	require.Len(t, infos, 1, "Expected 1 worker")
-
-	info := infos[0]
-	require.Equal(t, "reviewing", info.Phase, "Phase mismatch")
-}
 
 // TestReplaceWorker_Routing verifies replace_worker routes to v2 adapter.
 // Note: Business logic tests (cleans up assignments) are now in v2 handler tests.
@@ -1101,14 +955,13 @@ func TestCoordinatorServer_AssignTaskSchemaIncludesSummary(t *testing.T) {
 	}
 }
 
-// TestIntegration_ListAndQueryWorkerState verifies list_workers and query_worker_state return consistent data.
-// Both handlers now delegate to v2 adapter, so they both read from the same v2 repository.
-func TestIntegration_ListAndQueryWorkerState(t *testing.T) {
+// TestIntegration_QueryWorkerState verifies query_worker_state returns correct data from v2 repository.
+func TestIntegration_QueryWorkerState(t *testing.T) {
 	// Use NewTestCoordinatorServer which includes v2 adapter with repositories
 	tcs := NewTestCoordinatorServer(t)
 	defer tcs.Close()
 
-	// Create a worker in the v2 repository (used by both handlers)
+	// Create a worker in the v2 repository
 	_ = tcs.ProcessRepo.Save(&repository.Process{
 		ID:        "worker-1",
 		Role:      repository.RoleWorker,
@@ -1118,34 +971,19 @@ func TestIntegration_ListAndQueryWorkerState(t *testing.T) {
 		SessionID: "session-1",
 	})
 
-	// List workers - should show implementing phase (reads from v2 repo)
-	listHandler := tcs.handlers["list_workers"]
-	result, err := listHandler(context.Background(), nil)
-	require.NoError(t, err, "list_workers error")
-
-	type workerInfo struct {
-		WorkerID string `json:"worker_id"`
-		Phase    string `json:"phase"`
-	}
-	var infos []workerInfo
-	err = json.Unmarshal([]byte(result.Content[0].Text), &infos)
-	require.NoError(t, err, "Failed to parse list_workers response")
-
-	require.Len(t, infos, 1, "Expected 1 worker")
-	require.Equal(t, "implementing", infos[0].Phase, "Expected implementing phase")
-
-	// Query worker state - should show same info (also reads from v2 repo)
+	// Query worker state - should show worker info from v2 repo
 	queryHandler := tcs.handlers["query_worker_state"]
-	result, err = queryHandler(context.Background(), json.RawMessage(`{}`))
+	result, err := queryHandler(context.Background(), json.RawMessage(`{}`))
 	require.NoError(t, err, "query_worker_state error")
 
 	var stateResponse workerStateResponse
 	err = json.Unmarshal([]byte(result.Content[0].Text), &stateResponse)
 	require.NoError(t, err, "Failed to parse query_worker_state response")
 
-	// Both list_workers and query_worker_state should report same phase
 	require.Len(t, stateResponse.Workers, 1, "Expected 1 worker in state response")
-	require.Equal(t, "implementing", stateResponse.Workers[0].Phase, "query_worker_state phase mismatch")
+	require.Equal(t, "worker-1", stateResponse.Workers[0].WorkerID, "WorkerID mismatch")
+	require.Equal(t, "implementing", stateResponse.Workers[0].Phase, "Phase mismatch")
+	require.Equal(t, "perles-abc.1", stateResponse.Workers[0].TaskID, "TaskID mismatch")
 }
 
 // ============================================================================

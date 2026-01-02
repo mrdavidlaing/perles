@@ -242,16 +242,6 @@ func (cs *CoordinatorServer) registerTools() {
 	}, cs.handleReadMessageLog)
 
 	cs.RegisterTool(Tool{
-		Name:        "list_workers",
-		Description: "List all workers (active and completed) with their current task assignments, status, session IDs, and context usage. Use context_usage field to identify workers running low on context window.",
-		InputSchema: &InputSchema{
-			Type:       "object",
-			Properties: map[string]*PropertySchema{},
-			Required:   []string{},
-		},
-	}, cs.handleListWorkers)
-
-	cs.RegisterTool(Tool{
 		Name:        "prepare_handoff",
 		Description: "Post a handoff message before coordinator context refresh. Call this when the user initiates a refresh (Ctrl+R). Include a summary of current work state, in-progress tasks, and any important context for the incoming coordinator.",
 		InputSchema: &InputSchema{
@@ -459,11 +449,6 @@ func (cs *CoordinatorServer) handleMarkTaskComplete(ctx context.Context, rawArgs
 // Routes through v2Adapter which uses the command processor to update BD.
 func (cs *CoordinatorServer) handleMarkTaskFailed(ctx context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
 	return cs.v2Adapter.HandleMarkTaskFailed(ctx, rawArgs)
-}
-
-// messageLogResponse is the structured response for read_message_log.
-func (cs *CoordinatorServer) handleListWorkers(ctx context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
-	return cs.v2Adapter.HandleListWorkers(ctx, rawArgs)
 }
 
 // handleQueryWorkerState returns detailed worker state including phase.

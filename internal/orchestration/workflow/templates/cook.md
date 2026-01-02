@@ -582,8 +582,7 @@ Coordinator: "Epic perles-abc1 is now complete. All 7 tasks implemented and revi
 
 | Tool | Parameters | Purpose |
 |------|------------|---------|
-| `query_worker_state` | `worker_id` (optional), `task_id` (optional) | Get worker phases, roles, and ready workers |
-| `list_workers` | none | List all workers with status and phase info |
+| `query_worker_state` | `worker_id` (optional), `task_id` (optional) | Get all workers, tasks, retired workers, and ready workers |
 | `replace_worker` | `worker_id`, `reason` | Cycle out worker and spawn replacement |
 | `read_message_log` | `limit` (optional) | Monitor worker messages |
 
