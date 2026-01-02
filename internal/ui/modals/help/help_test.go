@@ -67,7 +67,7 @@ func TestHelp_View_ContainsKeybindings(t *testing.T) {
 
 	// General keys
 	require.Contains(t, view, "?", "expected view to contain help key")
-	require.Contains(t, view, "q", "expected view to contain quit key")
+	require.Contains(t, view, "ctrl+c", "expected view to contain quit key")
 	require.Contains(t, view, "esc", "expected view to contain escape key")
 }
 
@@ -190,6 +190,22 @@ func TestHelp_renderBinding(t *testing.T) {
 	output := renderBinding(keys.Common.Quit)
 
 	require.Contains(t, output, "q", "expected binding to contain key")
+	require.Contains(t, output, "quit", "expected binding to contain description")
+}
+
+func TestHelp_renderBinding_KanbanQuitConfirm(t *testing.T) {
+	// Test rendering the kanban-specific quit confirm binding
+	output := renderBinding(keys.Kanban.QuitConfirm)
+
+	require.Contains(t, output, "ctrl+c", "expected binding to contain ctrl+c key")
+	require.Contains(t, output, "quit", "expected binding to contain description")
+}
+
+func TestHelp_renderBinding_SearchQuitConfirm(t *testing.T) {
+	// Test rendering the search-specific quit confirm binding
+	output := renderBinding(keys.Search.QuitConfirm)
+
+	require.Contains(t, output, "ctrl+c", "expected binding to contain ctrl+c key")
 	require.Contains(t, output, "quit", "expected binding to contain description")
 }
 

@@ -10,7 +10,7 @@
 │  enter      open tree view       ctrl+j/n   next view        h/l        left/right     ?          toggle help        │
 │  r          refresh issues       ctrl+k/p   previous view    j/k        up/down        w          toggle status bar  │
 │  y          copy issue ID        ctrl+v     view menu        ^space     search mode    esc        go back            │
-│  a          add column           ctrl+d     delete column                              q          quit               │
+│  a          add column           ctrl+d     delete column                              ctrl+c     quit               │
 │  e          edit column          /          search column                                                            │
 │  ctrl+h     move column left                                                                                         │
 │  ctrl+l     move column right                                                                                        │

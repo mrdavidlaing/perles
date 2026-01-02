@@ -147,14 +147,15 @@ func TestApp_KanbanModeExtracted(t *testing.T) {
 	require.Equal(t, mode.ModeKanban, m.currentMode, "should still be in kanban mode")
 }
 
-func TestApp_CtrlCQuits(t *testing.T) {
+func TestApp_CtrlC_ShowsQuitConfirmation(t *testing.T) {
 	m := createTestModel(t)
 
-	// Ctrl+C should return quit command
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	// Ctrl+C should show quit confirmation modal (not quit immediately)
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = newModel.(Model)
 
-	// The quit command should be tea.Quit
-	require.NotNil(t, cmd, "expected quit command")
+	// No command yet - modal is showing
+	require.Nil(t, cmd, "expected no command (quit modal should be showing)")
 }
 
 func TestApp_SearchModeReceivesUpdates(t *testing.T) {

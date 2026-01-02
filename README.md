@@ -94,7 +94,7 @@ perles
 |-----|--------|
 | `Ctrl+Space` | Switch between Kanban and Search modes |
 | `?` | Toggle help overlay |
-| `q` / `Ctrl+C` | Quit |
+| `Ctrl+C` | Quit |
 
 ---
 

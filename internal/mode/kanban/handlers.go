@@ -25,8 +25,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.handleDetailsKey(msg)
 	case ViewHelp:
 		switch {
-		case key.Matches(msg, keys.Common.Quit):
-			return m, tea.Quit
+		case msg.Type == tea.KeyCtrlC:
+			return m.showQuitConfirmation(), nil
 		case key.Matches(msg, keys.Common.Escape), key.Matches(msg, keys.Common.Help):
 			m.view = ViewBoard
 			return m, nil
@@ -57,16 +57,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	// Dismiss error on any key press (except quit)
+	// Dismiss error on any key press (except Ctrl+C)
 	// Don't return early - let the key continue to be processed
-	if m.err != nil && !key.Matches(msg, keys.Common.Quit) {
+	if m.err != nil && msg.Type != tea.KeyCtrlC {
 		m.err = nil
 		m.errContext = ""
 	}
 
 	switch {
-	case key.Matches(msg, keys.Common.Quit):
-		return m, tea.Quit
+	case msg.Type == tea.KeyCtrlC:
+		return m.showQuitConfirmation(), nil
 
 	case key.Matches(msg, keys.Common.Help):
 		m.view = ViewHelp
@@ -310,8 +310,8 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 func (m Model) handleDetailsKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch {
-	case key.Matches(msg, keys.Common.Quit):
-		return m, tea.Quit
+	case msg.Type == tea.KeyCtrlC:
+		return m.showQuitConfirmation(), nil
 	case key.Matches(msg, keys.Common.Escape), key.Matches(msg, keys.Kanban.Escape):
 		m.view = ViewBoard
 		// Save cursor to return to the same issue after refresh
@@ -344,9 +344,13 @@ func (m Model) handleDetailsKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 // handlePickerKey handles key events for all picker views.
 // The picker's callbacks produce domain-specific messages.
+// Note: Ctrl+C in overlay modes closes the overlay, not quit.
 func (m Model) handlePickerKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewDetails
+		m.selectedIssue = nil
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.picker, cmd = m.picker.Update(msg)
@@ -354,8 +358,10 @@ func (m Model) handlePickerKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleColumnEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewBoard
+		return m, nil
 	}
 
 	// Delegate to column editor
@@ -365,8 +371,10 @@ func (m Model) handleColumnEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleNewViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewBoard
+		return m, nil
 	}
 
 	// Delegate to modal
@@ -376,8 +384,10 @@ func (m Model) handleNewViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewBoard
+		return m, nil
 	}
 
 	// Delegate to modal
@@ -387,8 +397,12 @@ func (m Model) handleDeleteViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewDetails
+		m.selectedIssue = nil
+		m.deleteIssueIDs = nil
+		return m, nil
 	}
 
 	// Delegate to modal
@@ -398,8 +412,10 @@ func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleLabelEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewDetails
+		return m, nil
 	}
 
 	// Delegate to label editor
@@ -409,8 +425,10 @@ func (m Model) handleLabelEditorKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleViewMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewBoard
+		return m, nil
 	}
 
 	// Delegate to picker
@@ -420,8 +438,10 @@ func (m Model) handleViewMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDetailsEditMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewDetails
+		return m, nil
 	}
 
 	// Delegate to picker
@@ -431,8 +451,11 @@ func (m Model) handleDetailsEditMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteColumnModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewBoard
+		m.pendingDeleteColumn = -1
+		return m, nil
 	}
 
 	// Delegate to modal
@@ -442,8 +465,10 @@ func (m Model) handleDeleteColumnModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleRenameViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if key.Matches(msg, keys.Common.Quit) {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewBoard
+		return m, nil
 	}
 
 	// Delegate to modal

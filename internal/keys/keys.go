@@ -68,6 +68,7 @@ var Kanban = struct {
 	SwitchMode       key.Binding
 	ToggleStatus     key.Binding
 	Orchestrate      key.Binding // Start orchestration mode
+	QuitConfirm      key.Binding // Ctrl+C quit with confirmation (kanban-specific)
 }{
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
@@ -141,6 +142,10 @@ var Kanban = struct {
 		key.WithKeys("ctrl+o"),
 		key.WithHelp("ctrl+o", "orchestration mode"),
 	),
+	QuitConfirm: key.NewBinding(
+		key.WithKeys("ctrl+c"),
+		key.WithHelp("ctrl+c", "quit"),
+	),
 }
 
 // Search contains keybindings specific to search mode.
@@ -161,6 +166,7 @@ var Search = struct {
 	SwitchMode  key.Binding
 	Help        key.Binding
 	Quit        key.Binding
+	QuitConfirm key.Binding // Ctrl+C quit with confirmation (search-specific)
 }{
 	Up: key.NewBinding(
 		key.WithKeys("k", "up"),
@@ -225,6 +231,10 @@ var Search = struct {
 	Quit: key.NewBinding(
 		key.WithKeys("q", "ctrl+c"),
 		key.WithHelp("q", "quit"),
+	),
+	QuitConfirm: key.NewBinding(
+		key.WithKeys("ctrl+c"),
+		key.WithHelp("ctrl+c", "quit"),
 	),
 }
 
@@ -335,7 +345,7 @@ var LogOverlay = struct {
 
 // ShortHelp returns keybindings for the short help view (kanban mode).
 func ShortHelp() []key.Binding {
-	return []key.Binding{Common.Help, Common.Quit}
+	return []key.Binding{Common.Help, Kanban.QuitConfirm}
 }
 
 // FullHelp returns keybindings for the full help view (kanban mode).
@@ -344,6 +354,6 @@ func FullHelp() [][]key.Binding {
 		{Common.Up, Common.Down, Common.Left, Common.Right},
 		{Common.Enter, Kanban.Refresh, Kanban.Yank, Kanban.Status, Kanban.Priority, Kanban.AddColumn, Kanban.EditColumn, Kanban.MoveColumnLeft, Kanban.MoveColumnRight},
 		{Kanban.NextView, Kanban.PrevView, Kanban.ViewMenu, Kanban.DeleteColumn},
-		{Common.Help, Kanban.ToggleStatus, Common.Escape, Common.Quit},
+		{Common.Help, Kanban.ToggleStatus, Common.Escape, Kanban.QuitConfirm},
 	}
 }

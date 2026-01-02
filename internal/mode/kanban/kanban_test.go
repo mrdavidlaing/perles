@@ -377,3 +377,138 @@ func TestKanban_CtrlO_SendsOrchestrationMsg(t *testing.T) {
 	_, ok := result.(SwitchToOrchestrationMsg)
 	require.True(t, ok, "expected SwitchToOrchestrationMsg, got %T", result)
 }
+
+// =============================================================================
+// Quit Confirmation Tests
+// =============================================================================
+
+func TestKanban_CtrlC_OpensQuitModal(t *testing.T) {
+	m := createTestModel(t)
+	m.view = ViewBoard
+
+	// Simulate Ctrl+C keypress
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.handleBoardKey(msg)
+
+	// Should open quit modal, not quit immediately
+	require.NotNil(t, m.quitModal, "expected quitModal to be set")
+	require.Nil(t, cmd, "expected no command (just showing modal)")
+}
+
+func TestKanban_QKey_DoesNotQuit(t *testing.T) {
+	m := createTestModel(t)
+	m.view = ViewBoard
+
+	// Simulate 'q' keypress - should NOT quit
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	m, cmd := m.handleBoardKey(msg)
+
+	// Should not return tea.Quit and should not open quit modal
+	require.Nil(t, m.quitModal, "expected quitModal to NOT be set on 'q' key")
+	// The command should be nil or delegate to board (not tea.Quit)
+	if cmd != nil {
+		result := cmd()
+		_, isQuit := result.(tea.QuitMsg)
+		require.False(t, isQuit, "expected 'q' key to NOT quit")
+	}
+}
+
+func TestKanban_CtrlC_QuitsWhenModalOpen(t *testing.T) {
+	m := createTestModel(t)
+	// First, open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate Ctrl+C while modal is open
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.Update(msg)
+
+	// Should clear modal and quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.NotNil(t, cmd, "expected quit command")
+}
+
+func TestKanban_Enter_QuitsWhenModalOpen(t *testing.T) {
+	m := createTestModel(t)
+	// First, open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate Enter while modal is open
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	m, cmd := m.Update(msg)
+
+	// Should clear modal and quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.NotNil(t, cmd, "expected quit command")
+}
+
+func TestKanban_Escape_DismissesQuitModal(t *testing.T) {
+	m := createTestModel(t)
+	// First, open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate Escape while modal is open
+	msg := tea.KeyMsg{Type: tea.KeyEscape}
+	m, cmd := m.Update(msg)
+
+	// Should dismiss modal, not quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.Nil(t, cmd, "expected no command (modal dismissed)")
+}
+
+func TestKanban_QuitModalSubmit_Quits(t *testing.T) {
+	m := createTestModel(t)
+	// Open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate modal submit
+	m, cmd := m.Update(modal.SubmitMsg{})
+
+	// Should clear modal and return tea.Quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.NotNil(t, cmd, "expected quit command")
+	// Note: tea.Quit returns a tea.QuitMsg function, so we verify it's set
+}
+
+func TestKanban_QuitModalCancel_DismissesModal(t *testing.T) {
+	m := createTestModel(t)
+	// Open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate modal cancel (Esc)
+	m, cmd := m.Update(modal.CancelMsg{})
+
+	// Should clear modal, not quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.Nil(t, cmd, "expected no command")
+}
+
+func TestKanban_DetailsView_CtrlC_OpensQuitModal(t *testing.T) {
+	m := createTestModel(t)
+	m.view = ViewDetails
+
+	// Simulate Ctrl+C in details view
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.handleDetailsKey(msg)
+
+	// Should open quit modal
+	require.NotNil(t, m.quitModal, "expected quitModal to be set in details view")
+	require.Nil(t, cmd, "expected no command")
+}
+
+func TestKanban_HelpView_CtrlC_OpensQuitModal(t *testing.T) {
+	m := createTestModel(t)
+	m.view = ViewHelp
+
+	// Simulate Ctrl+C in help view
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.handleKey(msg)
+
+	// Should open quit modal
+	require.NotNil(t, m.quitModal, "expected quitModal to be set in help view")
+	require.Nil(t, cmd, "expected no command")
+}

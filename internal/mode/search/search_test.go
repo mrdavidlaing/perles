@@ -14,6 +14,7 @@ import (
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
+	"github.com/zjrosen/perles/internal/ui/shared/modal"
 )
 
 // createTestModel creates a minimal Model for testing state transitions.
@@ -1027,4 +1028,152 @@ func executeBatchCmd(cmd tea.Cmd) []tea.Msg {
 		}
 	}
 	return results
+}
+
+// =============================================================================
+// Quit Confirmation Tests
+// =============================================================================
+
+func TestSearch_CtrlC_OpensQuitModal_FocusResults(t *testing.T) {
+	m := createTestModelWithResults(t)
+	m.focus = FocusResults
+
+	// Simulate Ctrl+C keypress
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.handleKey(msg)
+
+	// Should open quit modal, not quit immediately
+	require.NotNil(t, m.quitModal, "expected quitModal to be set")
+	require.Nil(t, cmd, "expected no command (just showing modal)")
+}
+
+func TestSearch_CtrlC_OpensQuitModal_FocusSearch(t *testing.T) {
+	m := createTestModel(t)
+	m.focus = FocusSearch
+	m.input.Focus()
+
+	// Simulate Ctrl+C keypress
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.handleKey(msg)
+
+	// Should open quit modal, not quit immediately
+	require.NotNil(t, m.quitModal, "expected quitModal to be set in search input")
+	require.Nil(t, cmd, "expected no command")
+}
+
+func TestSearch_CtrlC_OpensQuitModal_TreeSubMode(t *testing.T) {
+	m := createTestModel(t)
+	m.subMode = mode.SubModeTree
+	m.focus = FocusResults
+
+	// Simulate Ctrl+C keypress
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.handleKey(msg)
+
+	// Should open quit modal in tree sub-mode too
+	require.NotNil(t, m.quitModal, "expected quitModal to be set in tree sub-mode")
+	require.Nil(t, cmd, "expected no command")
+}
+
+func TestSearch_QKey_DoesNotQuit(t *testing.T) {
+	m := createTestModelWithResults(t)
+	m.focus = FocusResults
+
+	// Simulate 'q' keypress - should NOT quit
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	m, cmd := m.handleKey(msg)
+
+	// Should not set quit modal and should not quit
+	require.Nil(t, m.quitModal, "expected quitModal to NOT be set on 'q' key")
+	if cmd != nil {
+		result := cmd()
+		_, isQuit := result.(tea.QuitMsg)
+		require.False(t, isQuit, "expected 'q' key to NOT quit")
+	}
+}
+
+func TestSearch_CtrlC_QuitsWhenModalOpen(t *testing.T) {
+	m := createTestModel(t)
+	// First, open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate Ctrl+C while modal is open
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.Update(msg)
+
+	// Should clear modal and quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.NotNil(t, cmd, "expected quit command")
+}
+
+func TestSearch_Enter_QuitsWhenModalOpen(t *testing.T) {
+	m := createTestModel(t)
+	// First, open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate Enter while modal is open
+	msg := tea.KeyMsg{Type: tea.KeyEnter}
+	m, cmd := m.Update(msg)
+
+	// Should clear modal and quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.NotNil(t, cmd, "expected quit command")
+}
+
+func TestSearch_Escape_DismissesQuitModal(t *testing.T) {
+	m := createTestModel(t)
+	// First, open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate Escape while modal is open
+	msg := tea.KeyMsg{Type: tea.KeyEscape}
+	m, cmd := m.Update(msg)
+
+	// Should dismiss modal, not quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.Nil(t, cmd, "expected no command (modal dismissed)")
+}
+
+func TestSearch_QuitModalSubmit_Quits(t *testing.T) {
+	m := createTestModel(t)
+	// Open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate modal submit
+	m, cmd := m.Update(modal.SubmitMsg{})
+
+	// Should clear modal and return tea.Quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.NotNil(t, cmd, "expected quit command")
+}
+
+func TestSearch_QuitModalCancel_DismissesModal(t *testing.T) {
+	m := createTestModel(t)
+	// Open the quit modal
+	m = m.showQuitConfirmation()
+	require.NotNil(t, m.quitModal, "precondition: quitModal should be set")
+
+	// Simulate modal cancel (Esc)
+	m, cmd := m.Update(modal.CancelMsg{})
+
+	// Should clear modal, not quit
+	require.Nil(t, m.quitModal, "expected quitModal to be cleared")
+	require.Nil(t, cmd, "expected no command")
+}
+
+func TestSearch_PickerView_CtrlC_ClosesOverlay(t *testing.T) {
+	m := createTestModelWithResults(t)
+	m.view = ViewPriorityPicker
+
+	// Simulate Ctrl+C in picker view - should close overlay, not quit
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m, cmd := m.handlePickerKey(msg)
+
+	// Should close overlay (return to search) instead of quitting
+	require.Equal(t, ViewSearch, m.view, "expected view to return to ViewSearch")
+	require.Nil(t, cmd, "expected no command")
 }

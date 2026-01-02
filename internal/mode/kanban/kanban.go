@@ -62,6 +62,7 @@ type Model struct {
 	colEditor   coleditor.Model
 	modal       modal.Model
 	labelEditor labeleditor.Model
+	quitModal   *modal.Model // Quit confirmation modal (nil when not showing)
 	view        ViewMode
 	width       int
 	height      int
@@ -153,10 +154,44 @@ func (m Model) SetSize(width, height int) Model {
 
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	// Handle quit modal messages first (before other message processing)
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		return m.handleKey(msg)
+	case modal.SubmitMsg:
+		if m.quitModal != nil {
+			m.quitModal = nil
+			return m, tea.Quit
+		}
+		// Continue to main switch for other modal handling
 
+	case modal.CancelMsg:
+		if m.quitModal != nil {
+			m.quitModal = nil
+			return m, nil
+		}
+		// Continue to main switch for other modal handling
+
+	case tea.KeyMsg:
+		// If quit modal is visible, handle keys
+		if m.quitModal != nil {
+			// Ctrl+C or Enter while modal open = quit (confirming the quit)
+			if msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEnter {
+				m.quitModal = nil
+				return m, tea.Quit
+			}
+			// Escape dismisses the modal
+			if msg.Type == tea.KeyEscape {
+				m.quitModal = nil
+				return m, nil
+			}
+			// Forward other keys to modal for navigation
+			var cmd tea.Cmd
+			*m.quitModal, cmd = m.quitModal.Update(msg)
+			return m, cmd
+		}
+		return m.handleKey(msg)
+	}
+
+	switch msg := msg.(type) {
 	case board.ColumnLoadedMsg:
 		return m.handleColumnLoaded(msg)
 
@@ -448,6 +483,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 // View renders the kanban mode.
 func (m Model) View() string {
+	// If quit modal is visible, overlay it on top of the current view
+	if m.quitModal != nil {
+		return m.quitModal.Overlay(m.renderCurrentView())
+	}
+	return m.renderCurrentView()
+}
+
+// renderCurrentView renders the current view without the quit modal overlay.
+func (m Model) renderCurrentView() string {
 	switch m.view {
 	case ViewDetails:
 		return m.details.View()
@@ -811,6 +855,18 @@ func (m Model) renameCurrentView(newName string) (Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		return mode.ShowToastMsg{Message: "Renamed view to: " + newName, Style: toaster.StyleSuccess}
 	}
+}
+
+// showQuitConfirmation creates and shows the quit confirmation modal.
+func (m Model) showQuitConfirmation() Model {
+	mdl := modal.New(modal.Config{
+		Title:          "Exit Application?",
+		Message:        "Are you sure you want to quit?",
+		ConfirmVariant: modal.ButtonDanger,
+	})
+	mdl.SetSize(m.width, m.height)
+	m.quitModal = &mdl
+	return m
 }
 
 // Message types

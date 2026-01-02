@@ -93,6 +93,7 @@ type Model struct {
 	newViewModal  formmodal.Model
 	modal         modal.Model
 	labelEditor   labeleditor.Model
+	quitModal     *modal.Model // Quit confirmation modal (nil when not showing)
 
 	// Delete operation state
 	deleteIssueIDs []string // IDs to delete (includes descendants for epics)
@@ -556,10 +557,44 @@ func (m Model) SetSize(width, height int) Model {
 
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	// Handle quit modal messages first (before other message processing)
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		return m.handleKey(msg)
+	case modal.SubmitMsg:
+		if m.quitModal != nil {
+			m.quitModal = nil
+			return m, tea.Quit
+		}
+		// Continue to main switch for other modal handling
 
+	case modal.CancelMsg:
+		if m.quitModal != nil {
+			m.quitModal = nil
+			return m, nil
+		}
+		// Continue to main switch for other modal handling
+
+	case tea.KeyMsg:
+		// If quit modal is visible, handle keys
+		if m.quitModal != nil {
+			// Ctrl+C or Enter while modal open = quit (confirming the quit)
+			if msg.Type == tea.KeyCtrlC || msg.Type == tea.KeyEnter {
+				m.quitModal = nil
+				return m, tea.Quit
+			}
+			// Escape dismisses the modal
+			if msg.Type == tea.KeyEscape {
+				m.quitModal = nil
+				return m, nil
+			}
+			// Forward other keys to modal for navigation
+			var cmd tea.Cmd
+			*m.quitModal, cmd = m.quitModal.Update(msg)
+			return m, cmd
+		}
+		return m.handleKey(msg)
+	}
+
+	switch msg := msg.(type) {
 	case EnterMsg:
 		return m.handleEnter(msg)
 
@@ -829,6 +864,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 // View renders the search mode.
 func (m Model) View() string {
+	// If quit modal is visible, overlay it on top of the current view
+	if m.quitModal != nil {
+		return m.quitModal.Overlay(m.renderViewWithOverlays())
+	}
+	return m.renderViewWithOverlays()
+}
+
+// renderViewWithOverlays renders the view with any active overlay (except quit modal).
+func (m Model) renderViewWithOverlays() string {
 	// Handle overlays
 	switch m.view {
 	case ViewHelp:
@@ -869,8 +913,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case ViewSaveAction, ViewDetailsEditMenu:
-		if key.Matches(msg, keys.Common.Quit) {
-			return m, tea.Quit
+		if msg.Type == tea.KeyCtrlC {
+			// Close overlay instead of quitting
+			m.view = ViewSearch
+			return m, nil
 		}
 		// Delegate to picker
 		var cmd tea.Cmd
@@ -883,8 +929,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case ViewDeleteConfirm:
-		if key.Matches(msg, keys.Common.Quit) {
-			return m, tea.Quit
+		if msg.Type == tea.KeyCtrlC {
+			// Close overlay instead of quitting
+			m.view = ViewSearch
+			m.selectedIssue = nil
+			m.deleteIssueIDs = nil
+			return m, nil
 		}
 		// Delegate to modal
 		var cmd tea.Cmd
@@ -892,8 +942,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, cmd
 
 	case ViewLabelEditor:
-		if key.Matches(msg, keys.Common.Quit) {
-			return m, tea.Quit
+		if msg.Type == tea.KeyCtrlC {
+			// Close overlay instead of quitting
+			m.view = ViewSearch
+			return m, nil
 		}
 		// Delegate to label editor
 		var cmd tea.Cmd
@@ -914,8 +966,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 
 		switch {
-		case key.Matches(msg, keys.Common.Quit):
-			return m, tea.Quit
+		case msg.Type == tea.KeyCtrlC:
+			return m.showQuitConfirmation(), nil
 		case msg.String() == "tab" || msg.String() == "ctrl+n":
 			// Exit search input, move to results
 			m.input.Blur()
@@ -984,8 +1036,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Tree sub-mode specific handling (when focused on tree panel)
 	if m.subMode == mode.SubModeTree && m.focus == FocusResults {
 		switch {
-		case key.Matches(msg, keys.Common.Quit):
-			return m, tea.Quit
+		case msg.Type == tea.KeyCtrlC:
+			return m.showQuitConfirmation(), nil
 		case key.Matches(msg, keys.Search.Blur):
 			return m, func() tea.Msg { return ExitToKanbanMsg{} }
 		case key.Matches(msg, keys.Search.Help):
@@ -1073,8 +1125,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	// Not in search input - handle navigation and global keys
 	switch {
-	case key.Matches(msg, keys.Common.Quit):
-		return m, tea.Quit
+	case msg.Type == tea.KeyCtrlC:
+		return m.showQuitConfirmation(), nil
 
 	case key.Matches(msg, keys.Search.Blur):
 		// Exit search mode back to kanban
@@ -1308,10 +1360,13 @@ func (m Model) handleNavUp() (Model, tea.Cmd) {
 
 // handlePickerKey handles key events for all picker views.
 // The picker's callbacks produce domain-specific messages.
-// Note: Only ctrl+c quits here - "q" is passed to picker for cancel behavior.
+// Note: Ctrl+C in overlay modes closes the overlay, not quit.
 func (m Model) handlePickerKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
+	if msg.Type == tea.KeyCtrlC {
+		// Close overlay instead of quitting
+		m.view = ViewSearch
+		m.selectedIssue = nil
+		return m, nil
 	}
 	var cmd tea.Cmd
 	m.picker, cmd = m.picker.Update(msg)
@@ -2504,4 +2559,16 @@ func setLabelsCmd(issueID string, labels []string) tea.Cmd {
 		err := beads.SetLabels(issueID, labels)
 		return labelsChangedMsg{issueID: issueID, labels: labels, err: err}
 	}
+}
+
+// showQuitConfirmation creates and shows the quit confirmation modal.
+func (m Model) showQuitConfirmation() Model {
+	mdl := modal.New(modal.Config{
+		Title:          "Exit Application?",
+		Message:        "Are you sure you want to quit?",
+		ConfirmVariant: modal.ButtonDanger,
+	})
+	mdl.SetSize(m.width, m.height)
+	m.quitModal = &mdl
+	return m
 }

@@ -236,7 +236,7 @@ func (m Model) renderKanbanContent() string {
 	generalCol.WriteString(renderBinding(keys.Common.Help))
 	generalCol.WriteString(renderBinding(keys.Kanban.ToggleStatus))
 	generalCol.WriteString(renderBinding(keys.Kanban.Escape))
-	generalCol.WriteString(renderBinding(keys.Common.Quit))
+	generalCol.WriteString(renderBinding(keys.Kanban.QuitConfirm))
 
 	// Join columns horizontally, aligned at top
 	columns := lipgloss.JoinHorizontal(
@@ -307,7 +307,7 @@ func (m Model) renderSearchContent() string {
 	generalCol.WriteString("\n")
 	generalCol.WriteString(renderBinding(keys.Search.SwitchMode))
 	generalCol.WriteString(renderBinding(keys.Search.Help))
-	generalCol.WriteString(renderBinding(keys.Search.Quit))
+	generalCol.WriteString(renderBinding(keys.Search.QuitConfirm))
 
 	// Join columns horizontally, aligned at top
 	keybindingColumns := lipgloss.JoinHorizontal(
