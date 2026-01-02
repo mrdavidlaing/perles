@@ -2119,9 +2119,9 @@ func TestHandleQueryWorkerState_MatchesCoordinatorFormat(t *testing.T) {
 	assert.Equal(t, "working", w["status"])
 	assert.Equal(t, "implementing", w["phase"])
 	assert.Equal(t, "task-123", w["task_id"])
-	assert.Equal(t, "14:30:45", w["started_at"])          // HH:MM:SS format
-	assert.Equal(t, "50k/200k (25%)", w["context_usage"]) // formatted usage
-	assert.NotContains(t, w, "id")                        // should NOT have "id" field
+	assert.Equal(t, "2025-12-31T14:30:45Z", w["started_at"]) // ISO 8601 format
+	assert.Equal(t, "50k/200k (25%)", w["context_usage"])    // formatted usage
+	assert.NotContains(t, w, "id")                           // should NOT have "id" field
 
 	// Verify restored fields are present
 	assert.Equal(t, "session-abc", w["session_id"])          // session_id restored

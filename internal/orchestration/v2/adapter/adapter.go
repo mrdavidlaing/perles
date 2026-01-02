@@ -383,7 +383,7 @@ func (a *V2Adapter) HandleQueryWorkerState(_ context.Context, args json.RawMessa
 			TaskID:    p.TaskID,
 			SessionID: p.SessionID,
 			QueueSize: queueSize,
-			StartedAt: p.CreatedAt.Format("15:04:05"),
+			StartedAt: p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			CreatedAt: p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
 
