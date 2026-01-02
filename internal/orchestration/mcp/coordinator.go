@@ -325,6 +325,19 @@ func (cs *CoordinatorServer) registerTools() {
 			Required: []string{"worker_id"},
 		},
 	}, cs.handleStopProcess)
+
+	cs.RegisterTool(Tool{
+		Name:        "generate_accountability_summary",
+		Description: "Assign an aggregation task to a worker to collect and merge accountability summaries from all workers into a unified session summary.",
+		InputSchema: &InputSchema{
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"worker_id":   {Type: "string", Description: "The worker ID to assign the aggregation task (e.g., 'worker-1')"},
+				"session_dir": {Type: "string", Description: "Path to the session directory containing worker summaries (e.g., '.perles/sessions/<session-id>')"},
+			},
+			Required: []string{"worker_id", "session_dir"},
+		},
+	}, cs.handleGenerateAccountabilitySummary)
 }
 
 // Tool argument structs for JSON parsing.
@@ -538,4 +551,12 @@ func (cs *CoordinatorServer) handleReadMessageLog(ctx context.Context, rawArgs j
 		return nil, fmt.Errorf("v2Adapter required for read_message_log")
 	}
 	return cs.v2Adapter.HandleReadMessageLog(ctx, rawArgs, message.ActorCoordinator)
+}
+
+// handleGenerateAccountabilitySummary assigns an aggregation task to a worker to merge accountability summaries.
+func (cs *CoordinatorServer) handleGenerateAccountabilitySummary(ctx context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
+	if cs.v2Adapter == nil {
+		return nil, fmt.Errorf("v2Adapter required for generate_accountability_summary")
+	}
+	return cs.v2Adapter.HandleGenerateAccountabilitySummary(ctx, rawArgs)
 }

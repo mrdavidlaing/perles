@@ -76,12 +76,12 @@ const (
 	workersDir     = "workers"
 
 	// File names.
-	outputLogFile     = "output.log"
-	rawJSONLFile      = "raw.jsonl"
-	messagesJSONLFile = "messages.jsonl"
-	mcpRequestsFile   = "mcp_requests.jsonl"
-	summaryFile       = "summary.md"
-	reflectionFile    = "reflection.md"
+	outputLogFile             = "output.log"
+	rawJSONLFile              = "raw.jsonl"
+	messagesJSONLFile         = "messages.jsonl"
+	mcpRequestsFile           = "mcp_requests.jsonl"
+	summaryFile               = "summary.md"
+	accountabilitySummaryFile = "accountability_summary.md"
 )
 
 // New creates a new session with the given ID and directory.
@@ -384,6 +384,11 @@ func (s *Session) Close(status Status) error {
 		firstErr = err
 	}
 
+	// Update sessions.json index
+	if err := s.updateSessionIndex(meta); err != nil && firstErr == nil {
+		firstErr = err
+	}
+
 	return firstErr
 }
 
@@ -479,6 +484,48 @@ func (s *Session) generateSummary(meta *Metadata) error {
 	}
 
 	return os.WriteFile(summaryPath, []byte(content), 0600)
+}
+
+// updateSessionIndex appends this session's entry to the sessions.json index file.
+// The index is stored at the parent directory level (e.g., .perles/sessions/sessions.json)
+// to track all sessions across time. Uses atomic rename to avoid race conditions.
+func (s *Session) updateSessionIndex(meta *Metadata) error {
+	// Index is stored one level up from the session directory
+	// e.g., session dir is .perles/sessions/{uuid}/, index is .perles/sessions/sessions.json
+	indexPath := filepath.Join(filepath.Dir(s.Dir), "sessions.json")
+
+	// Load existing index or create empty one
+	index, err := LoadSessionIndex(indexPath)
+	if err != nil {
+		return fmt.Errorf("loading session index: %w", err)
+	}
+
+	// Build accountability summary path relative to session dir if it exists
+	var accountabilitySummaryPath string
+	summaryPath := filepath.Join(s.Dir, accountabilitySummaryFile)
+	if _, statErr := os.Stat(summaryPath); statErr == nil {
+		accountabilitySummaryPath = summaryPath
+	}
+
+	// Create entry for this session
+	entry := SessionIndexEntry{
+		ID:                        s.ID,
+		StartTime:                 meta.StartTime,
+		EndTime:                   meta.EndTime,
+		Status:                    meta.Status,
+		AccountabilitySummaryPath: accountabilitySummaryPath,
+		WorkerCount:               len(meta.Workers),
+	}
+
+	// Append to index
+	index.Sessions = append(index.Sessions, entry)
+
+	// Save with atomic rename
+	if err := SaveSessionIndex(indexPath, index); err != nil {
+		return fmt.Errorf("saving session index: %w", err)
+	}
+
+	return nil
 }
 
 // AttachToBrokers subscribes to all event brokers and spawns goroutines to stream events to disk.
@@ -814,10 +861,11 @@ func (s *Session) retireWorker(workerID string, retiredAt time.Time, finalPhase 
 	}
 }
 
-// WriteWorkerReflection writes a worker's reflection to their session directory.
+// WriteWorkerAccountabilitySummary writes a worker's accountability summary to their session directory.
 // Creates the worker directory if it doesn't exist (follows getOrCreateWorkerLog pattern).
-// Returns the full path where the reflection was saved.
-func (s *Session) WriteWorkerReflection(workerID, taskID string, content []byte) (string, error) {
+// Returns the full path where the summary was saved.
+// Note: taskID is embedded in the YAML frontmatter of the content, not passed as parameter.
+func (s *Session) WriteWorkerAccountabilitySummary(workerID string, content []byte) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -831,13 +879,13 @@ func (s *Session) WriteWorkerReflection(workerID, taskID string, content []byte)
 		return "", fmt.Errorf("creating worker directory: %w", err)
 	}
 
-	// Write reflection file (overwrites if exists - latest reflection wins)
-	reflectionPath := filepath.Join(workerPath, reflectionFile)
-	if err := os.WriteFile(reflectionPath, content, 0600); err != nil {
-		return "", fmt.Errorf("writing reflection file: %w", err)
+	// Write accountability summary file (overwrites if exists - latest summary wins)
+	summaryPath := filepath.Join(workerPath, accountabilitySummaryFile)
+	if err := os.WriteFile(summaryPath, content, 0600); err != nil {
+		return "", fmt.Errorf("writing accountability summary file: %w", err)
 	}
 
-	log.Debug(log.CatOrch, "Wrote worker reflection", "workerID", workerID, "taskID", taskID, "path", reflectionPath)
+	log.Debug(log.CatOrch, "Wrote worker accountability summary", "workerID", workerID, "path", summaryPath)
 
-	return reflectionPath, nil
+	return summaryPath, nil
 }

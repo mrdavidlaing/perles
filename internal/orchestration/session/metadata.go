@@ -27,6 +27,12 @@ type Metadata struct {
 	// WorkDir is the working directory where the session was started.
 	WorkDir string `json:"work_dir"`
 
+	// EpicID is the bd epic ID associated with this session (if any).
+	EpicID string `json:"epic_id,omitempty"`
+
+	// AccountabilitySummaryPath is the path to the aggregated accountability summary.
+	AccountabilitySummaryPath string `json:"accountability_summary_path,omitempty"`
+
 	// CoordinatorID is the coordinator's process identifier.
 	CoordinatorID string `json:"coordinator_id,omitempty"`
 

@@ -82,6 +82,11 @@ const (
 	// Posts handoff message, waits for turn completion, spawns with replace prompt.
 	CmdReplaceCoordinator CommandType = "replace_coordinator"
 
+	// Aggregation Commands
+
+	// CmdGenerateAccountabilitySummary spawns a worker to aggregate accountability summaries.
+	CmdGenerateAccountabilitySummary CommandType = "generate_accountability_summary"
+
 	// Process Control Commands
 
 	// CmdStopProcess stops a process (coordinator or worker) with optional forceful termination.

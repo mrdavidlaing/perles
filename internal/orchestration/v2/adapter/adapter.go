@@ -904,6 +904,41 @@ func (a *V2Adapter) HandleStopProcess(processID string, force bool, reason strin
 }
 
 // ===========================================================================
+// Aggregation Handlers
+// ===========================================================================
+
+// generateAccountabilitySummaryArgs holds arguments for generate_accountability_summary tool.
+type generateAccountabilitySummaryArgs struct {
+	WorkerID   string `json:"worker_id"`
+	SessionDir string `json:"session_dir"`
+}
+
+// HandleGenerateAccountabilitySummary handles the generate_accountability_summary MCP tool call.
+// It sends the AggregationWorkerPrompt to the specified worker.
+func (a *V2Adapter) HandleGenerateAccountabilitySummary(ctx context.Context, args json.RawMessage) (*mcptypes.ToolCallResult, error) {
+	var parsed generateAccountabilitySummaryArgs
+	if err := json.Unmarshal(args, &parsed); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	cmd := command.NewGenerateAccountabilitySummaryCommand(command.SourceMCPTool, parsed.WorkerID, parsed.SessionDir)
+	if err := cmd.Validate(); err != nil {
+		return nil, fmt.Errorf("generate_accountability_summary command validation failed: %w", err)
+	}
+
+	result, err := a.submitWithTimeout(ctx, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("generate_accountability_summary command failed: %w", err)
+	}
+
+	if !result.Success {
+		return mcptypes.ErrorResult(result.Error.Error()), nil
+	}
+
+	return mcptypes.SuccessResult(fmt.Sprintf("Accountability summary task assigned to worker %s", parsed.WorkerID)), nil
+}
+
+// ===========================================================================
 // Helper Methods
 // ===========================================================================
 

@@ -220,9 +220,32 @@ When this happens:
 - Skip workers that completed previous tasks (even if they've been replaced)
 - Replacement workers are available for future tasks if you run out of fresh workers
 
-### Phase 3: Epic Completion
+### Phase 3: Accountability
 
-When all tasks in the epic are complete:
+After all tasks are complete but before closing the epic, collect accountability summaries from workers and generate an aggregated session summary.
+
+#### Step 1: Replace Workers
+
+**Goal** Retire all the current workers then spawn a single new worker to write the accountability summary.
+
+Use the query_worker_state tool to see which workers exist then use the retire_worker tool to remove them and 
+finally the spawn_worker tool to create a single fresh worker. This ensures a clean slate for the aggregation worker.
+
+#### Step 2: Send Instructions to the Aggregation Worker
+
+**Goal** Use the generate_accountability_summary tool to assign the aggregation task to the new worker.
+
+This tool has instructions for the aggregation worker to read all individual worker summaries and compile them 
+into a single accountability summary for the entire epic session. This will take time and the worker will notify 
+you when they are done.
+
+#### Step 3: Present Summary for Review
+
+**Goal** Summarize the session accountability to the user and move to Phase 4 immediately do not want for the user.
+
+### Phase 4: Epic Completion
+
+When all tasks in the epic are complete and accountability summaries are collected:
 
 1. **Verify all tasks are closed**: Check that every subtask has been completed
    ```bash

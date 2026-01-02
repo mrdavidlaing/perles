@@ -468,3 +468,36 @@ func (c *StopProcessCommand) Validate() error {
 	}
 	return nil
 }
+
+// ===========================================================================
+// Aggregation Commands
+// ===========================================================================
+
+// GenerateAccountabilitySummaryCommand sends an aggregation task to an existing worker.
+// The worker reads individual worker summaries and produces a unified session summary.
+type GenerateAccountabilitySummaryCommand struct {
+	*BaseCommand
+	WorkerID   string // Required: ID of the worker to assign the aggregation task
+	SessionDir string // Required: path to the session directory containing worker summaries
+}
+
+// NewGenerateAccountabilitySummaryCommand creates a new GenerateAccountabilitySummaryCommand.
+func NewGenerateAccountabilitySummaryCommand(source CommandSource, workerID, sessionDir string) *GenerateAccountabilitySummaryCommand {
+	base := NewBaseCommand(CmdGenerateAccountabilitySummary, source)
+	return &GenerateAccountabilitySummaryCommand{
+		BaseCommand: &base,
+		WorkerID:    workerID,
+		SessionDir:  sessionDir,
+	}
+}
+
+// Validate checks that WorkerID and SessionDir are provided.
+func (c *GenerateAccountabilitySummaryCommand) Validate() error {
+	if c.WorkerID == "" {
+		return fmt.Errorf("worker_id is required")
+	}
+	if c.SessionDir == "" {
+		return fmt.Errorf("session_dir is required")
+	}
+	return nil
+}

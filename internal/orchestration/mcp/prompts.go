@@ -141,24 +141,88 @@ Suggested commit message:
 
 ## After Committing
 
-Please reflect on your work using post_reflections. This helps capture valuable learnings for future sessions.
+Please document your work using post_accountability_summary. This helps capture valuable learnings and provides accountability for future sessions.
 
 **What to include:**
-- **summary**: What you actually implemented (not just the task title)
-- **insights**: Patterns, techniques, or approaches that worked well
-- **mistakes**: Any errors you made and had to correct (helps avoid repeating them)
-- **learnings**: Key takeaways - architectural decisions, gotchas, or tips for similar work
+- **task_id**: The task you completed (required)
+- **summary**: What you actually implemented (required)
+- **commits**: List of commit hashes you made
+- **issues_closed**: Any bd issue IDs you closed
+- **issues_discovered**: Any bugs or blockers you found (bd IDs)
+- **verification_points**: How you verified acceptance criteria
+- **retro**: Structured feedback (went_well, friction, patterns, takeaways)
+- **next_steps**: Recommendations for follow-up work
 
 Example:
-post_reflections(
+post_accountability_summary(
     task_id="%s",
     summary="Added validation layer with regex patterns for user input sanitization",
-    insights="Using table-driven tests made edge case coverage much easier",
-    mistakes="Initially forgot to handle empty string case, caught by reviewer",
-    learnings="This codebase prefers returning errors over panicking for invalid input"
+    commits=["abc123"],
+    verification_points=["All tests pass", "Manual testing confirms validation works"],
+    retro={
+        went_well="Using table-driven tests made edge case coverage much easier",
+        friction="Initially forgot to handle empty string case, caught by reviewer",
+        patterns="This codebase prefers returning errors over panicking for invalid input"
+    }
 )
 
 Then report via post_message to COORDINATOR with the commit hash.`, taskID)
 
 	return prompt
+}
+
+// AggregationWorkerPrompt generates the prompt for a worker assigned to aggregate
+// accountability summaries from all workers into a unified session summary.
+func AggregationWorkerPrompt(sessionDir string) string {
+	return fmt.Sprintf(`[AGGREGATION TASK]
+
+You are assigned to aggregate accountability summaries from all workers into a unified session summary.
+
+## Your Task
+
+1. Read all worker accountability summaries from: %s/workers/*/accountability_summary.md
+2. Generate an aggregated summary with all sections A-H
+3. Write the result to: %s/accountability_summary.md
+
+## Aggregated Summary Format (Sections A-H)
+
+### A. Session Metrics
+- Total Commits Made: [aggregate count with descriptions from all workers]
+- Issues Closed: [combined count with verification]
+- Issues Discovered: [combined count with bd IDs]
+
+### B. Needs Your Attention
+- Any decisions required or human verification items from workers
+
+### C. Progress
+- Visual progress tree showing epic/task completion status
+
+### D. What Was Accomplished This Session
+- Narrative combining all worker accomplishments, framed by epic progress
+- Attribute contributions to specific workers where relevant
+
+### E. Issues Discovered
+- Combined list of bugs/blockers found by workers during execution
+
+### F. Issues Closed (Verification)
+- Key verification points for each closed issue from all workers
+
+### G. Retro Feedback
+- **What Went Well**: Combined insights from all workers
+- **Friction**: Problems encountered during execution
+- **Patterns Noticed**: Recurring themes or approaches
+- **Takeaways**: Key learnings for future sessions
+
+### H. Next Steps
+- Combined recommendations from workers for follow-up work
+
+## Instructions
+
+1. Read each worker's accountability_summary.md file
+2. Merge metrics (deduplicate commits/issues lists)
+3. Combine narratives with worker attribution
+4. Preserve all verification points
+5. Write the aggregated summary in markdown format
+
+When complete, report via post_message to COORDINATOR that aggregation is done.`, sessionDir, sessionDir)
 }

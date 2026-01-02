@@ -303,4 +303,10 @@ func registerHandlers(
 	cmdProcessor.RegisterHandler(command.CmdReplaceProcess,
 		handler.NewReplaceProcessHandler(processRepo, processRegistry,
 			handler.WithReplaceSpawner(processSpawner)))
+
+	// ============================================================
+	// Aggregation handlers (1)
+	// ============================================================
+	cmdProcessor.RegisterHandler(command.CmdGenerateAccountabilitySummary,
+		handler.NewGenerateAccountabilitySummaryHandler(processRepo, queueRepo))
 }

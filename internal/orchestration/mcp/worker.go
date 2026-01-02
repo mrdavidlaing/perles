@@ -14,9 +14,9 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/validation"
 )
 
-// Validation constants for post_reflections tool.
+// Validation constants for post_accountability_summary tool.
 const (
-	// MinSummaryLength is the minimum length for a reflection summary (at least a sentence).
+	// MinSummaryLength is the minimum length for an accountability summary (at least a sentence).
 	MinSummaryLength = 20
 )
 
@@ -34,21 +34,22 @@ type MessageStore interface {
 // This ensures compatibility with the v2 MessageRepository migration.
 var _ MessageStore = (*repository.MemoryMessageRepository)(nil)
 
-// ReflectionWriter defines the interface for writing worker reflections.
+// AccountabilityWriter defines the interface for writing worker accountability summaries.
 // This allows the session service to handle storage without tight coupling.
-type ReflectionWriter interface {
-	// WriteWorkerReflection saves a worker's reflection markdown to their session directory.
-	// Returns the file path where the reflection was saved.
-	WriteWorkerReflection(workerID, taskID string, content []byte) (string, error)
+type AccountabilityWriter interface {
+	// WriteWorkerAccountabilitySummary saves a worker's accountability summary to their session directory.
+	// Returns the file path where the summary was saved.
+	// Note: taskID is embedded in the YAML frontmatter of the content, not passed as parameter.
+	WriteWorkerAccountabilitySummary(workerID string, content []byte) (string, error)
 }
 
 // WorkerServer is an MCP server that exposes communication tools to worker agents.
 // Each worker gets its own MCP server instance with a unique worker ID.
 type WorkerServer struct {
 	*Server
-	workerID         string
-	msgStore         MessageStore
-	reflectionWriter ReflectionWriter
+	workerID             string
+	msgStore             MessageStore
+	accountabilityWriter AccountabilityWriter
 	// dedup tracks recent messages to prevent duplicate sends to coordinator
 	dedup *MessageDeduplicator
 
@@ -75,10 +76,10 @@ func NewWorkerServer(workerID string, msgStore MessageStore) *WorkerServer {
 	return ws
 }
 
-// SetReflectionWriter sets the reflection writer for saving worker reflections.
-// This must be called before the post_reflections tool can be used.
-func (ws *WorkerServer) SetReflectionWriter(writer ReflectionWriter) {
-	ws.reflectionWriter = writer
+// SetAccountabilityWriter sets the accountability writer for saving worker accountability summaries.
+// This must be called before the post_accountability_summary tool can be used.
+func (ws *WorkerServer) SetAccountabilityWriter(writer AccountabilityWriter) {
+	ws.accountabilityWriter = writer
 }
 
 // SetV2Adapter allows setting the v2 adapter after construction.
@@ -172,18 +173,30 @@ func (ws *WorkerServer) registerTools() {
 		},
 	}, ws.handleReportReviewVerdict)
 
-	// post_reflections - Save worker reflection to session directory
+	// post_accountability_summary - Save worker accountability summary to session directory
 	ws.RegisterTool(Tool{
-		Name:        "post_reflections",
-		Description: "Save your reflection and learnings from the completed task. Call this after committing to document insights, mistakes, and learnings for future sessions.",
+		Name:        "post_accountability_summary",
+		Description: "Save your accountability summary for the completed task. Call this after committing to document what was accomplished, commits made, issues discovered/closed, verification points, and retro feedback.",
 		InputSchema: &InputSchema{
 			Type: "object",
 			Properties: map[string]*PropertySchema{
-				"task_id":   {Type: "string", Description: "The task ID this reflection is for"},
-				"summary":   {Type: "string", Description: "Brief summary of work completed (1-2 sentences)"},
-				"insights":  {Type: "string", Description: "What approaches worked well? Patterns worth remembering? (optional)"},
-				"mistakes":  {Type: "string", Description: "Errors made and lessons learned (optional)"},
-				"learnings": {Type: "string", Description: "General learnings for future workers in this codebase (optional)"},
+				"task_id":             {Type: "string", Description: "The task ID this summary is for"},
+				"summary":             {Type: "string", Description: "What was accomplished (narrative, 2-3 sentences)"},
+				"commits":             {Type: "array", Description: "List of commit hashes made (optional)", Items: &PropertySchema{Type: "string"}},
+				"issues_discovered":   {Type: "array", Description: "bd IDs of bugs/blockers found during work (optional)", Items: &PropertySchema{Type: "string"}},
+				"issues_closed":       {Type: "array", Description: "bd IDs of issues closed this session (optional)", Items: &PropertySchema{Type: "string"}},
+				"verification_points": {Type: "array", Description: "How acceptance criteria were verified (optional)", Items: &PropertySchema{Type: "string"}},
+				"retro": {
+					Type:        "object",
+					Description: "Structured retro feedback (optional)",
+					Properties: map[string]*PropertySchema{
+						"went_well": {Type: "string", Description: "What went well during the task"},
+						"friction":  {Type: "string", Description: "What caused friction or slowdowns"},
+						"patterns":  {Type: "string", Description: "Patterns noticed that could be applied elsewhere"},
+						"takeaways": {Type: "string", Description: "Key takeaways for future work"},
+					},
+				},
+				"next_steps": {Type: "string", Description: "Recommendations for follow-up work (optional)"},
 			},
 			Required: []string{"task_id", "summary"},
 		},
@@ -191,12 +204,12 @@ func (ws *WorkerServer) registerTools() {
 			Type: "object",
 			Properties: map[string]*PropertySchema{
 				"status":    {Type: "string", Description: "Success or error status"},
-				"file_path": {Type: "string", Description: "Path where reflection was saved"},
+				"file_path": {Type: "string", Description: "Path where accountability summary was saved"},
 				"message":   {Type: "string", Description: "Human-readable result message"},
 			},
 			Required: []string{"status", "message"},
 		},
-	}, ws.handlePostReflections)
+	}, ws.handlePostAccountabilitySummary)
 }
 
 // Tool argument structs for JSON parsing.
@@ -205,13 +218,24 @@ type sendMessageArgs struct {
 	Content string `json:"content"`
 }
 
-// postReflectionsArgs defines the arguments for the post_reflections tool.
-type postReflectionsArgs struct {
-	TaskID    string `json:"task_id"`
-	Summary   string `json:"summary"`
-	Insights  string `json:"insights,omitempty"`
-	Mistakes  string `json:"mistakes,omitempty"`
-	Learnings string `json:"learnings,omitempty"`
+// RetroFeedback contains structured retrospective feedback for accountability summaries.
+type RetroFeedback struct {
+	WentWell  string `json:"went_well,omitempty"`
+	Friction  string `json:"friction,omitempty"`
+	Patterns  string `json:"patterns,omitempty"`
+	Takeaways string `json:"takeaways,omitempty"`
+}
+
+// postAccountabilitySummaryArgs defines the arguments for the post_accountability_summary tool.
+type postAccountabilitySummaryArgs struct {
+	TaskID             string         `json:"task_id"`
+	Summary            string         `json:"summary"`
+	Commits            []string       `json:"commits,omitempty"`
+	IssuesDiscovered   []string       `json:"issues_discovered,omitempty"`
+	IssuesClosed       []string       `json:"issues_closed,omitempty"`
+	VerificationPoints []string       `json:"verification_points,omitempty"`
+	Retro              *RetroFeedback `json:"retro,omitempty"`
+	NextSteps          string         `json:"next_steps,omitempty"`
 }
 
 // checkMessagesResponse is the structured response for check_messages.
@@ -315,10 +339,10 @@ func (ws *WorkerServer) handleReportReviewVerdict(ctx context.Context, rawArgs j
 	return ws.v2Adapter.HandleReportReviewVerdict(ctx, rawArgs, ws.workerID)
 }
 
-// validateReflectionArgs validates the arguments for the post_reflections tool.
+// validateAccountabilitySummaryArgs validates the arguments for the post_accountability_summary tool.
 // It checks task_id format (to prevent path traversal), summary length bounds,
 // and total content length.
-func validateReflectionArgs(args postReflectionsArgs) error {
+func validateAccountabilitySummaryArgs(args postAccountabilitySummaryArgs) error {
 	// Validate task_id is not empty
 	if args.TaskID == "" {
 		return fmt.Errorf("task_id is required")
@@ -348,81 +372,137 @@ func validateReflectionArgs(args postReflectionsArgs) error {
 	return nil
 }
 
-// buildReflectionMarkdown generates the markdown content for a worker reflection.
-// It includes a metadata header and conditionally includes optional sections
-// (Insights, Mistakes & Lessons, Learnings) only if they are non-empty.
-func buildReflectionMarkdown(workerID string, args postReflectionsArgs) string {
+// buildAccountabilitySummaryMarkdown generates the markdown content for a worker accountability summary.
+// It includes YAML frontmatter for programmatic access and a markdown body for human readability.
+func buildAccountabilitySummaryMarkdown(workerID string, args postAccountabilitySummaryArgs) string {
 	var b strings.Builder
+	timestamp := time.Now().Format(time.RFC3339)
 
-	// Header with metadata
-	b.WriteString("# Worker Reflection\n\n")
+	// YAML frontmatter
+	b.WriteString("---\n")
+	b.WriteString(fmt.Sprintf("task_id: %s\n", args.TaskID))
+	b.WriteString(fmt.Sprintf("worker_id: %s\n", workerID))
+	b.WriteString(fmt.Sprintf("timestamp: %s\n", timestamp))
+
+	// Optional array fields in frontmatter
+	if len(args.Commits) > 0 {
+		b.WriteString("commits:\n")
+		for _, commit := range args.Commits {
+			b.WriteString(fmt.Sprintf("  - %s\n", commit))
+		}
+	}
+	if len(args.IssuesDiscovered) > 0 {
+		b.WriteString("issues_discovered:\n")
+		for _, issue := range args.IssuesDiscovered {
+			b.WriteString(fmt.Sprintf("  - %s\n", issue))
+		}
+	}
+	if len(args.IssuesClosed) > 0 {
+		b.WriteString("issues_closed:\n")
+		for _, issue := range args.IssuesClosed {
+			b.WriteString(fmt.Sprintf("  - %s\n", issue))
+		}
+	}
+	b.WriteString("---\n\n")
+
+	// Markdown body - Header with metadata
+	b.WriteString("# Worker Accountability Summary\n\n")
 	b.WriteString(fmt.Sprintf("**Worker:** %s\n", workerID))
 	b.WriteString(fmt.Sprintf("**Task:** %s\n", args.TaskID))
 	b.WriteString(fmt.Sprintf("**Date:** %s\n\n", time.Now().Format("2006-01-02 15:04:05")))
 
-	// Summary section (always included)
-	b.WriteString("## Summary\n\n")
+	// What I Accomplished section (always included)
+	b.WriteString("## What I Accomplished\n\n")
 	b.WriteString(args.Summary)
 	b.WriteString("\n\n")
 
-	// Insights section (optional)
-	if args.Insights != "" {
-		b.WriteString("## Insights\n\n")
-		b.WriteString(args.Insights)
-		b.WriteString("\n\n")
+	// Verification Points section (optional)
+	if len(args.VerificationPoints) > 0 {
+		b.WriteString("## Verification Points\n\n")
+		for _, point := range args.VerificationPoints {
+			b.WriteString(fmt.Sprintf("- %s\n", point))
+		}
+		b.WriteString("\n")
 	}
 
-	// Mistakes & Lessons section (optional)
-	if args.Mistakes != "" {
-		b.WriteString("## Mistakes & Lessons\n\n")
-		b.WriteString(args.Mistakes)
-		b.WriteString("\n\n")
+	// Issues Discovered section (optional)
+	if len(args.IssuesDiscovered) > 0 {
+		b.WriteString("## Issues Discovered\n\n")
+		for _, issue := range args.IssuesDiscovered {
+			b.WriteString(fmt.Sprintf("- %s\n", issue))
+		}
+		b.WriteString("\n")
 	}
 
-	// Learnings section (optional)
-	if args.Learnings != "" {
-		b.WriteString("## Learnings\n\n")
-		b.WriteString(args.Learnings)
+	// Retro section (optional)
+	if args.Retro != nil && (args.Retro.WentWell != "" || args.Retro.Friction != "" || args.Retro.Patterns != "" || args.Retro.Takeaways != "") {
+		b.WriteString("## Retro\n\n")
+		if args.Retro.WentWell != "" {
+			b.WriteString("### What Went Well\n\n")
+			b.WriteString(args.Retro.WentWell)
+			b.WriteString("\n\n")
+		}
+		if args.Retro.Friction != "" {
+			b.WriteString("### Friction\n\n")
+			b.WriteString(args.Retro.Friction)
+			b.WriteString("\n\n")
+		}
+		if args.Retro.Patterns != "" {
+			b.WriteString("### Patterns Noticed\n\n")
+			b.WriteString(args.Retro.Patterns)
+			b.WriteString("\n\n")
+		}
+		if args.Retro.Takeaways != "" {
+			b.WriteString("### Takeaways\n\n")
+			b.WriteString(args.Retro.Takeaways)
+			b.WriteString("\n\n")
+		}
+	}
+
+	// Next Steps section (optional)
+	if args.NextSteps != "" {
+		b.WriteString("## Next Steps\n\n")
+		b.WriteString(args.NextSteps)
 		b.WriteString("\n\n")
 	}
 
 	return b.String()
 }
 
-// handlePostReflections saves a worker's reflection to their session directory.
-func (ws *WorkerServer) handlePostReflections(_ context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
-	var args postReflectionsArgs
+// handlePostAccountabilitySummary saves a worker's accountability summary to their session directory.
+func (ws *WorkerServer) handlePostAccountabilitySummary(_ context.Context, rawArgs json.RawMessage) (*ToolCallResult, error) {
+	var args postAccountabilitySummaryArgs
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
 	// Validate input using the dedicated validation function
-	if err := validateReflectionArgs(args); err != nil {
+	if err := validateAccountabilitySummaryArgs(args); err != nil {
 		return nil, err
 	}
 
-	// Check that reflectionWriter is configured (graceful error, not panic)
-	if ws.reflectionWriter == nil {
-		return nil, fmt.Errorf("reflection writer not configured")
+	// Check that accountabilityWriter is configured (graceful error, not panic)
+	if ws.accountabilityWriter == nil {
+		return nil, fmt.Errorf("accountability writer not configured")
 	}
 
-	// Build markdown content
-	content := buildReflectionMarkdown(ws.workerID, args)
+	// Build markdown content with YAML frontmatter
+	content := buildAccountabilitySummaryMarkdown(ws.workerID, args)
 
 	// Write to session directory
-	filePath, err := ws.reflectionWriter.WriteWorkerReflection(ws.workerID, args.TaskID, []byte(content))
+	filePath, err := ws.accountabilityWriter.WriteWorkerAccountabilitySummary(ws.workerID, []byte(content))
 	if err != nil {
-		log.Debug(log.CatMCP, "Failed to write reflection", "workerID", ws.workerID, "error", err)
-		return nil, fmt.Errorf("failed to save reflection: %w", err)
+		log.Debug(log.CatMCP, "Failed to write accountability summary", "workerID", ws.workerID, "error", err)
+		return nil, fmt.Errorf("failed to save accountability summary: %w", err)
 	}
 
-	log.Debug(log.CatMCP, "Worker posted reflection", "workerID", ws.workerID, "taskID", args.TaskID, "path", filePath)
+	log.Debug(log.CatMCP, "Worker posted accountability summary", "workerID", ws.workerID, "taskID", args.TaskID, "path", filePath)
 
 	// Return structured response with status, file_path, message
 	response := map[string]any{
 		"status":    "success",
 		"file_path": filePath,
-		"message":   fmt.Sprintf("Reflection saved to %s", filePath),
+		"message":   fmt.Sprintf("Accountability summary saved to %s", filePath),
 	}
 	data, _ := json.MarshalIndent(response, "", "  ")
 	return StructuredResult(string(data), response), nil

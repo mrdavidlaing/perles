@@ -1345,12 +1345,12 @@ func createTestSession(t *testing.T, tmpDir string) (*session.Session, error) {
 	return session.New("test-session-id", tmpDir)
 }
 
-// TestWorkerServerCache_WiresReflectionWriter verifies that the workerServerCache
-// correctly wires the ReflectionWriter to WorkerServer instances.
-func TestWorkerServerCache_WiresReflectionWriter(t *testing.T) {
+// TestWorkerServerCache_WiresAccountabilityWriter verifies that the workerServerCache
+// correctly wires the AccountabilityWriter to WorkerServer instances.
+func TestWorkerServerCache_WiresAccountabilityWriter(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create a real session as the reflection writer
+	// Create a real session as the accountability writer
 	sess, err := session.New("test-session", tmpDir)
 	require.NoError(t, err)
 	defer sess.Close(session.StatusCompleted)
@@ -1358,41 +1358,41 @@ func TestWorkerServerCache_WiresReflectionWriter(t *testing.T) {
 	// Create message issue
 	msgIssue := repository.NewMemoryMessageRepository()
 
-	// Create cache with session as reflection writer (nil v2Adapter for this test)
+	// Create cache with session as accountability writer (nil v2Adapter for this test)
 	cache := newWorkerServerCache(msgIssue, sess, nil)
 
 	// Create a worker server via getOrCreate
 	ws := cache.getOrCreate("worker-1")
 	require.NotNil(t, ws, "WorkerServer should be created")
 
-	// Verify the handler for post_reflections is registered
+	// Verify the handler for post_accountability_summary is registered
 	// (which confirms the tool is available)
-	_, ok := ws.GetHandler("post_reflections")
-	require.True(t, ok, "post_reflections handler should be registered")
+	_, ok := ws.GetHandler("post_accountability_summary")
+	require.True(t, ok, "post_accountability_summary handler should be registered")
 
-	// Verify we can write a reflection (this confirms wiring is correct)
+	// Verify we can write an accountability summary (this confirms wiring is correct)
 	// Use the handler directly since it's the integration point
-	handler, ok := ws.GetHandler("post_reflections")
+	handler, ok := ws.GetHandler("post_accountability_summary")
 	require.True(t, ok)
 
 	// Call the handler with valid args
 	args := []byte(`{
 		"task_id": "perles-test.1",
-		"summary": "This is a test reflection summary that is long enough"
+		"summary": "This is a test accountability summary that is long enough"
 	}`)
 	result, err := handler(context.Background(), args)
 
-	// Should succeed because ReflectionWriter is wired
-	require.NoError(t, err, "post_reflections should succeed with wired ReflectionWriter")
+	// Should succeed because AccountabilityWriter is wired
+	require.NoError(t, err, "post_accountability_summary should succeed with wired AccountabilityWriter")
 	require.NotNil(t, result)
 }
 
-// TestWorkerServerCache_NilReflectionWriter verifies graceful handling when
-// ReflectionWriter is nil (e.g., when session is not available).
-func TestWorkerServerCache_NilReflectionWriter(t *testing.T) {
+// TestWorkerServerCache_NilAccountabilityWriter verifies graceful handling when
+// AccountabilityWriter is nil (e.g., when session is not available).
+func TestWorkerServerCache_NilAccountabilityWriter(t *testing.T) {
 	msgIssue := repository.NewMemoryMessageRepository()
 
-	// Create cache without reflection writer (nil v2Adapter for this test)
+	// Create cache without accountability writer (nil v2Adapter for this test)
 	cache := newWorkerServerCache(msgIssue, nil, nil)
 
 	// Create a worker server
@@ -1400,23 +1400,23 @@ func TestWorkerServerCache_NilReflectionWriter(t *testing.T) {
 	require.NotNil(t, ws)
 
 	// Get the handler
-	handler, ok := ws.GetHandler("post_reflections")
+	handler, ok := ws.GetHandler("post_accountability_summary")
 	require.True(t, ok)
 
 	// Call the handler with valid args - should fail gracefully (not panic)
 	args := []byte(`{
 		"task_id": "perles-test.1",
-		"summary": "This is a test reflection summary that is long enough"
+		"summary": "This is a test accountability summary that is long enough"
 	}`)
 	_, err := handler(context.Background(), args)
 
 	// Should return error about nil writer, not panic
-	require.Error(t, err, "should return error when ReflectionWriter is nil")
-	require.Contains(t, err.Error(), "reflection writer not configured")
+	require.Error(t, err, "should return error when AccountabilityWriter is nil")
+	require.Contains(t, err.Error(), "accountability writer not configured")
 }
 
 // TestWorkerServerCache_MultipleWorkers verifies that multiple workers share the
-// same ReflectionWriter instance.
+// same AccountabilityWriter instance.
 func TestWorkerServerCache_MultipleWorkers(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -1435,27 +1435,27 @@ func TestWorkerServerCache_MultipleWorkers(t *testing.T) {
 	require.NotNil(t, ws2)
 	require.NotEqual(t, ws1, ws2, "Different workers should have different servers")
 
-	// Both should have working post_reflections
-	handler1, ok := ws1.GetHandler("post_reflections")
+	// Both should have working post_accountability_summary
+	handler1, ok := ws1.GetHandler("post_accountability_summary")
 	require.True(t, ok)
-	handler2, ok := ws2.GetHandler("post_reflections")
+	handler2, ok := ws2.GetHandler("post_accountability_summary")
 	require.True(t, ok)
 
-	// Both should be able to write reflections
+	// Both should be able to write accountability summaries
 	args1 := []byte(`{
 		"task_id": "perles-test.1",
-		"summary": "Worker 1 test reflection summary that is long enough"
+		"summary": "Worker 1 test accountability summary that is long enough"
 	}`)
 	args2 := []byte(`{
 		"task_id": "perles-test.2",
-		"summary": "Worker 2 test reflection summary that is long enough"
+		"summary": "Worker 2 test accountability summary that is long enough"
 	}`)
 
 	_, err = handler1(context.Background(), args1)
-	require.NoError(t, err, "Worker 1 should write reflection")
+	require.NoError(t, err, "Worker 1 should write accountability summary")
 
 	_, err = handler2(context.Background(), args2)
-	require.NoError(t, err, "Worker 2 should write reflection")
+	require.NoError(t, err, "Worker 2 should write accountability summary")
 }
 
 // ========================================================================

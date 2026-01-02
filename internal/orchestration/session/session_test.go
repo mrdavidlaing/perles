@@ -41,6 +41,11 @@ func TestStatus_String(t *testing.T) {
 	}
 }
 
+func TestAccountabilitySummaryFileConstant(t *testing.T) {
+	// Verify the accountabilitySummaryFile constant is defined correctly
+	require.Equal(t, "accountability_summary.md", accountabilitySummaryFile)
+}
+
 func TestMetadata_Save_Load(t *testing.T) {
 	dir := t.TempDir()
 
@@ -198,9 +203,64 @@ func TestMetadata_ZeroValueFields(t *testing.T) {
 	require.True(t, loaded.EndTime.IsZero())
 	require.Empty(t, loaded.CoordinatorID)
 	require.Empty(t, loaded.Model)
+	require.Empty(t, loaded.EpicID)
+	require.Empty(t, loaded.AccountabilitySummaryPath)
 	require.Equal(t, 0, loaded.TokenUsage.TotalInputTokens)
 	require.Equal(t, 0, loaded.TokenUsage.TotalOutputTokens)
 	require.Equal(t, 0.0, loaded.TokenUsage.TotalCostUSD)
+}
+
+func TestMetadata_EpicIDAndAccountabilitySummaryPath(t *testing.T) {
+	dir := t.TempDir()
+
+	now := time.Now().Truncate(time.Second)
+	meta := &Metadata{
+		SessionID:                 "test-epic-session",
+		StartTime:                 now,
+		EndTime:                   now.Add(time.Hour),
+		Status:                    StatusCompleted,
+		WorkDir:                   "/test/work/dir",
+		EpicID:                    "perles-abc",
+		AccountabilitySummaryPath: ".perles/sessions/test-session-123/accountability_summary.md",
+		Workers:                   []WorkerMetadata{},
+	}
+
+	// Save metadata
+	err := meta.Save(dir)
+	require.NoError(t, err)
+
+	// Load metadata
+	loaded, err := Load(dir)
+	require.NoError(t, err)
+
+	// Verify new fields
+	require.Equal(t, "perles-abc", loaded.EpicID)
+	require.Equal(t, ".perles/sessions/test-session-123/accountability_summary.md", loaded.AccountabilitySummaryPath)
+}
+
+func TestMetadata_BackwardCompatibility(t *testing.T) {
+	// Test that old metadata JSON (without EpicID/AccountabilitySummaryPath) can still be loaded
+	dir := t.TempDir()
+
+	// Write old-style metadata JSON without the new fields
+	oldJSON := `{
+  "session_id": "old-session-123",
+  "start_time": "2026-01-01T10:00:00Z",
+  "status": "completed",
+  "work_dir": "/test",
+  "workers": [],
+  "client_type": "claude"
+}`
+	err := os.WriteFile(filepath.Join(dir, metadataFilename), []byte(oldJSON), 0600)
+	require.NoError(t, err)
+
+	// Load should succeed and new fields should be empty
+	loaded, err := Load(dir)
+	require.NoError(t, err)
+	require.Equal(t, "old-session-123", loaded.SessionID)
+	require.Equal(t, StatusCompleted, loaded.Status)
+	require.Empty(t, loaded.EpicID)
+	require.Empty(t, loaded.AccountabilitySummaryPath)
 }
 
 // Tests for New() constructor
@@ -2057,25 +2117,25 @@ func TestSession_AllFourBrokersFromAllBrokers(t *testing.T) {
 	require.Contains(t, string(mcpData), "test_tool")
 }
 
-// Tests for WriteWorkerReflection
+// Tests for WriteWorkerAccountabilitySummary
 
-func TestWriteWorkerReflection_Success(t *testing.T) {
+func TestWriteWorkerAccountabilitySummary_Success(t *testing.T) {
 	baseDir := t.TempDir()
-	sessionID := "test-reflection-success"
+	sessionID := "test-accountability-success"
 	sessionDir := filepath.Join(baseDir, "session")
 
 	session, err := New(sessionID, sessionDir)
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
-	// Write a reflection
-	content := []byte("# Worker Reflection\n\n**Worker:** worker-1\n**Task:** perles-abc.1\n\n## Summary\n\nImplemented user validation with regex patterns.\n")
-	filePath, err := session.WriteWorkerReflection("worker-1", "perles-abc.1", content)
+	// Write an accountability summary (taskID is now in YAML frontmatter)
+	content := []byte("---\ntask_id: perles-abc.1\nworker_id: worker-1\n---\n\n# Worker Accountability Summary\n\n**Worker:** worker-1\n**Task:** perles-abc.1\n\n## Summary\n\nImplemented user validation with regex patterns.\n")
+	filePath, err := session.WriteWorkerAccountabilitySummary("worker-1", content)
 	require.NoError(t, err)
 	require.NotEmpty(t, filePath)
 
 	// Verify file path
-	expectedPath := filepath.Join(sessionDir, "workers", "worker-1", "reflection.md")
+	expectedPath := filepath.Join(sessionDir, "workers", "worker-1", "accountability_summary.md")
 	require.Equal(t, expectedPath, filePath)
 
 	// Verify file exists and has correct content
@@ -2087,9 +2147,9 @@ func TestWriteWorkerReflection_Success(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestWriteWorkerReflection_CreatesWorkerDirectory(t *testing.T) {
+func TestWriteWorkerAccountabilitySummary_CreatesWorkerDirectory(t *testing.T) {
 	baseDir := t.TempDir()
-	sessionID := "test-reflection-creates-dir"
+	sessionID := "test-accountability-creates-dir"
 	sessionDir := filepath.Join(baseDir, "session")
 
 	session, err := New(sessionID, sessionDir)
@@ -2100,9 +2160,9 @@ func TestWriteWorkerReflection_CreatesWorkerDirectory(t *testing.T) {
 	_, err = os.Stat(workerPath)
 	require.True(t, os.IsNotExist(err))
 
-	// Write reflection - should create directory
-	content := []byte("# Reflection")
-	filePath, err := session.WriteWorkerReflection("worker-new", "task-123", content)
+	// Write accountability summary - should create directory
+	content := []byte("---\ntask_id: task-123\n---\n\n# Accountability Summary")
+	filePath, err := session.WriteWorkerAccountabilitySummary("worker-new", content)
 	require.NoError(t, err)
 	require.NotEmpty(t, filePath)
 
@@ -2111,18 +2171,18 @@ func TestWriteWorkerReflection_CreatesWorkerDirectory(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
 
-	// reflection.md should exist
-	reflectionPath := filepath.Join(workerPath, "reflection.md")
-	_, err = os.Stat(reflectionPath)
+	// accountability_summary.md should exist
+	summaryPath := filepath.Join(workerPath, "accountability_summary.md")
+	_, err = os.Stat(summaryPath)
 	require.NoError(t, err)
 
 	err = session.Close(StatusCompleted)
 	require.NoError(t, err)
 }
 
-func TestWriteWorkerReflection_SessionClosed(t *testing.T) {
+func TestWriteWorkerAccountabilitySummary_SessionClosed(t *testing.T) {
 	baseDir := t.TempDir()
-	sessionID := "test-reflection-closed"
+	sessionID := "test-accountability-closed"
 	sessionDir := filepath.Join(baseDir, "session")
 
 	session, err := New(sessionID, sessionDir)
@@ -2133,23 +2193,23 @@ func TestWriteWorkerReflection_SessionClosed(t *testing.T) {
 	require.NoError(t, err)
 
 	// Writing after close should fail
-	content := []byte("# Reflection")
-	_, err = session.WriteWorkerReflection("worker-1", "task-123", content)
+	content := []byte("---\ntask_id: task-123\n---\n\n# Accountability Summary")
+	_, err = session.WriteWorkerAccountabilitySummary("worker-1", content)
 	require.Error(t, err)
 	require.Equal(t, os.ErrClosed, err)
 }
 
-func TestWriteWorkerReflection_OverwritesExisting(t *testing.T) {
+func TestWriteWorkerAccountabilitySummary_OverwritesExisting(t *testing.T) {
 	baseDir := t.TempDir()
-	sessionID := "test-reflection-overwrite"
+	sessionID := "test-accountability-overwrite"
 	sessionDir := filepath.Join(baseDir, "session")
 
 	session, err := New(sessionID, sessionDir)
 	require.NoError(t, err)
 
-	// Write first reflection
-	content1 := []byte("# First Reflection\n\nOriginal content")
-	filePath1, err := session.WriteWorkerReflection("worker-1", "task-1", content1)
+	// Write first accountability summary
+	content1 := []byte("---\ntask_id: task-1\n---\n\n# First Summary\n\nOriginal content")
+	filePath1, err := session.WriteWorkerAccountabilitySummary("worker-1", content1)
 	require.NoError(t, err)
 
 	// Verify first content
@@ -2157,12 +2217,12 @@ func TestWriteWorkerReflection_OverwritesExisting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, content1, data1)
 
-	// Write second reflection (different task) - should overwrite
-	content2 := []byte("# Second Reflection\n\nUpdated content for different task")
-	filePath2, err := session.WriteWorkerReflection("worker-1", "task-2", content2)
+	// Write second accountability summary (different task) - should overwrite
+	content2 := []byte("---\ntask_id: task-2\n---\n\n# Second Summary\n\nUpdated content for different task")
+	filePath2, err := session.WriteWorkerAccountabilitySummary("worker-1", content2)
 	require.NoError(t, err)
 
-	// Paths should be the same (same worker, single reflection.md file)
+	// Paths should be the same (same worker, single accountability_summary.md file)
 	require.Equal(t, filePath1, filePath2)
 
 	// Verify content was overwritten
@@ -2174,17 +2234,17 @@ func TestWriteWorkerReflection_OverwritesExisting(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestWriteWorkerReflection_FilePermissions(t *testing.T) {
+func TestWriteWorkerAccountabilitySummary_FilePermissions(t *testing.T) {
 	baseDir := t.TempDir()
-	sessionID := "test-reflection-permissions"
+	sessionID := "test-accountability-permissions"
 	sessionDir := filepath.Join(baseDir, "session")
 
 	session, err := New(sessionID, sessionDir)
 	require.NoError(t, err)
 
-	// Write a reflection
-	content := []byte("# Reflection\n\nTest content for permission check")
-	filePath, err := session.WriteWorkerReflection("worker-1", "task-123", content)
+	// Write an accountability summary
+	content := []byte("---\ntask_id: task-123\n---\n\n# Accountability Summary\n\nTest content for permission check")
+	filePath, err := session.WriteWorkerAccountabilitySummary("worker-1", content)
 	require.NoError(t, err)
 
 	// Verify file permissions are 0600 (owner read/write only)
@@ -2196,10 +2256,10 @@ func TestWriteWorkerReflection_FilePermissions(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestWriteWorkerReflection_EmptyContent(t *testing.T) {
+func TestWriteWorkerAccountabilitySummary_EmptyContent(t *testing.T) {
 	// Edge case: Empty content should write an empty file (valid, not an error)
 	baseDir := t.TempDir()
-	sessionID := "test-reflection-empty"
+	sessionID := "test-accountability-empty"
 	sessionDir := filepath.Join(baseDir, "session")
 
 	session, err := New(sessionID, sessionDir)
@@ -2207,7 +2267,7 @@ func TestWriteWorkerReflection_EmptyContent(t *testing.T) {
 
 	// Write empty content
 	content := []byte{}
-	filePath, err := session.WriteWorkerReflection("worker-1", "task-123", content)
+	filePath, err := session.WriteWorkerAccountabilitySummary("worker-1", content)
 	require.NoError(t, err)
 	require.NotEmpty(t, filePath)
 
@@ -2220,27 +2280,27 @@ func TestWriteWorkerReflection_EmptyContent(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestWriteWorkerReflection_MultipleWorkers(t *testing.T) {
-	// Verify each worker gets their own reflection.md file with no cross-contamination
+func TestWriteWorkerAccountabilitySummary_MultipleWorkers(t *testing.T) {
+	// Verify each worker gets their own accountability_summary.md file with no cross-contamination
 	baseDir := t.TempDir()
-	sessionID := "test-reflection-multiple"
+	sessionID := "test-accountability-multiple"
 	sessionDir := filepath.Join(baseDir, "session")
 
 	session, err := New(sessionID, sessionDir)
 	require.NoError(t, err)
 
-	// Write reflections for multiple workers
-	content1 := []byte("# Reflection Worker 1\n\nWorker-1 specific content")
-	content2 := []byte("# Reflection Worker 2\n\nWorker-2 specific content")
-	content3 := []byte("# Reflection Worker 3\n\nWorker-3 specific content")
+	// Write accountability summaries for multiple workers
+	content1 := []byte("---\ntask_id: task-1\n---\n\n# Summary Worker 1\n\nWorker-1 specific content")
+	content2 := []byte("---\ntask_id: task-2\n---\n\n# Summary Worker 2\n\nWorker-2 specific content")
+	content3 := []byte("---\ntask_id: task-3\n---\n\n# Summary Worker 3\n\nWorker-3 specific content")
 
-	path1, err := session.WriteWorkerReflection("worker-1", "task-1", content1)
+	path1, err := session.WriteWorkerAccountabilitySummary("worker-1", content1)
 	require.NoError(t, err)
 
-	path2, err := session.WriteWorkerReflection("worker-2", "task-2", content2)
+	path2, err := session.WriteWorkerAccountabilitySummary("worker-2", content2)
 	require.NoError(t, err)
 
-	path3, err := session.WriteWorkerReflection("worker-3", "task-3", content3)
+	path3, err := session.WriteWorkerAccountabilitySummary("worker-3", content3)
 	require.NoError(t, err)
 
 	// Verify paths are different
@@ -2263,4 +2323,122 @@ func TestWriteWorkerReflection_MultipleWorkers(t *testing.T) {
 
 	err = session.Close(StatusCompleted)
 	require.NoError(t, err)
+}
+
+// Tests for updateSessionIndex
+
+func TestUpdateSessionIndex_NewIndex(t *testing.T) {
+	// When sessions.json doesn't exist, updateSessionIndex should create it
+	baseDir := t.TempDir()
+	sessionsDir := filepath.Join(baseDir, "sessions")
+	err := os.MkdirAll(sessionsDir, 0750)
+	require.NoError(t, err)
+
+	sessionID := "test-new-index"
+	sessionDir := filepath.Join(sessionsDir, sessionID)
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Close the session - this calls updateSessionIndex
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+
+	// Verify sessions.json was created
+	indexPath := filepath.Join(sessionsDir, "sessions.json")
+	_, err = os.Stat(indexPath)
+	require.NoError(t, err, "sessions.json should be created")
+
+	// Load and verify the index
+	index, err := LoadSessionIndex(indexPath)
+	require.NoError(t, err)
+	require.Len(t, index.Sessions, 1)
+	require.Equal(t, sessionID, index.Sessions[0].ID)
+	require.Equal(t, StatusCompleted, index.Sessions[0].Status)
+	require.False(t, index.Sessions[0].StartTime.IsZero())
+	require.False(t, index.Sessions[0].EndTime.IsZero())
+}
+
+func TestUpdateSessionIndex_AppendToExisting(t *testing.T) {
+	// When sessions.json already has entries, updateSessionIndex should append
+	baseDir := t.TempDir()
+	sessionsDir := filepath.Join(baseDir, "sessions")
+	err := os.MkdirAll(sessionsDir, 0750)
+	require.NoError(t, err)
+
+	// Create first session
+	sessionID1 := "session-first"
+	sessionDir1 := filepath.Join(sessionsDir, sessionID1)
+	session1, err := New(sessionID1, sessionDir1)
+	require.NoError(t, err)
+	err = session1.Close(StatusCompleted)
+	require.NoError(t, err)
+
+	// Verify first session is in the index
+	indexPath := filepath.Join(sessionsDir, "sessions.json")
+	index, err := LoadSessionIndex(indexPath)
+	require.NoError(t, err)
+	require.Len(t, index.Sessions, 1)
+
+	// Create second session
+	sessionID2 := "session-second"
+	sessionDir2 := filepath.Join(sessionsDir, sessionID2)
+	session2, err := New(sessionID2, sessionDir2)
+	require.NoError(t, err)
+	err = session2.Close(StatusFailed)
+	require.NoError(t, err)
+
+	// Verify both sessions are in the index
+	index, err = LoadSessionIndex(indexPath)
+	require.NoError(t, err)
+	require.Len(t, index.Sessions, 2)
+	require.Equal(t, sessionID1, index.Sessions[0].ID)
+	require.Equal(t, StatusCompleted, index.Sessions[0].Status)
+	require.Equal(t, sessionID2, index.Sessions[1].ID)
+	require.Equal(t, StatusFailed, index.Sessions[1].Status)
+}
+
+func TestClose_UpdatesSessionIndex(t *testing.T) {
+	// Verify Close() creates/updates the sessions.json index with correct data
+	baseDir := t.TempDir()
+	sessionsDir := filepath.Join(baseDir, "sessions")
+	err := os.MkdirAll(sessionsDir, 0750)
+	require.NoError(t, err)
+
+	sessionID := "test-close-index"
+	sessionDir := filepath.Join(sessionsDir, sessionID)
+
+	session, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Write an accountability summary so the path gets included
+	content := []byte("---\ntask_id: task-123\n---\n\n# Test Summary")
+	_, err = session.WriteWorkerAccountabilitySummary("worker-1", content)
+	require.NoError(t, err)
+
+	// Also create the session-level accountability summary
+	accountabilityPath := filepath.Join(sessionDir, "accountability_summary.md")
+	err = os.WriteFile(accountabilityPath, []byte("# Session Summary"), 0600)
+	require.NoError(t, err)
+
+	// Close the session
+	err = session.Close(StatusCompleted)
+	require.NoError(t, err)
+
+	// Verify sessions.json was created
+	indexPath := filepath.Join(sessionsDir, "sessions.json")
+	index, err := LoadSessionIndex(indexPath)
+	require.NoError(t, err)
+	require.Len(t, index.Sessions, 1)
+
+	entry := index.Sessions[0]
+	require.Equal(t, sessionID, entry.ID)
+	require.Equal(t, StatusCompleted, entry.Status)
+	require.False(t, entry.StartTime.IsZero())
+	require.False(t, entry.EndTime.IsZero())
+	// Accountability summary path should be set since we created it
+	require.Equal(t, accountabilityPath, entry.AccountabilitySummaryPath)
+	// WorkerCount should reflect the workers from session metadata
+	// (workers need to be added via events, which we haven't simulated)
+	require.Equal(t, 0, entry.WorkerCount)
 }

@@ -122,7 +122,7 @@ func TestWorkerServer_RegistersAllTools(t *testing.T) {
 		"signal_ready",
 		"report_implementation_complete",
 		"report_review_verdict",
-		"post_reflections",
+		"post_accountability_summary",
 	}
 
 	for _, toolName := range expectedTools {
@@ -797,37 +797,66 @@ func TestWorkerServer_ReportReviewVerdictSchema(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for validateReflectionArgs
+// Tests for validateAccountabilitySummaryArgs
 // ============================================================================
 
-// TestValidateReflectionArgs_ValidInput tests that valid args pass validation.
-func TestValidateReflectionArgs_ValidInput(t *testing.T) {
-	args := postReflectionsArgs{
-		TaskID:    "perles-abc123",
-		Summary:   "Implemented feature X with comprehensive tests and documentation.",
-		Insights:  "Found that approach Y works well for this use case.",
-		Mistakes:  "Initially forgot to handle edge case Z.",
-		Learnings: "The foo module requires careful handling of bar.",
+// TestValidateAccountabilitySummaryArgs_Valid tests that valid args pass validation.
+func TestValidateAccountabilitySummaryArgs_Valid(t *testing.T) {
+	args := postAccountabilitySummaryArgs{
+		TaskID:             "perles-abc123",
+		Summary:            "Implemented feature X with comprehensive tests and documentation.",
+		Commits:            []string{"abc123", "def456"},
+		IssuesDiscovered:   []string{"perles-xyz"},
+		IssuesClosed:       []string{"perles-abc123"},
+		VerificationPoints: []string{"Tests pass", "Manual verification"},
+		Retro: &RetroFeedback{
+			WentWell:  "Smooth implementation",
+			Friction:  "Had to refactor twice",
+			Patterns:  "Found useful pattern",
+			Takeaways: "Read docs first",
+		},
+		NextSteps: "Continue with next task",
 	}
 
-	err := validateReflectionArgs(args)
+	err := validateAccountabilitySummaryArgs(args)
 	require.NoError(t, err, "Valid input should pass validation")
 }
 
-// TestValidateReflectionArgs_EmptyTaskID tests that empty task_id is rejected.
-func TestValidateReflectionArgs_EmptyTaskID(t *testing.T) {
-	args := postReflectionsArgs{
-		TaskID:  "",
-		Summary: "A valid summary that is at least twenty chars.",
+// TestValidateAccountabilitySummaryArgs_MissingRequired tests that missing task_id/summary is rejected.
+func TestValidateAccountabilitySummaryArgs_MissingRequired(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    postAccountabilitySummaryArgs
+		wantErr string
+	}{
+		{
+			name:    "empty task_id",
+			args:    postAccountabilitySummaryArgs{TaskID: "", Summary: "A valid summary that is at least twenty chars."},
+			wantErr: "task_id is required",
+		},
+		{
+			name:    "empty summary",
+			args:    postAccountabilitySummaryArgs{TaskID: "perles-abc123", Summary: ""},
+			wantErr: "summary is required",
+		},
+		{
+			name:    "summary too short",
+			args:    postAccountabilitySummaryArgs{TaskID: "perles-abc123", Summary: "Too short"},
+			wantErr: "summary too short",
+		},
 	}
 
-	err := validateReflectionArgs(args)
-	require.Error(t, err, "Empty task_id should be rejected")
-	require.Contains(t, err.Error(), "task_id is required")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAccountabilitySummaryArgs(tt.args)
+			require.Error(t, err, "Should reject missing required field")
+			require.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
 }
 
-// TestValidateReflectionArgs_InvalidTaskIDFormat tests that path traversal is rejected.
-func TestValidateReflectionArgs_InvalidTaskIDFormat(t *testing.T) {
+// TestValidateAccountabilitySummaryArgs_PathTraversal tests that path traversal is rejected.
+func TestValidateAccountabilitySummaryArgs_PathTraversal(t *testing.T) {
 	tests := []struct {
 		name    string
 		taskID  string
@@ -867,19 +896,19 @@ func TestValidateReflectionArgs_InvalidTaskIDFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := postReflectionsArgs{
+			args := postAccountabilitySummaryArgs{
 				TaskID:  tt.taskID,
 				Summary: "A valid summary that is at least twenty chars.",
 			}
-			err := validateReflectionArgs(args)
+			err := validateAccountabilitySummaryArgs(args)
 			require.Error(t, err, "Invalid task_id %q should be rejected", tt.taskID)
 			require.Contains(t, err.Error(), tt.wantErr, "Error should mention expected issue")
 		})
 	}
 }
 
-// TestValidateReflectionArgs_ValidTaskIDFormats tests various valid task ID formats.
-func TestValidateReflectionArgs_ValidTaskIDFormats(t *testing.T) {
+// TestValidateAccountabilitySummaryArgs_ValidTaskIDFormats tests various valid task ID formats.
+func TestValidateAccountabilitySummaryArgs_ValidTaskIDFormats(t *testing.T) {
 	validTaskIDs := []string{
 		"perles-abc123",
 		"ms-e52",
@@ -892,166 +921,168 @@ func TestValidateReflectionArgs_ValidTaskIDFormats(t *testing.T) {
 
 	for _, taskID := range validTaskIDs {
 		t.Run(taskID, func(t *testing.T) {
-			args := postReflectionsArgs{
+			args := postAccountabilitySummaryArgs{
 				TaskID:  taskID,
 				Summary: "A valid summary that is at least twenty chars.",
 			}
-			err := validateReflectionArgs(args)
+			err := validateAccountabilitySummaryArgs(args)
 			require.NoError(t, err, "Valid task_id %q should pass validation", taskID)
 		})
 	}
 }
 
-// TestValidateReflectionArgs_SummaryTooShort tests that summary < 20 chars is rejected.
-func TestValidateReflectionArgs_SummaryTooShort(t *testing.T) {
-	args := postReflectionsArgs{
-		TaskID:  "perles-abc123",
-		Summary: "Too short",
-	}
-
-	err := validateReflectionArgs(args)
-	require.Error(t, err, "Summary too short should be rejected")
-	require.Contains(t, err.Error(), "summary too short")
-	require.Contains(t, err.Error(), "min 20 chars")
-}
-
-// TestValidateReflectionArgs_ExactlyMinSummaryLength tests boundary at exactly 20 chars.
-func TestValidateReflectionArgs_ExactlyMinSummaryLength(t *testing.T) {
-	args := postReflectionsArgs{
+// TestValidateAccountabilitySummaryArgs_ExactlyMinSummaryLength tests boundary at exactly 20 chars.
+func TestValidateAccountabilitySummaryArgs_ExactlyMinSummaryLength(t *testing.T) {
+	args := postAccountabilitySummaryArgs{
 		TaskID:  "perles-abc123",
 		Summary: strings.Repeat("x", MinSummaryLength), // Exactly 20 chars
 	}
 
-	err := validateReflectionArgs(args)
+	err := validateAccountabilitySummaryArgs(args)
 	require.NoError(t, err, "Summary with exactly min length should pass")
 }
 
-// TestValidateReflectionArgs_EmptySummary tests that empty summary is rejected.
-func TestValidateReflectionArgs_EmptySummary(t *testing.T) {
-	args := postReflectionsArgs{
-		TaskID:  "perles-abc123",
-		Summary: "",
-	}
-
-	err := validateReflectionArgs(args)
-	require.Error(t, err, "Empty summary should be rejected")
-	require.Contains(t, err.Error(), "summary is required")
-}
-
 // ============================================================================
-// Tests for buildReflectionMarkdown
+// Tests for buildAccountabilitySummaryMarkdown
 // ============================================================================
 
-// TestBuildReflectionMarkdown_AllFields tests markdown generation with all fields provided.
-func TestBuildReflectionMarkdown_AllFields(t *testing.T) {
-	args := postReflectionsArgs{
-		TaskID:    "perles-abc123",
-		Summary:   "Implemented user validation with regex patterns.",
-		Insights:  "Pre-compiled regex is 10x faster.",
-		Mistakes:  "Initially forgot to handle empty strings.",
-		Learnings: "Always validate input at boundaries.",
+// TestBuildAccountabilitySummaryMarkdown tests markdown generation with YAML frontmatter.
+func TestBuildAccountabilitySummaryMarkdown(t *testing.T) {
+	args := postAccountabilitySummaryArgs{
+		TaskID:             "perles-abc123",
+		Summary:            "Implemented user validation with regex patterns.",
+		Commits:            []string{"abc123", "def456"},
+		IssuesDiscovered:   []string{"perles-xyz"},
+		IssuesClosed:       []string{"perles-abc123"},
+		VerificationPoints: []string{"Tests pass", "Manual verification"},
+		Retro: &RetroFeedback{
+			WentWell:  "Smooth implementation",
+			Friction:  "Had to refactor twice",
+			Patterns:  "Found useful pattern",
+			Takeaways: "Read docs first",
+		},
+		NextSteps: "Continue with next task",
 	}
 
-	md := buildReflectionMarkdown("WORKER.1", args)
+	md := buildAccountabilitySummaryMarkdown("WORKER.1", args)
+
+	// Verify YAML frontmatter
+	assert.Contains(t, md, "---\n")
+	assert.Contains(t, md, "task_id: perles-abc123")
+	assert.Contains(t, md, "worker_id: WORKER.1")
+	assert.Contains(t, md, "timestamp:")
+	assert.Contains(t, md, "commits:\n  - abc123\n  - def456")
+	assert.Contains(t, md, "issues_discovered:\n  - perles-xyz")
+	assert.Contains(t, md, "issues_closed:\n  - perles-abc123")
 
 	// Verify header
-	assert.Contains(t, md, "# Worker Reflection")
+	assert.Contains(t, md, "# Worker Accountability Summary")
 	assert.Contains(t, md, "**Worker:** WORKER.1")
 	assert.Contains(t, md, "**Task:** perles-abc123")
 	assert.Contains(t, md, "**Date:**")
 
 	// Verify all sections are present
-	assert.Contains(t, md, "## Summary")
+	assert.Contains(t, md, "## What I Accomplished")
 	assert.Contains(t, md, "Implemented user validation with regex patterns.")
 
-	assert.Contains(t, md, "## Insights")
-	assert.Contains(t, md, "Pre-compiled regex is 10x faster.")
+	assert.Contains(t, md, "## Verification Points")
+	assert.Contains(t, md, "- Tests pass")
+	assert.Contains(t, md, "- Manual verification")
 
-	assert.Contains(t, md, "## Mistakes & Lessons")
-	assert.Contains(t, md, "Initially forgot to handle empty strings.")
+	assert.Contains(t, md, "## Issues Discovered")
+	assert.Contains(t, md, "- perles-xyz")
 
-	assert.Contains(t, md, "## Learnings")
-	assert.Contains(t, md, "Always validate input at boundaries.")
+	assert.Contains(t, md, "## Retro")
+	assert.Contains(t, md, "### What Went Well")
+	assert.Contains(t, md, "Smooth implementation")
+	assert.Contains(t, md, "### Friction")
+	assert.Contains(t, md, "Had to refactor twice")
+	assert.Contains(t, md, "### Patterns Noticed")
+	assert.Contains(t, md, "Found useful pattern")
+	assert.Contains(t, md, "### Takeaways")
+	assert.Contains(t, md, "Read docs first")
+
+	assert.Contains(t, md, "## Next Steps")
+	assert.Contains(t, md, "Continue with next task")
 }
 
-// TestBuildReflectionMarkdown_OnlySummary tests markdown generation with only required fields.
-func TestBuildReflectionMarkdown_OnlySummary(t *testing.T) {
-	args := postReflectionsArgs{
+// TestBuildAccountabilitySummaryMarkdown_OnlySummary tests with only required fields.
+func TestBuildAccountabilitySummaryMarkdown_OnlySummary(t *testing.T) {
+	args := postAccountabilitySummaryArgs{
 		TaskID:  "ms-e52",
 		Summary: "Fixed a critical bug in authentication flow.",
 	}
 
-	md := buildReflectionMarkdown("WORKER.2", args)
+	md := buildAccountabilitySummaryMarkdown("WORKER.2", args)
+
+	// Verify YAML frontmatter
+	assert.Contains(t, md, "---\n")
+	assert.Contains(t, md, "task_id: ms-e52")
+	assert.Contains(t, md, "worker_id: WORKER.2")
+	// Should NOT have optional arrays in frontmatter
+	assert.NotContains(t, md, "commits:")
+	assert.NotContains(t, md, "issues_discovered:")
+	assert.NotContains(t, md, "issues_closed:")
 
 	// Verify header
-	assert.Contains(t, md, "# Worker Reflection")
+	assert.Contains(t, md, "# Worker Accountability Summary")
 	assert.Contains(t, md, "**Worker:** WORKER.2")
 	assert.Contains(t, md, "**Task:** ms-e52")
 
 	// Verify summary is present
-	assert.Contains(t, md, "## Summary")
+	assert.Contains(t, md, "## What I Accomplished")
 	assert.Contains(t, md, "Fixed a critical bug in authentication flow.")
 
 	// Verify optional sections are NOT present
-	assert.NotContains(t, md, "## Insights")
-	assert.NotContains(t, md, "## Mistakes & Lessons")
-	assert.NotContains(t, md, "## Learnings")
+	assert.NotContains(t, md, "## Verification Points")
+	assert.NotContains(t, md, "## Issues Discovered")
+	assert.NotContains(t, md, "## Retro")
+	assert.NotContains(t, md, "## Next Steps")
 }
 
-// TestBuildReflectionMarkdown_PartialOptionalFields tests with some optional fields.
-func TestBuildReflectionMarkdown_PartialOptionalFields(t *testing.T) {
+// TestBuildAccountabilitySummaryMarkdown_PartialOptionalFields tests with some optional fields.
+func TestBuildAccountabilitySummaryMarkdown_PartialOptionalFields(t *testing.T) {
 	tests := []struct {
 		name       string
-		args       postReflectionsArgs
+		args       postAccountabilitySummaryArgs
 		shouldHave []string
 		shouldNot  []string
 	}{
 		{
-			name: "only insights",
-			args: postReflectionsArgs{
-				TaskID:   "task-abc",
-				Summary:  "Completed the refactoring.",
-				Insights: "The new pattern is cleaner.",
+			name: "only verification points",
+			args: postAccountabilitySummaryArgs{
+				TaskID:             "task-abc",
+				Summary:            "Completed the refactoring.",
+				VerificationPoints: []string{"Tests pass"},
 			},
-			shouldHave: []string{"## Summary", "## Insights"},
-			shouldNot:  []string{"## Mistakes & Lessons", "## Learnings"},
+			shouldHave: []string{"## What I Accomplished", "## Verification Points"},
+			shouldNot:  []string{"## Retro", "## Next Steps", "## Issues Discovered"},
 		},
 		{
-			name: "only mistakes",
-			args: postReflectionsArgs{
-				TaskID:   "task-abc",
-				Summary:  "Completed the refactoring.",
-				Mistakes: "Broke tests initially.",
+			name: "only retro",
+			args: postAccountabilitySummaryArgs{
+				TaskID:  "task-abc",
+				Summary: "Completed the refactoring.",
+				Retro:   &RetroFeedback{WentWell: "Good"},
 			},
-			shouldHave: []string{"## Summary", "## Mistakes & Lessons"},
-			shouldNot:  []string{"## Insights", "## Learnings"},
+			shouldHave: []string{"## What I Accomplished", "## Retro", "### What Went Well"},
+			shouldNot:  []string{"## Verification Points", "## Next Steps"},
 		},
 		{
-			name: "only learnings",
-			args: postReflectionsArgs{
+			name: "only next steps",
+			args: postAccountabilitySummaryArgs{
 				TaskID:    "task-abc",
 				Summary:   "Completed the refactoring.",
-				Learnings: "Read the docs first.",
+				NextSteps: "Follow up work",
 			},
-			shouldHave: []string{"## Summary", "## Learnings"},
-			shouldNot:  []string{"## Insights", "## Mistakes & Lessons"},
-		},
-		{
-			name: "insights and learnings",
-			args: postReflectionsArgs{
-				TaskID:    "task-abc",
-				Summary:   "Completed the refactoring.",
-				Insights:  "Works well.",
-				Learnings: "Good to know.",
-			},
-			shouldHave: []string{"## Summary", "## Insights", "## Learnings"},
-			shouldNot:  []string{"## Mistakes & Lessons"},
+			shouldHave: []string{"## What I Accomplished", "## Next Steps"},
+			shouldNot:  []string{"## Verification Points", "## Retro"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			md := buildReflectionMarkdown("WORKER.1", tt.args)
+			md := buildAccountabilitySummaryMarkdown("WORKER.1", tt.args)
 
 			for _, s := range tt.shouldHave {
 				assert.Contains(t, md, s, "Should contain %q", s)
@@ -1063,83 +1094,91 @@ func TestBuildReflectionMarkdown_PartialOptionalFields(t *testing.T) {
 	}
 }
 
-// TestBuildReflectionMarkdown_DateFormat tests that date is in expected format.
-func TestBuildReflectionMarkdown_DateFormat(t *testing.T) {
-	args := postReflectionsArgs{
+// TestBuildAccountabilitySummaryMarkdown_DateFormat tests that date is in expected format.
+func TestBuildAccountabilitySummaryMarkdown_DateFormat(t *testing.T) {
+	args := postAccountabilitySummaryArgs{
 		TaskID:  "perles-abc",
 		Summary: "Test summary for date format.",
 	}
 
-	md := buildReflectionMarkdown("WORKER.1", args)
+	md := buildAccountabilitySummaryMarkdown("WORKER.1", args)
 
 	// Date format should be YYYY-MM-DD HH:MM:SS (e.g., 2025-12-30 01:23:45)
-	// We can't check exact time, but we can verify the format pattern exists
 	assert.Regexp(t, `\*\*Date:\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`, md, "Date should be in expected format")
+
+	// Timestamp in YAML frontmatter should be RFC3339
+	assert.Regexp(t, `timestamp: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, md, "Timestamp should be RFC3339 format")
 }
 
-// TestBuildReflectionMarkdown_PreservesNewlines tests that content with newlines is preserved.
-func TestBuildReflectionMarkdown_PreservesNewlines(t *testing.T) {
-	args := postReflectionsArgs{
+// TestBuildAccountabilitySummaryMarkdown_PreservesNewlines tests that content with newlines is preserved.
+func TestBuildAccountabilitySummaryMarkdown_PreservesNewlines(t *testing.T) {
+	args := postAccountabilitySummaryArgs{
 		TaskID:  "task-abc",
 		Summary: "Line 1\nLine 2\nLine 3",
 	}
 
-	md := buildReflectionMarkdown("WORKER.1", args)
+	md := buildAccountabilitySummaryMarkdown("WORKER.1", args)
 
 	assert.Contains(t, md, "Line 1\nLine 2\nLine 3", "Newlines in content should be preserved")
 }
 
 // ============================================================================
-// Tests for handlePostReflections
+// Tests for handlePostAccountabilitySummary
 // ============================================================================
 
-// mockReflectionWriter implements ReflectionWriter for testing.
-type mockReflectionWriter struct {
+// mockAccountabilityWriter implements AccountabilityWriter for testing.
+type mockAccountabilityWriter struct {
 	mu         sync.Mutex
-	calls      []reflectionWriterCall
+	calls      []accountabilityWriterCall
 	returnPath string
 	returnErr  error
 }
 
-type reflectionWriterCall struct {
+type accountabilityWriterCall struct {
 	WorkerID string
-	TaskID   string
 	Content  []byte
 }
 
-func newMockReflectionWriter() *mockReflectionWriter {
-	return &mockReflectionWriter{
-		returnPath: "/mock/path/reflection.md",
+func newMockAccountabilityWriter() *mockAccountabilityWriter {
+	return &mockAccountabilityWriter{
+		returnPath: "/mock/path/accountability_summary.md",
 	}
 }
 
-func (m *mockReflectionWriter) WriteWorkerReflection(workerID, taskID string, content []byte) (string, error) {
+func (m *mockAccountabilityWriter) WriteWorkerAccountabilitySummary(workerID string, content []byte) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.calls = append(m.calls, reflectionWriterCall{
+	m.calls = append(m.calls, accountabilityWriterCall{
 		WorkerID: workerID,
-		TaskID:   taskID,
 		Content:  content,
 	})
 	return m.returnPath, m.returnErr
 }
 
-// TestHandlePostReflections_Success tests valid reflection saves and returns path.
-func TestHandlePostReflections_Success(t *testing.T) {
+// TestHandlePostAccountabilitySummary tests valid summary saves and returns path.
+func TestHandlePostAccountabilitySummary(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
-	writer.returnPath = "/sessions/abc/workers/WORKER.1/reflection.md"
+	writer := newMockAccountabilityWriter()
+	writer.returnPath = "/sessions/abc/workers/WORKER.1/accountability_summary.md"
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "perles-abc123",
 		"summary": "Implemented feature X with comprehensive tests.",
-		"insights": "Found that pattern Y works well.",
-		"mistakes": "Initially forgot edge case Z.",
-		"learnings": "Always check for nil before dereferencing."
+		"commits": ["abc123", "def456"],
+		"issues_discovered": ["perles-xyz"],
+		"issues_closed": ["perles-abc123"],
+		"verification_points": ["Tests pass", "Manual verification"],
+		"retro": {
+			"went_well": "Smooth implementation",
+			"friction": "Had to refactor twice",
+			"patterns": "Found useful pattern",
+			"takeaways": "Read docs first"
+		},
+		"next_steps": "Continue with next task"
 	}`
 
 	result, err := handler(context.Background(), json.RawMessage(args))
@@ -1148,8 +1187,8 @@ func TestHandlePostReflections_Success(t *testing.T) {
 	// Verify writer was called
 	require.Len(t, writer.calls, 1, "Expected 1 write call")
 	require.Equal(t, "WORKER.1", writer.calls[0].WorkerID, "WorkerID mismatch")
-	require.Equal(t, "perles-abc123", writer.calls[0].TaskID, "TaskID mismatch")
-	require.Contains(t, string(writer.calls[0].Content), "# Worker Reflection", "Content should be markdown")
+	require.Contains(t, string(writer.calls[0].Content), "# Worker Accountability Summary", "Content should be markdown")
+	require.Contains(t, string(writer.calls[0].Content), "task_id: perles-abc123", "Content should have YAML frontmatter")
 	require.Contains(t, string(writer.calls[0].Content), "Implemented feature X", "Content should contain summary")
 
 	// Verify structured response
@@ -1162,14 +1201,14 @@ func TestHandlePostReflections_Success(t *testing.T) {
 	require.Contains(t, text, writer.returnPath, "Response should contain file path")
 }
 
-// TestHandlePostReflections_EmptyTaskID tests that missing task_id returns error.
-func TestHandlePostReflections_EmptyTaskID(t *testing.T) {
+// TestHandlePostAccountabilitySummary_EmptyTaskID tests that missing task_id returns error.
+func TestHandlePostAccountabilitySummary_EmptyTaskID(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
+	writer := newMockAccountabilityWriter()
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "",
@@ -1181,14 +1220,14 @@ func TestHandlePostReflections_EmptyTaskID(t *testing.T) {
 	require.Contains(t, err.Error(), "task_id is required", "Error should mention task_id")
 }
 
-// TestHandlePostReflections_EmptySummary tests that missing summary returns error.
-func TestHandlePostReflections_EmptySummary(t *testing.T) {
+// TestHandlePostAccountabilitySummary_EmptySummary tests that missing summary returns error.
+func TestHandlePostAccountabilitySummary_EmptySummary(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
+	writer := newMockAccountabilityWriter()
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "perles-abc123",
@@ -1200,14 +1239,14 @@ func TestHandlePostReflections_EmptySummary(t *testing.T) {
 	require.Contains(t, err.Error(), "summary is required", "Error should mention summary")
 }
 
-// TestHandlePostReflections_InvalidTaskID tests that path traversal is rejected.
-func TestHandlePostReflections_InvalidTaskID(t *testing.T) {
+// TestHandlePostAccountabilitySummary_InvalidTaskID tests that path traversal is rejected.
+func TestHandlePostAccountabilitySummary_InvalidTaskID(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
+	writer := newMockAccountabilityWriter()
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "../../etc/passwd",
@@ -1219,14 +1258,14 @@ func TestHandlePostReflections_InvalidTaskID(t *testing.T) {
 	require.Contains(t, err.Error(), "path traversal", "Error should mention path traversal")
 }
 
-// TestHandlePostReflections_SummaryTooShort tests validation for summary length.
-func TestHandlePostReflections_SummaryTooShort(t *testing.T) {
+// TestHandlePostAccountabilitySummary_SummaryTooShort tests validation for summary length.
+func TestHandlePostAccountabilitySummary_SummaryTooShort(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
+	writer := newMockAccountabilityWriter()
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "perles-abc123",
@@ -1238,13 +1277,13 @@ func TestHandlePostReflections_SummaryTooShort(t *testing.T) {
 	require.Contains(t, err.Error(), "summary too short", "Error should mention summary too short")
 }
 
-// TestHandlePostReflections_NilReflectionWriter tests graceful error when writer not configured.
-func TestHandlePostReflections_NilReflectionWriter(t *testing.T) {
+// TestHandlePostAccountabilitySummary_NilWriter tests graceful error when writer not configured.
+func TestHandlePostAccountabilitySummary_NilWriter(t *testing.T) {
 	store := newMockMessageStore()
 
 	ws := NewWorkerServer("WORKER.1", store)
-	// Don't set reflection writer - leave it nil
-	handler := ws.handlers["post_reflections"]
+	// Don't set accountability writer - leave it nil
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "perles-abc123",
@@ -1252,19 +1291,19 @@ func TestHandlePostReflections_NilReflectionWriter(t *testing.T) {
 	}`
 
 	_, err := handler(context.Background(), json.RawMessage(args))
-	require.Error(t, err, "Expected error for nil reflection writer")
-	require.Contains(t, err.Error(), "reflection writer not configured", "Error should mention reflection writer")
+	require.Error(t, err, "Expected error for nil accountability writer")
+	require.Contains(t, err.Error(), "accountability writer not configured", "Error should mention accountability writer")
 }
 
-// TestHandlePostReflections_WriterError tests that writer errors are propagated.
-func TestHandlePostReflections_WriterError(t *testing.T) {
+// TestHandlePostAccountabilitySummary_WriterError tests that writer errors are propagated.
+func TestHandlePostAccountabilitySummary_WriterError(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
+	writer := newMockAccountabilityWriter()
 	writer.returnErr = fmt.Errorf("disk full")
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "perles-abc123",
@@ -1273,32 +1312,32 @@ func TestHandlePostReflections_WriterError(t *testing.T) {
 
 	_, err := handler(context.Background(), json.RawMessage(args))
 	require.Error(t, err, "Expected error when writer fails")
-	require.Contains(t, err.Error(), "failed to save reflection", "Error should mention save failure")
+	require.Contains(t, err.Error(), "failed to save accountability summary", "Error should mention save failure")
 	require.Contains(t, err.Error(), "disk full", "Error should contain underlying error")
 }
 
-// TestHandlePostReflections_InvalidJSON tests that invalid JSON returns error.
-func TestHandlePostReflections_InvalidJSON(t *testing.T) {
+// TestHandlePostAccountabilitySummary_InvalidJSON tests that invalid JSON returns error.
+func TestHandlePostAccountabilitySummary_InvalidJSON(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
+	writer := newMockAccountabilityWriter()
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	_, err := handler(context.Background(), json.RawMessage(`not json`))
 	require.Error(t, err, "Expected error for invalid JSON")
 	require.Contains(t, err.Error(), "invalid arguments", "Error should mention invalid arguments")
 }
 
-// TestHandlePostReflections_OnlyRequiredFields tests success with only required fields.
-func TestHandlePostReflections_OnlyRequiredFields(t *testing.T) {
+// TestHandlePostAccountabilitySummary_OnlyRequiredFields tests success with only required fields.
+func TestHandlePostAccountabilitySummary_OnlyRequiredFields(t *testing.T) {
 	store := newMockMessageStore()
-	writer := newMockReflectionWriter()
+	writer := newMockAccountabilityWriter()
 
 	ws := NewWorkerServer("WORKER.1", store)
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "perles-abc123",
@@ -1310,22 +1349,22 @@ func TestHandlePostReflections_OnlyRequiredFields(t *testing.T) {
 
 	// Verify content doesn't have optional sections
 	content := string(writer.calls[0].Content)
-	require.Contains(t, content, "## Summary", "Should have summary section")
-	require.NotContains(t, content, "## Insights", "Should not have insights section")
-	require.NotContains(t, content, "## Mistakes", "Should not have mistakes section")
-	require.NotContains(t, content, "## Learnings", "Should not have learnings section")
+	require.Contains(t, content, "## What I Accomplished", "Should have summary section")
+	require.NotContains(t, content, "## Verification Points", "Should not have verification points section")
+	require.NotContains(t, content, "## Retro", "Should not have retro section")
+	require.NotContains(t, content, "## Next Steps", "Should not have next steps section")
 
 	// Verify success response
 	require.Contains(t, result.Content[0].Text, "success", "Response should indicate success")
 }
 
-// TestHandlePostReflections_NoMessageStore tests success even without message store.
-func TestHandlePostReflections_NoMessageStore(t *testing.T) {
-	writer := newMockReflectionWriter()
+// TestHandlePostAccountabilitySummary_NoMessageStore tests success even without message store.
+func TestHandlePostAccountabilitySummary_NoMessageStore(t *testing.T) {
+	writer := newMockAccountabilityWriter()
 
 	ws := NewWorkerServer("WORKER.1", nil) // nil message store
-	ws.SetReflectionWriter(writer)
-	handler := ws.handlers["post_reflections"]
+	ws.SetAccountabilityWriter(writer)
+	handler := ws.handlers["post_accountability_summary"]
 
 	args := `{
 		"task_id": "perles-abc123",
@@ -1341,20 +1380,20 @@ func TestHandlePostReflections_NoMessageStore(t *testing.T) {
 }
 
 // ============================================================================
-// Tests for post_reflections tool registration
+// Tests for post_accountability_summary tool registration
 // ============================================================================
 
-// TestPostReflectionsToolRegistered tests that post_reflections tool appears in registered tools.
-func TestPostReflectionsToolRegistered(t *testing.T) {
+// TestPostAccountabilitySummaryToolRegistered tests that post_accountability_summary tool appears in registered tools.
+func TestPostAccountabilitySummaryToolRegistered(t *testing.T) {
 	ws := NewWorkerServer("WORKER.1", nil)
 
-	tool, ok := ws.tools["post_reflections"]
-	require.True(t, ok, "post_reflections tool should be registered")
+	tool, ok := ws.tools["post_accountability_summary"]
+	require.True(t, ok, "post_accountability_summary tool should be registered")
 
 	// Verify tool metadata
-	require.Equal(t, "post_reflections", tool.Name, "Tool name should be post_reflections")
+	require.Equal(t, "post_accountability_summary", tool.Name, "Tool name should be post_accountability_summary")
 	require.NotEmpty(t, tool.Description, "Tool should have description")
-	require.Contains(t, strings.ToLower(tool.Description), "reflection", "Description should mention reflection")
+	require.Contains(t, strings.ToLower(tool.Description), "accountability", "Description should mention accountability")
 
 	// Verify input schema
 	require.NotNil(t, tool.InputSchema, "Tool should have input schema")
@@ -1373,12 +1412,18 @@ func TestPostReflectionsToolRegistered(t *testing.T) {
 	require.True(t, hasTaskID, "task_id property should be defined")
 	_, hasSummary := tool.InputSchema.Properties["summary"]
 	require.True(t, hasSummary, "summary property should be defined")
-	_, hasInsights := tool.InputSchema.Properties["insights"]
-	require.True(t, hasInsights, "insights property should be defined")
-	_, hasMistakes := tool.InputSchema.Properties["mistakes"]
-	require.True(t, hasMistakes, "mistakes property should be defined")
-	_, hasLearnings := tool.InputSchema.Properties["learnings"]
-	require.True(t, hasLearnings, "learnings property should be defined")
+	_, hasCommits := tool.InputSchema.Properties["commits"]
+	require.True(t, hasCommits, "commits property should be defined")
+	_, hasIssuesDiscovered := tool.InputSchema.Properties["issues_discovered"]
+	require.True(t, hasIssuesDiscovered, "issues_discovered property should be defined")
+	_, hasIssuesClosed := tool.InputSchema.Properties["issues_closed"]
+	require.True(t, hasIssuesClosed, "issues_closed property should be defined")
+	_, hasVerificationPoints := tool.InputSchema.Properties["verification_points"]
+	require.True(t, hasVerificationPoints, "verification_points property should be defined")
+	_, hasRetro := tool.InputSchema.Properties["retro"]
+	require.True(t, hasRetro, "retro property should be defined")
+	_, hasNextSteps := tool.InputSchema.Properties["next_steps"]
+	require.True(t, hasNextSteps, "next_steps property should be defined")
 
 	// Verify output schema
 	require.NotNil(t, tool.OutputSchema, "Tool should have output schema")
@@ -1390,16 +1435,16 @@ func TestPostReflectionsToolRegistered(t *testing.T) {
 	require.True(t, hasMessage, "message output property should be defined")
 }
 
-// TestPostReflectionsToolHandlerRegistered tests that handler is registered.
-func TestPostReflectionsToolHandlerRegistered(t *testing.T) {
+// TestPostAccountabilitySummaryToolHandlerRegistered tests that handler is registered.
+func TestPostAccountabilitySummaryToolHandlerRegistered(t *testing.T) {
 	ws := NewWorkerServer("WORKER.1", nil)
 
-	_, ok := ws.handlers["post_reflections"]
-	require.True(t, ok, "post_reflections handler should be registered")
+	_, ok := ws.handlers["post_accountability_summary"]
+	require.True(t, ok, "post_accountability_summary handler should be registered")
 }
 
-// TestWorkerServer_RegistersAllToolsIncludingPostReflections verifies all 6 worker tools are registered.
-func TestWorkerServer_RegistersAllToolsIncludingPostReflections(t *testing.T) {
+// TestWorkerServer_RegistersAllToolsIncludingPostAccountabilitySummary verifies all 6 worker tools are registered.
+func TestWorkerServer_RegistersAllToolsIncludingPostAccountabilitySummary(t *testing.T) {
 	ws := NewWorkerServer("WORKER.1", nil)
 
 	expectedTools := []string{
@@ -1408,7 +1453,7 @@ func TestWorkerServer_RegistersAllToolsIncludingPostReflections(t *testing.T) {
 		"signal_ready",
 		"report_implementation_complete",
 		"report_review_verdict",
-		"post_reflections",
+		"post_accountability_summary",
 	}
 
 	for _, toolName := range expectedTools {

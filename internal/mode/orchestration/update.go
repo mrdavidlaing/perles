@@ -1155,22 +1155,22 @@ func (m Model) handleStopProcessCommand(content string) (Model, tea.Cmd) {
 // Workers connect via HTTP to /worker/{workerID} and all share the coordinator's
 // message repository instance, solving the in-memory cache isolation problem.
 type workerServerCache struct {
-	msgStore         mcp.MessageStore
-	reflectionWriter mcp.ReflectionWriter
-	v2Adapter        *adapter.V2Adapter
-	servers          map[string]*mcp.WorkerServer
-	mu               sync.RWMutex
+	msgStore             mcp.MessageStore
+	accountabilityWriter mcp.AccountabilityWriter
+	v2Adapter            *adapter.V2Adapter
+	servers              map[string]*mcp.WorkerServer
+	mu                   sync.RWMutex
 }
 
 // newWorkerServerCache creates a new worker server cache.
-// The reflectionWriter allows workers to save reflections to session storage.
+// The accountabilityWriter allows workers to save accountability summaries to session storage.
 // The v2Adapter routes all worker MCP tool handlers through v2 orchestration.
-func newWorkerServerCache(msgStore mcp.MessageStore, reflectionWriter mcp.ReflectionWriter, v2Adapter *adapter.V2Adapter) *workerServerCache {
+func newWorkerServerCache(msgStore mcp.MessageStore, accountabilityWriter mcp.AccountabilityWriter, v2Adapter *adapter.V2Adapter) *workerServerCache {
 	return &workerServerCache{
-		msgStore:         msgStore,
-		reflectionWriter: reflectionWriter,
-		v2Adapter:        v2Adapter,
-		servers:          make(map[string]*mcp.WorkerServer),
+		msgStore:             msgStore,
+		accountabilityWriter: accountabilityWriter,
+		v2Adapter:            v2Adapter,
+		servers:              make(map[string]*mcp.WorkerServer),
 	}
 }
 
@@ -1206,9 +1206,9 @@ func (c *workerServerCache) getOrCreate(workerID string) *mcp.WorkerServer {
 	}
 
 	ws = mcp.NewWorkerServer(workerID, c.msgStore)
-	// Set the reflection writer so workers can save reflections to session storage
-	if c.reflectionWriter != nil {
-		ws.SetReflectionWriter(c.reflectionWriter)
+	// Set the accountability writer so workers can save accountability summaries to session storage
+	if c.accountabilityWriter != nil {
+		ws.SetAccountabilityWriter(c.accountabilityWriter)
 	}
 	// Set the v2 adapter so all handlers route through v2 orchestration
 	if c.v2Adapter != nil {
