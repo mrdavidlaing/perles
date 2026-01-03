@@ -578,6 +578,7 @@ func (i *Initializer) createWorkspace() error {
 		Extensions:      extensions,
 		MessageRepo:     msgRepo,
 		ExpectedWorkers: i.cfg.ExpectedWorkers,
+		SessionID:       sess.ID,
 	})
 	if err != nil {
 		_ = listenerResult.Listener.Close()

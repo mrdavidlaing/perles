@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	mcptypes "github.com/zjrosen/perles/internal/orchestration/mcp/types"
@@ -34,6 +35,8 @@ type V2Adapter struct {
 	queueRepo   repository.QueueRepository
 	msgRepo     repository.MessageRepository
 	timeout     time.Duration
+	sessionID   string // Session ID for accountability summary generation
+	workDir     string // Working directory for deriving session paths
 }
 
 // Option configures the V2Adapter.
@@ -71,6 +74,15 @@ func WithQueueRepository(repo repository.QueueRepository) Option {
 func WithMessageRepository(repo repository.MessageRepository) Option {
 	return func(a *V2Adapter) {
 		a.msgRepo = repo
+	}
+}
+
+// WithSessionID sets the session ID and work directory for accountability summary generation.
+// The session directory is derived as: workDir/.perles/sessions/sessionID
+func WithSessionID(sessionID, workDir string) Option {
+	return func(a *V2Adapter) {
+		a.sessionID = sessionID
+		a.workDir = workDir
 	}
 }
 
@@ -909,19 +921,25 @@ func (a *V2Adapter) HandleStopProcess(processID string, force bool, reason strin
 
 // generateAccountabilitySummaryArgs holds arguments for generate_accountability_summary tool.
 type generateAccountabilitySummaryArgs struct {
-	WorkerID   string `json:"worker_id"`
-	SessionDir string `json:"session_dir"`
+	WorkerID string `json:"worker_id"`
 }
 
 // HandleGenerateAccountabilitySummary handles the generate_accountability_summary MCP tool call.
 // It sends the AggregationWorkerPrompt to the specified worker.
+// The session directory is derived from the adapter's stored session ID.
 func (a *V2Adapter) HandleGenerateAccountabilitySummary(ctx context.Context, args json.RawMessage) (*mcptypes.ToolCallResult, error) {
 	var parsed generateAccountabilitySummaryArgs
 	if err := json.Unmarshal(args, &parsed); err != nil {
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	cmd := command.NewGenerateAccountabilitySummaryCommand(command.SourceMCPTool, parsed.WorkerID, parsed.SessionDir)
+	if a.sessionID == "" {
+		return nil, fmt.Errorf("session ID not configured on adapter")
+	}
+
+	sessionDir := filepath.Join(a.workDir, ".perles", "sessions", a.sessionID)
+
+	cmd := command.NewGenerateAccountabilitySummaryCommand(command.SourceMCPTool, parsed.WorkerID, sessionDir)
 	if err := cmd.Validate(); err != nil {
 		return nil, fmt.Errorf("generate_accountability_summary command validation failed: %w", err)
 	}

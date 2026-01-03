@@ -332,10 +332,9 @@ func (cs *CoordinatorServer) registerTools() {
 		InputSchema: &InputSchema{
 			Type: "object",
 			Properties: map[string]*PropertySchema{
-				"worker_id":   {Type: "string", Description: "The worker ID to assign the aggregation task (e.g., 'worker-1')"},
-				"session_dir": {Type: "string", Description: "Path to the session directory containing worker summaries (e.g., '.perles/sessions/<session-id>')"},
+				"worker_id": {Type: "string", Description: "The worker ID to assign the aggregation task (e.g., 'worker-1')"},
 			},
-			Required: []string{"worker_id", "session_dir"},
+			Required: []string{"worker_id"},
 		},
 	}, cs.handleGenerateAccountabilitySummary)
 }

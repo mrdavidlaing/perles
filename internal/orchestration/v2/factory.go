@@ -34,6 +34,8 @@ type InfrastructureConfig struct {
 	MessageRepo repository.MessageRepository
 	// ExpectedWorkers is the maximum number of workers to spawn.
 	ExpectedWorkers int
+	// SessionID is the session identifier for accountability summary generation.
+	SessionID string
 }
 
 // Validate checks that all required configuration is provided.
@@ -153,6 +155,7 @@ func NewInfrastructure(cfg InfrastructureConfig) (*Infrastructure, error) {
 		adapter.WithTaskRepository(taskRepo),
 		adapter.WithQueueRepository(queueRepo),
 		adapter.WithMessageRepository(cfg.MessageRepo),
+		adapter.WithSessionID(cfg.SessionID, cfg.WorkDir),
 	)
 
 	return &Infrastructure{
