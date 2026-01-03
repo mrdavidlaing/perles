@@ -300,12 +300,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		issue := m.board.SelectedIssue()
 		if issue != nil {
 			return m, func() tea.Msg {
-				return OpenEditMenuMsg{
-					IssueID:  issue.ID,
-					Labels:   issue.Labels,
-					Priority: issue.Priority,
-					Status:   issue.Status,
-				}
+				return OpenEditMenuMsg{Issue: *issue}
 			}
 		}
 		return m, nil

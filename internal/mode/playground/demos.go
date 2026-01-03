@@ -1618,12 +1618,15 @@ func (m *IssueeditorDemoModel) Update(msg tea.Msg) (DemoModel, tea.Cmd, string) 
 		case tea.KeyMsg:
 			if msg.String() == "enter" {
 				// Create issueeditor with sample values
-				editor := issueeditor.New(
-					"demo-123",
-					[]string{"bug", "enhancement", "documentation"},
-					beads.PriorityMedium,
-					beads.StatusOpen,
-				).SetSize(m.width, m.height)
+				issue := beads.Issue{
+					ID:        "demo-123",
+					TitleText: "Demo Issue Title",
+					Type:      beads.TypeTask,
+					Labels:    []string{"bug", "enhancement", "documentation"},
+					Priority:  beads.PriorityMedium,
+					Status:    beads.StatusOpen,
+				}
+				editor := issueeditor.New(issue).SetSize(m.width, m.height)
 				m.issueeditor = &editor
 				m.showingMenu = false
 				return m, editor.Init(), ""

@@ -10,14 +10,15 @@ import (
 	"github.com/zjrosen/perles/internal/beads"
 	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
+	"github.com/zjrosen/perles/internal/ui/shared/issuebadge"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Model holds the issue editor state.
 type Model struct {
-	issueID string
-	form    formmodal.Model
+	issue beads.Issue
+	form  formmodal.Model
 }
 
 // SaveMsg is sent when the user confirms issue changes.
@@ -31,33 +32,39 @@ type SaveMsg struct {
 // CancelMsg is sent when the user cancels the editor.
 type CancelMsg struct{}
 
-// New creates a new issue editor with the given initial values.
-func New(issueID string, labels []string, priority beads.Priority, status beads.Status) Model {
-	m := Model{issueID: issueID}
+// New creates a new issue editor with the given issue.
+func New(issue beads.Issue) Model {
+	m := Model{issue: issue}
 
 	cfg := formmodal.FormConfig{
 		Title: "Edit Issue",
+		HeaderContent: func(width int) string {
+			return issuebadge.Render(m.issue, issuebadge.Config{
+				MaxWidth:      width,
+				ShowSelection: false,
+			})
+		},
 		Fields: []formmodal.FieldConfig{
 			{
 				Key:     "priority",
 				Type:    formmodal.FieldTypeSelect,
 				Label:   "Priority",
 				Hint:    "Space to toggle",
-				Options: priorityListOptions(priority),
+				Options: priorityListOptions(issue.Priority),
 			},
 			{
 				Key:     "status",
 				Type:    formmodal.FieldTypeSelect,
 				Label:   "Status",
 				Hint:    "Space to toggle",
-				Options: statusListOptions(status),
+				Options: statusListOptions(issue.Status),
 			},
 			{
 				Key:              "labels",
 				Type:             formmodal.FieldTypeEditableList,
 				Label:            "Labels",
 				Hint:             "Space to toggle",
-				Options:          labelsListOptions(labels),
+				Options:          labelsListOptions(issue.Labels),
 				InputLabel:       "Add Label",
 				InputHint:        "Enter to add",
 				InputPlaceholder: "Enter label name...",
@@ -67,7 +74,7 @@ func New(issueID string, labels []string, priority beads.Priority, status beads.
 		MinWidth:    52,
 		OnSubmit: func(values map[string]any) tea.Msg {
 			return SaveMsg{
-				IssueID:  m.issueID,
+				IssueID:  m.issue.ID,
 				Priority: parsePriority(values["priority"].(string)),
 				Status:   beads.Status(values["status"].(string)),
 				Labels:   values["labels"].([]string),

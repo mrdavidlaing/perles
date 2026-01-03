@@ -715,7 +715,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m.openDeleteConfirm(msg)
 
 	case details.OpenEditMenuMsg:
-		m.issueEditor = issueeditor.New(msg.IssueID, msg.Labels, msg.Priority, msg.Status).
+		m.issueEditor = issueeditor.New(msg.Issue).
 			SetSize(m.width, m.height)
 		m.view = ViewEditIssue
 		return m, m.issueEditor.Init()
@@ -1207,12 +1207,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			issue := m.getSelectedIssue()
 			if issue != nil {
 				return m, func() tea.Msg {
-					return details.OpenEditMenuMsg{
-						IssueID:  issue.ID,
-						Labels:   issue.Labels,
-						Priority: issue.Priority,
-						Status:   issue.Status,
-					}
+					return details.OpenEditMenuMsg{Issue: *issue}
 				}
 			}
 			return m, nil

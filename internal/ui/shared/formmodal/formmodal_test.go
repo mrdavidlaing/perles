@@ -2589,3 +2589,106 @@ func TestGolden_ToggleFieldFocused_SecondSelected(t *testing.T) {
 
 	compareGolden(t, "toggle_field_second_selected", m.View())
 }
+
+// --- HeaderContent Tests ---
+
+func TestHeaderContent_NilCallback_NoHeaderSection(t *testing.T) {
+	// Test that when HeaderContent is nil (the default), no header section appears
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{Key: "name", Type: FieldTypeText, Label: "Name"},
+		},
+		HeaderContent: nil, // explicitly nil
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	view := m.View()
+	// The view should contain "Name" (the field label) but no header content
+	// Since HeaderContent is nil, there should be no extra content between
+	// the title border and the first field
+	require.Contains(t, view, "Name")
+	// Verify the config was stored correctly
+	require.Nil(t, m.config.HeaderContent)
+}
+
+func TestHeaderContent_EmptyStringReturn_NoHeaderSection(t *testing.T) {
+	// Test that when HeaderContent returns an empty string, no header section appears
+	callCount := 0
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{Key: "name", Type: FieldTypeText, Label: "Name"},
+		},
+		HeaderContent: func(width int) string {
+			callCount++
+			return "" // return empty string
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	view := m.View()
+	// The view should contain "Name" (the field label)
+	require.Contains(t, view, "Name")
+	// Verify the callback is stored (not nil)
+	require.NotNil(t, m.config.HeaderContent)
+	// The callback is called during View(), but empty string produces no header
+	require.Greater(t, callCount, 0, "HeaderContent callback should be called during View()")
+}
+
+func TestHeaderContent_ReceivesCorrectContentWidth(t *testing.T) {
+	// Test that HeaderContent callback receives correct contentWidth (minWidth - 2)
+	var receivedWidth int
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{Key: "name", Type: FieldTypeText, Label: "Name"},
+		},
+		MinWidth: 50, // contentWidth should be 50 - 2 = 48
+		HeaderContent: func(width int) string {
+			receivedWidth = width
+			return "Header"
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	_ = m.View()
+
+	// contentWidth = MinWidth - 2 (for modal border)
+	expectedWidth := 50 - 2
+	require.Equal(t, expectedWidth, receivedWidth, "HeaderContent should receive contentWidth (MinWidth - 2)")
+}
+
+func TestGolden_WithHeaderContent(t *testing.T) {
+	cfg := FormConfig{
+		Title: "Edit Issue",
+		Fields: []FieldConfig{
+			{Key: "priority", Type: FieldTypeText, Label: "Priority"},
+		},
+		SubmitLabel: "Save",
+		MinWidth:    50,
+		HeaderContent: func(width int) string {
+			return "[F][P1] bd-123 Sample issue title"
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	compareGolden(t, "with_header_content", m.View())
+}
+
+func TestGolden_HeaderContentEmpty(t *testing.T) {
+	cfg := FormConfig{
+		Title: "Edit Issue",
+		Fields: []FieldConfig{
+			{Key: "priority", Type: FieldTypeText, Label: "Priority"},
+		},
+		SubmitLabel: "Save",
+		MinWidth:    50,
+		HeaderContent: func(width int) string {
+			return "" // empty string should produce no header section
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	compareGolden(t, "header_content_empty", m.View())
+}

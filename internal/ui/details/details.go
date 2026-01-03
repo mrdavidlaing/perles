@@ -50,10 +50,7 @@ type NavigateToDependencyMsg struct {
 
 // OpenEditMenuMsg requests opening the edit menu.
 type OpenEditMenuMsg struct {
-	IssueID  string
-	Labels   []string
-	Priority beads.Priority
-	Status   beads.Status
+	Issue beads.Issue
 }
 
 // FocusPane represents which pane has focus in the details view.
@@ -261,12 +258,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case key.Matches(msg, keys.Component.EditAction):
 			// Open edit menu
 			return m, func() tea.Msg {
-				return OpenEditMenuMsg{
-					IssueID:  m.issue.ID,
-					Labels:   m.issue.Labels,
-					Priority: m.issue.Priority,
-					Status:   m.issue.Status,
-				}
+				return OpenEditMenuMsg{Issue: m.issue}
 			}
 		}
 	}

@@ -184,7 +184,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 
 	case OpenEditMenuMsg:
-		m.issueEditor = issueeditor.New(msg.IssueID, msg.Labels, msg.Priority, msg.Status).
+		m.issueEditor = issueeditor.New(msg.Issue).
 			SetSize(m.width, m.height)
 		m.view = ViewEditIssue
 		return m, m.issueEditor.Init()
@@ -638,10 +638,7 @@ type SwitchToOrchestrationMsg struct{}
 
 // OpenEditMenuMsg requests opening the issue editor modal.
 type OpenEditMenuMsg struct {
-	IssueID  string
-	Labels   []string
-	Priority beads.Priority
-	Status   beads.Status
+	Issue beads.Issue
 }
 
 type errMsg struct {

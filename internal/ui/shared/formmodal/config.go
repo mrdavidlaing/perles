@@ -226,4 +226,20 @@ type FormConfig struct {
 	// If nil, formmodal produces CancelMsg{}.
 	// Example: func() tea.Msg { return MyCancelMsg{} }
 	OnCancel func() tea.Msg
+
+	// HeaderContent renders optional display-only content between the title
+	// separator and the first form field.
+	//
+	// Called with contentWidth (modal width minus borders/padding) for proper
+	// layout. If nil, no header is rendered. Return an empty string to skip.
+	//
+	// IMPORTANT: Header content must be display-only. Interactive elements
+	// are not supported and will not participate in focus navigation.
+	//
+	// Example:
+	//
+	//	HeaderContent: func(width int) string {
+	//	    return issuebadge.Render(issue, issuebadge.Config{MaxWidth: width})
+	//	}
+	HeaderContent func(width int) string
 }

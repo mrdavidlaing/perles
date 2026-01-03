@@ -684,10 +684,10 @@ func TestTreeSubMode_EditKey_EmitsOpenEditMenuMsg(t *testing.T) {
 	require.True(t, ok, "expected OpenEditMenuMsg, got %T", msg)
 
 	// Verify the message contains correct issue data from tree selection
-	require.Equal(t, selectedIssue.ID, editMsg.IssueID, "issue ID should match selected tree node")
-	require.Equal(t, selectedIssue.Labels, editMsg.Labels, "labels should match")
-	require.Equal(t, selectedIssue.Priority, editMsg.Priority, "priority should match")
-	require.Equal(t, selectedIssue.Status, editMsg.Status, "status should match")
+	require.Equal(t, selectedIssue.ID, editMsg.Issue.ID, "issue ID should match selected tree node")
+	require.Equal(t, selectedIssue.Labels, editMsg.Issue.Labels, "labels should match")
+	require.Equal(t, selectedIssue.Priority, editMsg.Issue.Priority, "priority should match")
+	require.Equal(t, selectedIssue.Status, editMsg.Issue.Status, "status should match")
 }
 
 func TestTreeSubMode_EditKey_NavigatedChild_EmitsCorrectIssue(t *testing.T) {
@@ -712,7 +712,7 @@ func TestTreeSubMode_EditKey_NavigatedChild_EmitsCorrectIssue(t *testing.T) {
 	require.True(t, ok, "expected OpenEditMenuMsg, got %T", msg)
 
 	// Should edit the child, not the root
-	require.Equal(t, "child-1", editMsg.IssueID, "should edit the navigated-to child")
+	require.Equal(t, "child-1", editMsg.Issue.ID, "should edit the navigated-to child")
 }
 
 func TestTreeSubMode_EditKey_TreeLoading_NoOp(t *testing.T) {

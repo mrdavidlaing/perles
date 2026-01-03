@@ -387,7 +387,7 @@ func TestKanban_CtrlE_BoardView_EmitsOpenEditMenuMsg(t *testing.T) {
 	// Verify it's an OpenEditMenuMsg
 	editMsg, ok := result.(OpenEditMenuMsg)
 	require.True(t, ok, "expected OpenEditMenuMsg, got %T", result)
-	require.Equal(t, "test-123", editMsg.IssueID, "expected IssueID to match selected issue")
+	require.Equal(t, "test-123", editMsg.Issue.ID, "expected IssueID to match selected issue")
 }
 
 func TestKanban_CtrlE_EmptyBoard_NoOp(t *testing.T) {
@@ -465,10 +465,10 @@ func TestKanban_CtrlE_MessageContainsIssueData(t *testing.T) {
 	// Verify message contains all correct issue data
 	editMsg, ok := result.(OpenEditMenuMsg)
 	require.True(t, ok, "expected OpenEditMenuMsg, got %T", result)
-	require.Equal(t, "issue-456", editMsg.IssueID, "IssueID should match")
-	require.Equal(t, []string{"bug", "urgent", "p0"}, editMsg.Labels, "Labels should match")
-	require.Equal(t, beads.PriorityHigh, editMsg.Priority, "Priority should match")
-	require.Equal(t, beads.StatusInProgress, editMsg.Status, "Status should match")
+	require.Equal(t, "issue-456", editMsg.Issue.ID, "IssueID should match")
+	require.Equal(t, []string{"bug", "urgent", "p0"}, editMsg.Issue.Labels, "Labels should match")
+	require.Equal(t, beads.PriorityHigh, editMsg.Issue.Priority, "Priority should match")
+	require.Equal(t, beads.StatusInProgress, editMsg.Issue.Status, "Status should match")
 }
 
 func TestKanban_CtrlE_SaveMsg_ReturnsToBoardView(t *testing.T) {

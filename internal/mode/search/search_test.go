@@ -1126,10 +1126,10 @@ func TestSearch_EditKey_ListSubMode_EmitsOpenEditMenuMsg(t *testing.T) {
 	require.True(t, ok, "expected OpenEditMenuMsg, got %T", msg)
 
 	// Verify the message contains correct issue data
-	require.Equal(t, "test-1", editMsg.IssueID, "issue ID should match selected issue")
-	require.Equal(t, m.results[0].Labels, editMsg.Labels, "labels should match")
-	require.Equal(t, m.results[0].Priority, editMsg.Priority, "priority should match")
-	require.Equal(t, m.results[0].Status, editMsg.Status, "status should match")
+	require.Equal(t, "test-1", editMsg.Issue.ID, "issue ID should match selected issue")
+	require.Equal(t, m.results[0].Labels, editMsg.Issue.Labels, "labels should match")
+	require.Equal(t, m.results[0].Priority, editMsg.Issue.Priority, "priority should match")
+	require.Equal(t, m.results[0].Status, editMsg.Issue.Status, "status should match")
 }
 
 func TestSearch_EditKey_EmptyList_NoOp(t *testing.T) {
@@ -1161,7 +1161,7 @@ func TestSearch_EditKey_FocusDetails_DelegatesToDetails(t *testing.T) {
 	msg := cmd()
 	editMsg, ok := msg.(details.OpenEditMenuMsg)
 	require.True(t, ok, "expected OpenEditMenuMsg from details, got %T", msg)
-	require.Equal(t, m.results[0].ID, editMsg.IssueID, "should edit details issue")
+	require.Equal(t, m.results[0].ID, editMsg.Issue.ID, "should edit details issue")
 }
 
 func TestSearch_EditKey_FocusSearch_NoOp(t *testing.T) {
@@ -1291,12 +1291,7 @@ func TestSearch_IssueEditor_OpenEditMenuMsg_SetsViewEditIssue(t *testing.T) {
 	issue.Labels = []string{"bug", "urgent"}
 
 	// Process OpenEditMenuMsg (simulating 'ctrl+e' key press from details)
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
+	msg := details.OpenEditMenuMsg{Issue: issue}
 	m, _ = m.Update(msg)
 
 	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
@@ -1308,12 +1303,7 @@ func TestSearch_IssueEditor_ViewEditIssue_RendersIssueEditorOverlay(t *testing.T
 	issue.Labels = []string{"feature"}
 
 	// Open issue editor via OpenEditMenuMsg
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
+	msg := details.OpenEditMenuMsg{Issue: issue}
 	m, _ = m.Update(msg)
 
 	// Render should not panic and should contain "Edit Issue"
@@ -1386,12 +1376,7 @@ func TestSearch_IssueEditor_ReceivesCorrectInitialValuesFromOpenEditMenuMsg(t *t
 	m.results[0] = *issue
 
 	// Open issue editor via OpenEditMenuMsg
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
+	msg := details.OpenEditMenuMsg{Issue: *issue}
 	m, _ = m.Update(msg)
 
 	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
@@ -1406,12 +1391,7 @@ func TestSearch_IssueEditor_CtrlC_ClosesOverlay(t *testing.T) {
 	issue := m.results[0]
 
 	// Open issue editor
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
+	msg := details.OpenEditMenuMsg{Issue: issue}
 	m, _ = m.Update(msg)
 	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
 
@@ -1426,12 +1406,7 @@ func TestSearch_IssueEditor_KeyDelegation(t *testing.T) {
 	issue := m.results[0]
 
 	// Open issue editor
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
+	msg := details.OpenEditMenuMsg{Issue: issue}
 	m, _ = m.Update(msg)
 	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
 

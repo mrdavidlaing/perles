@@ -10,11 +10,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testIssue creates a beads.Issue for testing with the given parameters.
+func testIssue(id string, labels []string, priority beads.Priority, status beads.Status) beads.Issue {
+	return beads.Issue{
+		ID:        id,
+		TitleText: "Test Issue Title",
+		Type:      beads.TypeTask,
+		Labels:    labels,
+		Priority:  priority,
+		Status:    status,
+	}
+}
+
 func TestNew_InitializesFormModalWithCorrectFields(t *testing.T) {
 	labels := []string{"bug", "feature"}
-	m := New("test-123", labels, beads.PriorityHigh, beads.StatusOpen)
+	issue := testIssue("test-123", labels, beads.PriorityHigh, beads.StatusOpen)
+	m := New(issue)
 
-	require.Equal(t, "test-123", m.issueID, "expected issueID to be set")
+	require.Equal(t, "test-123", m.issue.ID, "expected issue ID to be set")
 
 	// Verify the view contains all three sections
 	view := m.View()
@@ -140,7 +153,8 @@ func TestLabelsListOptions_EmptyLabels(t *testing.T) {
 }
 
 func TestSaveMsg_ContainsCorrectParsedValues(t *testing.T) {
-	m := New("test-123", []string{"existing"}, beads.PriorityHigh, beads.StatusInProgress)
+	issue := testIssue("test-123", []string{"existing"}, beads.PriorityHigh, beads.StatusInProgress)
+	m := New(issue)
 
 	// Navigate to submit button and press Enter
 	// Tab through Priority -> Status -> Labels -> Add Label input -> Submit button
@@ -163,7 +177,8 @@ func TestSaveMsg_ContainsCorrectParsedValues(t *testing.T) {
 }
 
 func TestCancelMsg_ProducedOnEsc(t *testing.T) {
-	m := New("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 
 	// Press Esc
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -197,7 +212,8 @@ func TestParsePriority(t *testing.T) {
 }
 
 func TestNew_EmptyLabels_ProducesValidConfig(t *testing.T) {
-	m := New("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 
 	// View should still render without errors
 	view := m.View()
@@ -209,7 +225,8 @@ func TestNew_EmptyLabels_ProducesValidConfig(t *testing.T) {
 
 func TestNew_LabelsWithSpaces(t *testing.T) {
 	labels := []string{"hello world", "multi word label"}
-	m := New("test-123", labels, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", labels, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 
 	view := m.View()
 	require.Contains(t, view, "hello world", "expected label with spaces")
@@ -217,13 +234,15 @@ func TestNew_LabelsWithSpaces(t *testing.T) {
 }
 
 func TestInit_ReturnsNil(t *testing.T) {
-	m := New("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 	cmd := m.Init()
 	require.Nil(t, cmd, "expected Init to return nil")
 }
 
 func TestSetSize_ReturnsNewModel(t *testing.T) {
-	m := New("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 
 	m = m.SetSize(120, 40)
 	// Verify it doesn't panic and returns a model
@@ -232,7 +251,8 @@ func TestSetSize_ReturnsNewModel(t *testing.T) {
 }
 
 func TestOverlay_RendersOverBackground(t *testing.T) {
-	m := New("test-123", []string{"bug"}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{"bug"}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 	m = m.SetSize(80, 24)
 
 	background := "This is the background content"
@@ -242,7 +262,8 @@ func TestOverlay_RendersOverBackground(t *testing.T) {
 }
 
 func TestView_ContainsAllPriorityOptions(t *testing.T) {
-	m := New("test-123", []string{}, beads.PriorityCritical, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityCritical, beads.StatusOpen)
+	m := New(issue)
 	view := m.View()
 
 	// All priority options should be visible
@@ -254,7 +275,8 @@ func TestView_ContainsAllPriorityOptions(t *testing.T) {
 }
 
 func TestView_ContainsAllStatusOptions(t *testing.T) {
-	m := New("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 	view := m.View()
 
 	// All status options should be visible
@@ -265,7 +287,8 @@ func TestView_ContainsAllStatusOptions(t *testing.T) {
 
 func TestSaveMsg_PriorityChange(t *testing.T) {
 	// Start with P0 (Critical)
-	m := New("test-123", []string{}, beads.PriorityCritical, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityCritical, beads.StatusOpen)
+	m := New(issue)
 
 	// Navigate down in priority list to P2 (Medium)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}) // P1
@@ -291,7 +314,8 @@ func TestSaveMsg_PriorityChange(t *testing.T) {
 
 func TestSaveMsg_StatusChange(t *testing.T) {
 	// Start with Open status
-	m := New("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 
 	// Tab to Status field
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -318,7 +342,8 @@ func TestSaveMsg_StatusChange(t *testing.T) {
 
 func TestSaveMsg_LabelsToggle(t *testing.T) {
 	labels := []string{"bug", "feature", "ui"}
-	m := New("test-123", labels, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", labels, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 
 	// Tab to Status, then Labels
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // Status
@@ -344,7 +369,8 @@ func TestSaveMsg_LabelsToggle(t *testing.T) {
 }
 
 func TestSaveMsg_AddNewLabel(t *testing.T) {
-	m := New("test-123", []string{"existing"}, beads.PriorityMedium, beads.StatusOpen)
+	issue := testIssue("test-123", []string{"existing"}, beads.PriorityMedium, beads.StatusOpen)
+	m := New(issue)
 
 	// Tab to Status, Labels, then Add Label input
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // Status
@@ -377,7 +403,8 @@ func TestSaveMsg_AddNewLabel(t *testing.T) {
 // Run with -update flag to update golden files: go test -update ./internal/ui/modals/issueeditor/...
 
 func TestIssueEditor_View_Golden(t *testing.T) {
-	m := New("test-123", []string{"bug", "feature"}, beads.PriorityHigh, beads.StatusOpen)
+	issue := testIssue("test-123", []string{"bug", "feature"}, beads.PriorityHigh, beads.StatusOpen)
+	m := New(issue)
 	m = m.SetSize(80, 30)
 	view := m.View()
 
@@ -385,7 +412,8 @@ func TestIssueEditor_View_Golden(t *testing.T) {
 }
 
 func TestIssueEditor_View_EmptyLabels_Golden(t *testing.T) {
-	m := New("test-456", []string{}, beads.PriorityMedium, beads.StatusInProgress)
+	issue := testIssue("test-456", []string{}, beads.PriorityMedium, beads.StatusInProgress)
+	m := New(issue)
 	m = m.SetSize(80, 30)
 	view := m.View()
 
@@ -394,7 +422,8 @@ func TestIssueEditor_View_EmptyLabels_Golden(t *testing.T) {
 
 func TestIssueEditor_View_ManyLabels_Golden(t *testing.T) {
 	labels := []string{"bug", "feature", "ui", "backend", "api", "database"}
-	m := New("test-789", labels, beads.PriorityCritical, beads.StatusClosed)
+	issue := testIssue("test-789", labels, beads.PriorityCritical, beads.StatusClosed)
+	m := New(issue)
 	m = m.SetSize(80, 30)
 	view := m.View()
 

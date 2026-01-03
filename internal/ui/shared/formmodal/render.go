@@ -34,6 +34,15 @@ func (m Model) View() string {
 	content.WriteString(titleBorder)
 	content.WriteString("\n\n")
 
+	// Render optional header content
+	if m.config.HeaderContent != nil {
+		headerView := m.config.HeaderContent(contentWidth)
+		if headerView != "" {
+			content.WriteString(contentPadding.Render(headerView))
+			content.WriteString("\n\n")
+		}
+	}
+
 	// Render each field
 	for i := range m.fields {
 		fieldView := m.renderField(i, contentWidth)
