@@ -255,6 +255,7 @@ var Component = struct {
 	Toggle     key.Binding // Toggle action (space)
 	ModeToggle key.Binding // Mode toggle (m)
 	Close      key.Binding // Close overlay (ctrl+x)
+	Save       key.Binding // Save action (ctrl+s)
 }{
 	Confirm: key.NewBinding(
 		key.WithKeys("enter"),
@@ -315,6 +316,10 @@ var Component = struct {
 	Close: key.NewBinding(
 		key.WithKeys("ctrl+x"),
 		key.WithHelp("ctrl+x", "close"),
+	),
+	Save: key.NewBinding(
+		key.WithKeys("ctrl+s"),
+		key.WithHelp("ctrl+s", "save"),
 	),
 }
 

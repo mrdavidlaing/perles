@@ -169,6 +169,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, func() tea.Msg { return CancelMsg{} }
 	}
 
+	// Handle Ctrl+S globally (save from any field)
+	if key.Matches(msg, keys.Component.Save) {
+		return m.submit()
+	}
+
 	// Dispatch to editable list handler if that field type is focused
 	if m.focusedIndex >= 0 && m.focusedIndex < len(m.fields) {
 		fs := &m.fields[m.focusedIndex]

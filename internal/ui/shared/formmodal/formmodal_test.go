@@ -2692,3 +2692,93 @@ func TestGolden_HeaderContentEmpty(t *testing.T) {
 
 	compareGolden(t, "header_content_empty", m.View())
 }
+
+// --- Ctrl+S Save Tests ---
+
+func TestKeyboard_CtrlS_SubmitsFromField(t *testing.T) {
+	cfg := FormConfig{
+		Title:  "Test Form",
+		Fields: []FieldConfig{{Key: "name", Type: FieldTypeText, Label: "Name", InitialValue: "test"}},
+	}
+	m := New(cfg)
+
+	// Focus is on field, not button
+	require.Equal(t, 0, m.focusedIndex)
+
+	// Ctrl+S should trigger submit
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.NotNil(t, cmd, "expected submit command")
+	msg := cmd()
+	submitMsg, ok := msg.(SubmitMsg)
+	require.True(t, ok, "expected SubmitMsg, got %T", msg)
+	require.Equal(t, "test", submitMsg.Values["name"])
+}
+
+func TestKeyboard_CtrlS_SubmitsFromButton(t *testing.T) {
+	cfg := FormConfig{
+		Title:  "Test Form",
+		Fields: []FieldConfig{{Key: "name", Type: FieldTypeText, Label: "Name", InitialValue: "test"}},
+	}
+	m := New(cfg)
+
+	// Navigate to submit button
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	require.Equal(t, -1, m.focusedIndex, "expected buttons focus")
+	require.Equal(t, 0, m.focusedButton, "expected submit button")
+
+	// Ctrl+S should trigger submit
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.NotNil(t, cmd, "expected submit command")
+	msg := cmd()
+	submitMsg, ok := msg.(SubmitMsg)
+	require.True(t, ok, "expected SubmitMsg, got %T", msg)
+	require.Equal(t, "test", submitMsg.Values["name"])
+}
+
+func TestKeyboard_CtrlS_RunsValidation(t *testing.T) {
+	cfg := FormConfig{
+		Title:  "Test Form",
+		Fields: []FieldConfig{{Key: "name", Type: FieldTypeText, Label: "Name"}}, // No initial value = empty
+		Validate: func(values map[string]any) error {
+			name := values["name"].(string)
+			if strings.TrimSpace(name) == "" {
+				return errors.New("Name is required")
+			}
+			return nil
+		},
+	}
+	m := New(cfg)
+
+	// Focus is on field (empty name)
+	require.Equal(t, 0, m.focusedIndex)
+
+	// Ctrl+S should run validation and fail
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	require.Nil(t, cmd, "expected nil command due to validation error")
+	require.Equal(t, "Name is required", m.validationError)
+}
+
+func TestKeyboard_CtrlS_NotInColorPicker(t *testing.T) {
+	cfg := FormConfig{
+		Title:  "Test Form",
+		Fields: []FieldConfig{{Key: "color", Type: FieldTypeColor, Label: "Color", InitialColor: "#73F59F"}},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	// Open colorpicker
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.True(t, m.showColorPicker, "expected colorpicker to be open")
+
+	// Ctrl+S should be forwarded to colorpicker, not trigger submit
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+
+	// Should NOT have triggered SubmitMsg - colorpicker intercepts
+	if cmd != nil {
+		msg := cmd()
+		_, isSubmit := msg.(SubmitMsg)
+		require.False(t, isSubmit, "Ctrl+S should not submit when colorpicker is open")
+	}
+
+	// Colorpicker should still be open
+	require.True(t, m.showColorPicker, "colorpicker should still be open after Ctrl+S")
+}

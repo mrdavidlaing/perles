@@ -32,6 +32,7 @@
 //	Tab, Ctrl+N      - Next field/button
 //	Shift+Tab, Ctrl+P - Previous field/button
 //	Enter            - Confirm (submit on button, open picker on color)
+//	Ctrl+S           - Save form (from any field)
 //	Esc              - Cancel modal
 //	j/k              - Navigate within list fields
 //	Space            - Toggle selection in list fields
