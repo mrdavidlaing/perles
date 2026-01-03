@@ -243,4 +243,20 @@ type FormConfig struct {
 	//	    return issuebadge.Render(issue, issuebadge.Config{MaxWidth: width})
 	//	}
 	HeaderContent func(width int) string
+
+	// TitleContent renders optional display-only content in the title row,
+	// positioned to the right of the title text.
+	//
+	// Called with contentWidth (modal width minus borders/padding) for layout.
+	// If nil, only the title is rendered. Return an empty string to skip.
+	//
+	// IMPORTANT: Title content must be display-only. Interactive elements
+	// are not supported and will not participate in focus navigation.
+	//
+	// Example:
+	//
+	//	TitleContent: func(width int) string {
+	//	    return issuebadge.RenderBadge(issue)
+	//	}
+	TitleContent func(width int) string
 }

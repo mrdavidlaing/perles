@@ -2637,14 +2637,15 @@ func TestHeaderContent_EmptyStringReturn_NoHeaderSection(t *testing.T) {
 }
 
 func TestHeaderContent_ReceivesCorrectContentWidth(t *testing.T) {
-	// Test that HeaderContent callback receives correct contentWidth (minWidth - 2)
+	// Test that HeaderContent callback receives the inner content width
+	// accounting for content padding on each side
 	var receivedWidth int
 	cfg := FormConfig{
 		Title: "Test Form",
 		Fields: []FieldConfig{
 			{Key: "name", Type: FieldTypeText, Label: "Name"},
 		},
-		MinWidth: 50, // contentWidth should be 50 - 2 = 48
+		MinWidth: 50, // contentWidth = 50 - 2 = 48, headerWidth = 48 - 2 = 46
 		HeaderContent: func(width int) string {
 			receivedWidth = width
 			return "Header"
@@ -2654,9 +2655,9 @@ func TestHeaderContent_ReceivesCorrectContentWidth(t *testing.T) {
 
 	_ = m.View()
 
-	// contentWidth = MinWidth - 2 (for modal border)
-	expectedWidth := 50 - 2
-	require.Equal(t, expectedWidth, receivedWidth, "HeaderContent should receive contentWidth (MinWidth - 2)")
+	// headerWidth = MinWidth - 2 (modal border) - 2 (content padding)
+	expectedWidth := 50 - 2 - 2
+	require.Equal(t, expectedWidth, receivedWidth, "HeaderContent should receive inner content width")
 }
 
 func TestGolden_WithHeaderContent(t *testing.T) {
@@ -2781,4 +2782,105 @@ func TestKeyboard_CtrlS_NotInColorPicker(t *testing.T) {
 
 	// Colorpicker should still be open
 	require.True(t, m.showColorPicker, "colorpicker should still be open after Ctrl+S")
+}
+
+// --- TitleContent Tests ---
+
+func TestTitleContent_NilCallback_NoTitleSection(t *testing.T) {
+	// Test that when TitleContent is nil (the default), only the title appears
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{Key: "name", Type: FieldTypeText, Label: "Name"},
+		},
+		TitleContent: nil, // explicitly nil
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	view := m.View()
+	// The view should contain "Test Form" (the title)
+	require.Contains(t, view, "Test Form")
+	// Verify the config was stored correctly
+	require.Nil(t, m.config.TitleContent)
+}
+
+func TestTitleContent_EmptyStringReturn_NoTitleContent(t *testing.T) {
+	// Test that when TitleContent returns an empty string, only the title appears
+	callCount := 0
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{Key: "name", Type: FieldTypeText, Label: "Name"},
+		},
+		TitleContent: func(width int) string {
+			callCount++
+			return "" // return empty string
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	view := m.View()
+	// The view should contain "Test Form" (the title)
+	require.Contains(t, view, "Test Form")
+	// Verify the callback is stored (not nil)
+	require.NotNil(t, m.config.TitleContent)
+	// The callback is called during View()
+	require.Greater(t, callCount, 0, "TitleContent callback should be called during View()")
+}
+
+func TestTitleContent_ReceivesCorrectContentWidth(t *testing.T) {
+	// Test that TitleContent callback receives correct contentWidth (minWidth - 2)
+	var receivedWidth int
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{Key: "name", Type: FieldTypeText, Label: "Name"},
+		},
+		MinWidth: 50, // contentWidth should be 50 - 2 = 48
+		TitleContent: func(width int) string {
+			receivedWidth = width
+			return "[F][P1]"
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	_ = m.View()
+
+	// contentWidth = MinWidth - 2 (for modal border)
+	expectedWidth := 50 - 2
+	require.Equal(t, expectedWidth, receivedWidth, "TitleContent should receive contentWidth (MinWidth - 2)")
+}
+
+func TestGolden_WithTitleContent(t *testing.T) {
+	cfg := FormConfig{
+		Title: "Edit Issue",
+		Fields: []FieldConfig{
+			{Key: "priority", Type: FieldTypeText, Label: "Priority"},
+		},
+		SubmitLabel: "Save",
+		MinWidth:    50,
+		TitleContent: func(width int) string {
+			return "[F][P1][bd-123]"
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	compareGolden(t, "with_title_content", m.View())
+}
+
+func TestGolden_TitleContentEmpty(t *testing.T) {
+	cfg := FormConfig{
+		Title: "Edit Issue",
+		Fields: []FieldConfig{
+			{Key: "priority", Type: FieldTypeText, Label: "Priority"},
+		},
+		SubmitLabel: "Save",
+		MinWidth:    50,
+		TitleContent: func(width int) string {
+			return "" // empty string should produce title-only section
+		},
+	}
+	m := New(cfg).SetSize(80, 24)
+
+	compareGolden(t, "title_content_empty", m.View())
 }

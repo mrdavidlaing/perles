@@ -27,20 +27,46 @@ func (m Model) View() string {
 	// Content style adds horizontal padding
 	contentPadding := lipgloss.NewStyle().PaddingLeft(1)
 
+	// Build title row (with optional right-aligned content)
+	titleText := titleStyle.Render(m.config.Title)
+	var titleRow string
+	if m.config.TitleContent != nil {
+		titleContent := m.config.TitleContent(contentWidth)
+		if titleContent != "" {
+			titleWidth := lipgloss.Width(titleText)
+			contentWidth := lipgloss.Width(titleContent)
+			availableWidth := width - 2 // Account for padding
+			gap := max(availableWidth-titleWidth-contentWidth, 1)
+			titleRow = titleText + strings.Repeat(" ", gap) + titleContent
+		} else {
+			titleRow = titleText
+		}
+	} else {
+		titleRow = titleText
+	}
+
 	// Build content starting with title
 	var content strings.Builder
-	content.WriteString(contentPadding.Render(titleStyle.Render(m.config.Title)))
+	content.WriteString(contentPadding.Render(titleRow))
 	content.WriteString("\n")
 	content.WriteString(titleBorder)
-	content.WriteString("\n\n")
 
 	// Render optional header content
 	if m.config.HeaderContent != nil {
-		headerView := m.config.HeaderContent(contentWidth)
+		// Header content width accounts for content padding on each side
+		headerWidth := max(contentWidth-2, 10)
+		headerView := m.config.HeaderContent(headerWidth)
 		if headerView != "" {
-			content.WriteString(contentPadding.Render(headerView))
+			// Single newline before header, then header adds spacing after
+			content.WriteString("\n")
+			headerStyle := lipgloss.NewStyle().Width(headerWidth)
+			content.WriteString(contentPadding.Render(headerStyle.Render(headerView)))
+			content.WriteString("\n\n")
+		} else {
 			content.WriteString("\n\n")
 		}
+	} else {
+		content.WriteString("\n\n")
 	}
 
 	// Render each field

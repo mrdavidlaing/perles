@@ -38,11 +38,8 @@ func New(issue beads.Issue) Model {
 
 	cfg := formmodal.FormConfig{
 		Title: "Edit Issue",
-		HeaderContent: func(width int) string {
-			return issuebadge.Render(m.issue, issuebadge.Config{
-				MaxWidth:      width,
-				ShowSelection: false,
-			})
+		TitleContent: func(width int) string {
+			return issuebadge.RenderBadge(m.issue)
 		},
 		Fields: []formmodal.FieldConfig{
 			{

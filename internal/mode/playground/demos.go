@@ -777,6 +777,12 @@ func (m *FormmodalDemoModel) Update(msg tea.Msg) (DemoModel, tea.Cmd, string) {
 				// Show form modal with all field types
 				fm := formmodal.New(formmodal.FormConfig{
 					Title: "Create Item",
+					TitleContent: func(width int) string {
+						return "[F][P1][demo-123]"
+					},
+					HeaderContent: func(width int) string {
+						return "This is a header section demonstrating text wrapping. When the content exceeds the available width, it will automatically wrap to multiple lines while respecting the modal's layout constraints."
+					},
 					Fields: []formmodal.FieldConfig{
 						{
 							Key:         "name",
