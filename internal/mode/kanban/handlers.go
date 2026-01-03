@@ -11,7 +11,6 @@ import (
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/ui/coleditor"
-	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
 	"github.com/zjrosen/perles/internal/ui/shared/picker"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
@@ -22,8 +21,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.view {
 	case ViewBoard:
 		return m.handleBoardKey(msg)
-	case ViewDetails:
-		return m.handleDetailsKey(msg)
 	case ViewHelp:
 		switch {
 		case msg.Type == tea.KeyCtrlC:
@@ -40,16 +37,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.handleNewViewModalKey(msg)
 	case ViewDeleteViewModal:
 		return m.handleDeleteViewModalKey(msg)
-	case ViewDeleteConfirm:
-		return m.handleDeleteConfirmKey(msg)
 	case ViewViewMenu:
 		return m.handleViewMenuKey(msg)
 	case ViewDeleteColumnModal:
 		return m.handleDeleteColumnModalKey(msg)
 	case ViewRenameViewModal:
 		return m.handleRenameViewModalKey(msg)
-	case ViewDetailsEditMenu:
-		return m.handleDetailsEditMenuKey(msg)
 	case ViewEditIssue:
 		return m.handleEditIssueKey(msg)
 	}
@@ -307,7 +300,7 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		issue := m.board.SelectedIssue()
 		if issue != nil {
 			return m, func() tea.Msg {
-				return details.OpenEditMenuMsg{
+				return OpenEditMenuMsg{
 					IssueID:  issue.ID,
 					Labels:   issue.Labels,
 					Priority: issue.Priority,
@@ -321,41 +314,6 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	// Delegate navigation to board
 	var cmd tea.Cmd
 	m.board, cmd = m.board.Update(msg)
-	return m, cmd
-}
-
-func (m Model) handleDetailsKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch {
-	case msg.Type == tea.KeyCtrlC:
-		m.quitModal.Show()
-		return m, nil
-	case key.Matches(msg, keys.Common.Escape), key.Matches(msg, keys.Kanban.Escape):
-		m.view = ViewBoard
-		// Save cursor to return to the same issue after refresh
-		m.pendingCursor = &cursorState{
-			column:  m.board.FocusedColumn(),
-			issueID: m.details.IssueID(),
-		}
-		// Invalidate views and reload to show any changes made in details view
-		m.board = m.board.InvalidateViews()
-		return m, m.board.LoadAllColumns()
-	case key.Matches(msg, keys.Kanban.Yank):
-		// Yank (copy) the issue ID shown in the details view
-		issueID := m.details.IssueID()
-		if issueID == "" {
-			return m, nil
-		}
-		if err := m.services.Clipboard.Copy(issueID); err != nil {
-			m.err = err
-			m.errContext = "copying to clipboard"
-			return m, scheduleErrorClear()
-		}
-		return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Copied: " + issueID, Style: toaster.StyleSuccess} }
-	}
-
-	// Delegate to details view
-	var cmd tea.Cmd
-	m.details, cmd = m.details.Update(msg)
 	return m, cmd
 }
 
@@ -398,25 +356,10 @@ func (m Model) handleDeleteViewModalKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleDeleteConfirmKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlC {
-		// Close overlay instead of quitting
-		m.view = ViewDetails
-		m.selectedIssue = nil
-		m.deleteIssueIDs = nil
-		return m, nil
-	}
-
-	// Delegate to modal
-	var cmd tea.Cmd
-	m.modal, cmd = m.modal.Update(msg)
-	return m, cmd
-}
-
 func (m Model) handleEditIssueKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
 		// Close overlay instead of quitting
-		m.view = ViewDetails
+		m.view = ViewBoard
 		return m, nil
 	}
 
@@ -430,19 +373,6 @@ func (m Model) handleViewMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
 		// Close overlay instead of quitting
 		m.view = ViewBoard
-		return m, nil
-	}
-
-	// Delegate to picker
-	var cmd tea.Cmd
-	m.picker, cmd = m.picker.Update(msg)
-	return m, cmd
-}
-
-func (m Model) handleDetailsEditMenuKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlC {
-		// Close overlay instead of quitting
-		m.view = ViewDetails
 		return m, nil
 	}
 
@@ -507,13 +437,7 @@ func (m Model) handleStatusChanged(msg statusChangedMsg) (Model, tea.Cmd) {
 		m.err = msg.err
 		m.errContext = "updating status"
 		m.view = ViewBoard
-		m.selectedIssue = nil
 		return m, scheduleErrorClear()
-	}
-	// If editing from details view, stay there and update the displayed value
-	if m.view == ViewDetails {
-		m.details = m.details.UpdateStatus(msg.status)
-		return m, nil
 	}
 	m.view = ViewBoard
 	// Save cursor to follow the issue after status change
@@ -521,7 +445,6 @@ func (m Model) handleStatusChanged(msg statusChangedMsg) (Model, tea.Cmd) {
 		column:  m.board.FocusedColumn(),
 		issueID: msg.issueID,
 	}
-	m.selectedIssue = nil
 	// Invalidate other views so they reload when switched to
 	m.board = m.board.InvalidateViews()
 	return m, m.board.LoadAllColumns()
@@ -532,14 +455,8 @@ func (m Model) handlePriorityChanged(msg priorityChangedMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
 		m.err = msg.err
 		m.errContext = "changing priority"
-		m.view = ViewDetails
-		m.selectedIssue = nil
+		m.view = ViewBoard
 		return m, scheduleErrorClear()
-	}
-	// If editing from details view, stay there and update the displayed value
-	if m.view == ViewDetails {
-		m.details = m.details.UpdatePriority(msg.priority)
-		return m, nil
 	}
 	m.view = ViewBoard
 	// Save cursor to stay on the same issue after priority change
@@ -547,30 +464,9 @@ func (m Model) handlePriorityChanged(msg priorityChangedMsg) (Model, tea.Cmd) {
 		column:  m.board.FocusedColumn(),
 		issueID: msg.issueID,
 	}
-	m.selectedIssue = nil
 	// Invalidate other views so they reload when switched to
 	m.board = m.board.InvalidateViews()
 	return m, m.board.LoadAllColumns()
-}
-
-// handleIssueDeleted processes issue deletion results.
-func (m Model) handleIssueDeleted(msg issueDeletedMsg) (Model, tea.Cmd) {
-	if msg.err != nil {
-		m.err = msg.err
-		m.errContext = "deleting issue"
-		m.view = ViewBoard
-		m.selectedIssue = nil
-		return m, scheduleErrorClear()
-	}
-	// Return to board, refresh to remove deleted issue
-	m.view = ViewBoard
-	m.selectedIssue = nil
-	m.loading = true
-	m.board = m.board.InvalidateViews()
-	return m, tea.Batch(
-		m.board.LoadAllColumns(),
-		func() tea.Msg { return mode.ShowToastMsg{Message: "Issue deleted", Style: toaster.StyleSuccess} },
-	)
 }
 
 // handleLabelsChanged processes label change results.
@@ -580,8 +476,6 @@ func (m Model) handleLabelsChanged(msg labelsChangedMsg) (Model, tea.Cmd) {
 		m.errContext = "updating labels"
 		return m, scheduleErrorClear()
 	}
-	// Update details view to show new labels
-	m.details = m.details.UpdateLabels(msg.labels)
 	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Labels updated", Style: toaster.StyleSuccess} }
 }
 
@@ -748,17 +642,6 @@ func (m Model) handleModalSubmit(msg modal.SubmitMsg) (Model, tea.Cmd) {
 	if m.view == ViewRenameViewModal {
 		return m.renameCurrentView(msg.Values["name"])
 	}
-	if m.view == ViewDeleteConfirm {
-		if m.selectedIssue != nil {
-			issueIDs := m.deleteIssueIDs
-			m.selectedIssue = nil
-			m.deleteIssueIDs = nil
-			return m, deleteIssueCmd(issueIDs)
-		}
-		m.view = ViewBoard
-		m.deleteIssueIDs = nil
-		return m, nil
-	}
 	// Route to column editor for delete confirmation modal
 	if m.view == ViewColumnEditor {
 		var cmd tea.Cmd
@@ -773,12 +656,6 @@ func (m Model) handleModalCancel() (Model, tea.Cmd) {
 	if m.view == ViewNewViewModal || m.view == ViewDeleteViewModal || m.view == ViewDeleteColumnModal || m.view == ViewRenameViewModal {
 		m.view = ViewBoard
 		m.pendingDeleteColumn = -1
-		return m, nil
-	}
-	if m.view == ViewDeleteConfirm {
-		m.view = ViewDetails
-		m.selectedIssue = nil
-		m.deleteIssueIDs = nil
 		return m, nil
 	}
 	// Route to column editor for delete confirmation modal

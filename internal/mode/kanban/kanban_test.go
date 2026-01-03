@@ -1,7 +1,6 @@
 package kanban
 
 import (
-	"errors"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,7 +13,6 @@ import (
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/ui/board"
-	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
 )
@@ -39,80 +37,6 @@ func createTestModel(t *testing.T) Model {
 		height:   40,
 		view:     ViewBoard,
 	}
-}
-
-func TestDeleteFlow_CancelReturnsToDetails(t *testing.T) {
-	m := createTestModel(t)
-
-	mockCommentLoader := mocks.NewMockBeadsClient(t)
-	mockCommentLoader.EXPECT().GetComments(mock.Anything).
-		Return([]beads.Comment{}, nil)
-
-	// Set up delete confirm view
-	issue := beads.Issue{
-		ID:        "test-123",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-	}
-	m.view = ViewDeleteConfirm
-	m.details = details.New(issue, m.services.Executor, mockCommentLoader).SetSize(100, 40)
-	m.selectedIssue = &issue
-
-	// Simulate modal cancel
-	m, _ = m.handleModalCancel()
-
-	require.Equal(t, ViewDetails, m.view, "expected ViewDetails after cancel")
-	require.Nil(t, m.selectedIssue, "expected selectedIssue to be cleared")
-}
-
-func TestDeleteFlow_SubmitTriggersDelete(t *testing.T) {
-	m := createTestModel(t)
-
-	// Set up delete confirm view with selected issue
-	issue := beads.Issue{
-		ID:        "test-123",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-	}
-	m.view = ViewDeleteConfirm
-	m.selectedIssue = &issue
-
-	// Simulate modal submit
-	m, cmd := m.handleModalSubmit(modal.SubmitMsg{})
-
-	// Should return a delete command
-	require.NotNil(t, cmd, "expected delete command")
-	require.Nil(t, m.selectedIssue, "expected selectedIssue to be cleared")
-}
-
-func TestDeleteFlow_IssueDeletedMsgReturnsToBoard(t *testing.T) {
-	m := createTestModel(t)
-
-	// Simulate receiving success message
-	msg := issueDeletedMsg{
-		issueID: "test-123",
-		err:     nil,
-	}
-	m, cmd := m.handleIssueDeleted(msg)
-
-	require.Equal(t, ViewBoard, m.view, "expected ViewBoard after successful delete")
-	// The command should include a ShowToastMsg emission (app now owns toaster)
-	require.NotNil(t, cmd, "expected command for toast message")
-}
-
-func TestDeleteFlow_IssueDeletedMsgWithErrorShowsError(t *testing.T) {
-	m := createTestModel(t)
-
-	// Simulate receiving error message
-	msg := issueDeletedMsg{
-		issueID: "test-123",
-		err:     errors.New("test error"),
-	}
-	m, _ = m.handleIssueDeleted(msg)
-
-	require.Equal(t, ViewBoard, m.view, "expected ViewBoard after error")
-	require.Error(t, m.err, "expected error to be set")
-	require.Equal(t, "deleting issue", m.errContext)
 }
 
 func TestCreateDeleteModal_RegularIssue(t *testing.T) {
@@ -172,62 +96,6 @@ func TestCreateDeleteModal_EpicWithChildren(t *testing.T) {
 	require.Contains(t, issueIDs, "task-1", "expected child task-1 in delete list")
 	require.Contains(t, issueIDs, "task-2", "expected child task-2 in delete list")
 	require.Contains(t, issueIDs, "task-3", "expected child task-3 in delete list")
-}
-
-func TestDeleteFlow_CascadeSubmit(t *testing.T) {
-	m := createTestModel(t)
-
-	// Set up cascade delete scenario
-	issue := beads.Issue{
-		ID:        "epic-1",
-		TitleText: "Epic With Children",
-		Type:      beads.TypeEpic,
-		Blocks:    []string{"task-1", "task-2"},
-	}
-	m.view = ViewDeleteConfirm
-	m.selectedIssue = &issue
-	m.deleteIssueIDs = []string{"epic-1", "task-1", "task-2"}
-
-	// Simulate modal submit
-	m, cmd := m.handleModalSubmit(modal.SubmitMsg{})
-
-	// Should return a delete command
-	require.NotNil(t, cmd, "expected delete command")
-	require.Nil(t, m.selectedIssue, "expected selectedIssue to be cleared")
-	require.Nil(t, m.deleteIssueIDs, "expected deleteIssueIDs to be cleared")
-}
-
-func TestDeleteFlow_CancelClearsDeleteState(t *testing.T) {
-	m := createTestModel(t)
-
-	issue := beads.Issue{
-		ID:        "epic-1",
-		TitleText: "Epic",
-		Type:      beads.TypeEpic,
-	}
-	m.view = ViewDeleteConfirm
-	m.selectedIssue = &issue
-	m.deleteIssueIDs = []string{"epic-1"}
-
-	// Simulate cancel
-	m, _ = m.handleModalCancel()
-
-	require.Nil(t, m.deleteIssueIDs, "expected deleteIssueIDs to be cleared on cancel")
-}
-
-func TestDeleteFlow_SubmitWithNoSelectedIssue(t *testing.T) {
-	m := createTestModel(t)
-
-	// Set up delete confirm view but NO selected issue
-	m.view = ViewDeleteConfirm
-	m.selectedIssue = nil
-
-	// Simulate modal submit
-	m, cmd := m.handleModalSubmit(modal.SubmitMsg{})
-
-	// Should return to board, not crash
-	require.Equal(t, ViewBoard, m.view, "expected ViewBoard when no issue selected")
-	require.Nil(t, cmd, "expected no command when no issue selected")
 }
 
 // =============================================================================
@@ -488,19 +356,6 @@ func TestKanban_QuitModalCancel_DismissesModal(t *testing.T) {
 	require.Nil(t, cmd, "expected no command")
 }
 
-func TestKanban_DetailsView_CtrlC_OpensQuitModal(t *testing.T) {
-	m := createTestModel(t)
-	m.view = ViewDetails
-
-	// Simulate Ctrl+C in details view
-	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
-	m, cmd := m.handleDetailsKey(msg)
-
-	// Should open quit modal
-	require.True(t, m.quitModal.IsVisible(), "expected quitModal to be visible in details view")
-	require.Nil(t, cmd, "expected no command")
-}
-
 func TestKanban_HelpView_CtrlC_OpensQuitModal(t *testing.T) {
 	m := createTestModel(t)
 	m.view = ViewHelp
@@ -512,244 +367,6 @@ func TestKanban_HelpView_CtrlC_OpensQuitModal(t *testing.T) {
 	// Should open quit modal
 	require.True(t, m.quitModal.IsVisible(), "expected quitModal to be visible in help view")
 	require.Nil(t, cmd, "expected no command")
-}
-
-// =============================================================================
-// Issue Editor Integration Tests
-// =============================================================================
-
-// createTestModelWithDetails creates a Model with details view set up.
-func createTestModelWithDetails(t *testing.T, issue beads.Issue) Model {
-	t.Helper()
-	cfg := config.Defaults()
-	clipboard := mocks.NewMockClipboard(t)
-	clipboard.EXPECT().Copy(mock.Anything).Return(nil).Maybe()
-
-	mockExecutor := mocks.NewMockBQLExecutor(t)
-	mockCommentLoader := mocks.NewMockBeadsClient(t)
-	mockCommentLoader.EXPECT().GetComments(mock.Anything).
-		Return([]beads.Comment{}, nil).Maybe()
-
-	services := mode.Services{
-		Config:    &cfg,
-		Clipboard: clipboard,
-		Executor:  mockExecutor,
-		Client:    mockCommentLoader,
-	}
-
-	m := Model{
-		services: services,
-		width:    100,
-		height:   40,
-		view:     ViewDetails,
-		details:  details.New(issue, mockExecutor, mockCommentLoader).SetSize(100, 40),
-	}
-
-	return m
-}
-
-func TestKanban_IssueEditor_OpenEditMenuMsg_SetsViewEditIssue(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityMedium,
-		Status:    beads.StatusOpen,
-		Labels:    []string{"bug", "urgent"},
-	}
-	m := createTestModelWithDetails(t, issue)
-
-	// Process OpenEditMenuMsg (simulating 'e' key press from details)
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
-	m, _ = m.Update(msg)
-
-	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
-}
-
-func TestKanban_IssueEditor_ViewEditIssue_RendersIssueEditorOverlay(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityHigh,
-		Status:    beads.StatusInProgress,
-		Labels:    []string{"feature"},
-	}
-	m := createTestModelWithDetails(t, issue)
-
-	// Open issue editor via OpenEditMenuMsg
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
-	m, _ = m.Update(msg)
-
-	// Render should not panic and should contain "Edit Issue"
-	view := m.View()
-	require.NotEmpty(t, view, "view should not be empty")
-	require.Contains(t, view, "Edit Issue", "view should contain modal title")
-}
-
-func TestKanban_IssueEditor_SaveMsg_ReturnsToViewDetails(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-	}
-	m := createTestModelWithDetails(t, issue)
-	// Simulate opening editor from details (set previousView before changing view)
-	m.issueEditorPreviousView = ViewDetails
-	m.view = ViewEditIssue
-
-	// Process SaveMsg
-	msg := issueeditor.SaveMsg{
-		IssueID:  "test-1",
-		Priority: beads.PriorityHigh,
-		Status:   beads.StatusInProgress,
-		Labels:   []string{"updated"},
-	}
-	m, cmd := m.Update(msg)
-
-	require.Equal(t, ViewDetails, m.view, "expected ViewDetails view after save")
-	require.NotNil(t, cmd, "expected commands for updating priority, status, labels")
-}
-
-func TestKanban_IssueEditor_SaveMsg_DispatchesAllThreeUpdateCommands(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-	}
-	m := createTestModelWithDetails(t, issue)
-	// Simulate opening editor from details (set previousView before changing view)
-	m.issueEditorPreviousView = ViewDetails
-	m.view = ViewEditIssue
-
-	// Process SaveMsg
-	msg := issueeditor.SaveMsg{
-		IssueID:  "test-1",
-		Priority: beads.PriorityCritical,
-		Status:   beads.StatusClosed,
-		Labels:   []string{"done"},
-	}
-	m, cmd := m.Update(msg)
-
-	require.NotNil(t, cmd, "expected batch command")
-
-	// The batch command should execute and produce multiple messages
-	// We can't easily test the batch contents, but we verify the command exists
-	// and the view state changed correctly
-	require.Equal(t, ViewDetails, m.view, "view should be ViewDetails")
-}
-
-func TestKanban_IssueEditor_CancelMsg_ReturnsToViewDetails(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-	}
-	m := createTestModelWithDetails(t, issue)
-	// Simulate opening editor from details (set previousView before changing view)
-	m.issueEditorPreviousView = ViewDetails
-	m.view = ViewEditIssue
-
-	// Process CancelMsg
-	msg := issueeditor.CancelMsg{}
-	m, cmd := m.Update(msg)
-
-	require.Equal(t, ViewDetails, m.view, "expected ViewDetails view after cancel")
-	require.Nil(t, cmd, "expected no command on cancel")
-}
-
-func TestKanban_IssueEditor_ReceivesCorrectInitialValuesFromOpenEditMenuMsg(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-custom",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityLow,
-		Status:    beads.StatusInProgress,
-		Labels:    []string{"alpha", "beta", "gamma"},
-	}
-	m := createTestModelWithDetails(t, issue)
-
-	// Open issue editor via OpenEditMenuMsg
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
-	m, _ = m.Update(msg)
-
-	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
-	// The issueEditor model is now set up with the correct values
-	// We can verify this by checking the view renders correctly
-	view := m.View()
-	require.Contains(t, view, "Edit Issue", "modal should be visible")
-}
-
-func TestKanban_IssueEditor_CtrlC_ClosesOverlay(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityMedium,
-		Status:    beads.StatusOpen,
-		Labels:    []string{"test"},
-	}
-	m := createTestModelWithDetails(t, issue)
-
-	// Open issue editor
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
-	m, _ = m.Update(msg)
-	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
-
-	// Press Ctrl+C to close
-	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
-
-	require.Equal(t, ViewDetails, m.view, "expected ViewDetails view after Ctrl+C")
-}
-
-func TestKanban_IssueEditor_KeyDelegation(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityMedium,
-		Status:    beads.StatusOpen,
-		Labels:    []string{"test"},
-	}
-	m := createTestModelWithDetails(t, issue)
-
-	// Open issue editor
-	msg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
-	m, _ = m.Update(msg)
-	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue view")
-
-	// Press 'j' - should be delegated to issue editor, not change focus
-	m, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-
-	// View should still be ViewEditIssue
-	require.Equal(t, ViewEditIssue, m.view, "view should still be ViewEditIssue after 'j' key")
-	// Command may or may not be nil depending on editor state
-	_ = cmd
 }
 
 // =============================================================================
@@ -767,8 +384,8 @@ func TestKanban_CtrlE_BoardView_EmitsOpenEditMenuMsg(t *testing.T) {
 	require.NotNil(t, cmd, "expected command from Ctrl+E key")
 	result := cmd()
 
-	// Verify it's a details.OpenEditMenuMsg
-	editMsg, ok := result.(details.OpenEditMenuMsg)
+	// Verify it's an OpenEditMenuMsg
+	editMsg, ok := result.(OpenEditMenuMsg)
 	require.True(t, ok, "expected OpenEditMenuMsg, got %T", result)
 	require.Equal(t, "test-123", editMsg.IssueID, "expected IssueID to match selected issue")
 }
@@ -846,7 +463,7 @@ func TestKanban_CtrlE_MessageContainsIssueData(t *testing.T) {
 	result := cmd()
 
 	// Verify message contains all correct issue data
-	editMsg, ok := result.(details.OpenEditMenuMsg)
+	editMsg, ok := result.(OpenEditMenuMsg)
 	require.True(t, ok, "expected OpenEditMenuMsg, got %T", result)
 	require.Equal(t, "issue-456", editMsg.IssueID, "IssueID should match")
 	require.Equal(t, []string{"bug", "urgent", "p0"}, editMsg.Labels, "Labels should match")
@@ -865,7 +482,7 @@ func TestKanban_CtrlE_SaveMsg_ReturnsToBoardView(t *testing.T) {
 
 	// Execute command to get OpenEditMenuMsg and process it
 	result := cmd()
-	editMsg, ok := result.(details.OpenEditMenuMsg)
+	editMsg, ok := result.(OpenEditMenuMsg)
 	require.True(t, ok, "expected OpenEditMenuMsg")
 
 	// Process OpenEditMenuMsg to open the editor
@@ -881,7 +498,7 @@ func TestKanban_CtrlE_SaveMsg_ReturnsToBoardView(t *testing.T) {
 	}
 	m, cmd = m.Update(saveMsg)
 
-	// Should return to board view, not details view
+	// Should return to board view
 	require.Equal(t, ViewBoard, m.view, "expected ViewBoard after save when opened from board")
 	require.NotNil(t, cmd, "expected commands for updating issue and refreshing board")
 }
@@ -897,7 +514,7 @@ func TestKanban_CtrlE_CancelMsg_ReturnsToBoardView(t *testing.T) {
 
 	// Execute command to get OpenEditMenuMsg and process it
 	result := cmd()
-	editMsg, ok := result.(details.OpenEditMenuMsg)
+	editMsg, ok := result.(OpenEditMenuMsg)
 	require.True(t, ok, "expected OpenEditMenuMsg")
 
 	// Process OpenEditMenuMsg to open the editor
@@ -908,72 +525,7 @@ func TestKanban_CtrlE_CancelMsg_ReturnsToBoardView(t *testing.T) {
 	cancelMsg := issueeditor.CancelMsg{}
 	m, cmd = m.Update(cancelMsg)
 
-	// Should return to board view, not details view
+	// Should return to board view
 	require.Equal(t, ViewBoard, m.view, "expected ViewBoard after cancel when opened from board")
 	require.Nil(t, cmd, "expected no command on cancel")
-}
-
-func TestKanban_IssueEditor_FromDetails_SaveMsg_ReturnsToDetailsView(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityMedium,
-		Status:    beads.StatusOpen,
-		Labels:    []string{"test"},
-	}
-	m := createTestModelWithDetails(t, issue)
-	require.Equal(t, ViewDetails, m.view, "precondition: should start in details view")
-
-	// Open issue editor via OpenEditMenuMsg (simulating 'e' from details)
-	openMsg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
-	m, _ = m.Update(openMsg)
-	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue after opening editor")
-
-	// Process SaveMsg
-	saveMsg := issueeditor.SaveMsg{
-		IssueID:  "test-1",
-		Priority: beads.PriorityHigh,
-		Status:   beads.StatusInProgress,
-		Labels:   []string{"updated"},
-	}
-	m, _ = m.Update(saveMsg)
-
-	// Should return to details view (original behavior for opening from details)
-	require.Equal(t, ViewDetails, m.view, "expected ViewDetails after save when opened from details")
-}
-
-func TestKanban_IssueEditor_FromDetails_CancelMsg_ReturnsToDetailsView(t *testing.T) {
-	issue := beads.Issue{
-		ID:        "test-1",
-		TitleText: "Test Issue",
-		Type:      beads.TypeTask,
-		Priority:  beads.PriorityMedium,
-		Status:    beads.StatusOpen,
-		Labels:    []string{"test"},
-	}
-	m := createTestModelWithDetails(t, issue)
-	require.Equal(t, ViewDetails, m.view, "precondition: should start in details view")
-
-	// Open issue editor via OpenEditMenuMsg (simulating 'e' from details)
-	openMsg := details.OpenEditMenuMsg{
-		IssueID:  issue.ID,
-		Labels:   issue.Labels,
-		Priority: issue.Priority,
-		Status:   issue.Status,
-	}
-	m, _ = m.Update(openMsg)
-	require.Equal(t, ViewEditIssue, m.view, "expected ViewEditIssue after opening editor")
-
-	// Process CancelMsg
-	cancelMsg := issueeditor.CancelMsg{}
-	m, _ = m.Update(cancelMsg)
-
-	// Should return to details view (original behavior for opening from details)
-	require.Equal(t, ViewDetails, m.view, "expected ViewDetails after cancel when opened from details")
 }

@@ -8,14 +8,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/zjrosen/perles/internal/beads"
-	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/mode"
-	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/ui/board"
 	"github.com/zjrosen/perles/internal/ui/coleditor"
-	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/modals/help"
 	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/colorpicker"
@@ -31,16 +28,13 @@ type ViewMode int
 
 const (
 	ViewBoard ViewMode = iota
-	ViewDetails
 	ViewHelp
 	ViewColumnEditor
 	ViewNewViewModal
 	ViewDeleteViewModal
-	ViewDeleteConfirm
 	ViewViewMenu
 	ViewDeleteColumnModal
 	ViewRenameViewModal
-	ViewDetailsEditMenu
 	ViewEditIssue // Unified issue editor modal
 )
 
@@ -55,7 +49,6 @@ type Model struct {
 	services mode.Services
 
 	board       board.Model
-	details     details.Model
 	help        help.Model
 	picker      picker.Model
 	colEditor   coleditor.Model
@@ -69,12 +62,8 @@ type Model struct {
 	err         error
 	errContext  string // Context for the error (e.g., "updating status")
 
-	// Currently selected issue for picker operations
-	selectedIssue *beads.Issue
-
 	// Delete operation state
-	deleteIssueIDs      []string // IDs to delete (includes descendants for epics)
-	pendingDeleteColumn int      // Index of column to delete, -1 if none
+	pendingDeleteColumn int // Index of column to delete, -1 if none
 
 	// Pending cursor restoration after refresh
 	pendingCursor *cursorState
@@ -85,9 +74,6 @@ type Model struct {
 
 	// UI visibility toggles
 	showStatusBar bool
-
-	// Track where the IssueEditor was opened from (ViewBoard or ViewDetails)
-	issueEditorPreviousView ViewMode
 }
 
 // New creates a new kanban mode controller.
@@ -140,20 +126,16 @@ func (m Model) SetSize(width, height int) Model {
 	m.board = m.board.SetSize(width, m.boardHeight())
 	m.help = m.help.SetSize(width, height)
 	m.quitModal.SetSize(width, height)
-	// Update details if we're viewing it (handles terminal resize while in details view)
-	if m.view == ViewDetails {
-		m.details = m.details.SetSize(width, height)
-	}
 	// Update column editor if we're viewing it
 	if m.view == ViewColumnEditor {
 		m.colEditor = m.colEditor.SetSize(width, height)
 	}
 	// Update modal if we're viewing it
-	if m.view == ViewNewViewModal || m.view == ViewDeleteViewModal || m.view == ViewDeleteConfirm || m.view == ViewDeleteColumnModal || m.view == ViewRenameViewModal {
+	if m.view == ViewNewViewModal || m.view == ViewDeleteViewModal || m.view == ViewDeleteColumnModal || m.view == ViewRenameViewModal {
 		m.modal.SetSize(width, height)
 	}
 	// Update picker if we're viewing a menu
-	if m.view == ViewViewMenu || m.view == ViewDetailsEditMenu {
+	if m.view == ViewViewMenu {
 		m.picker = m.picker.SetSize(width, height)
 	}
 	return m
@@ -196,79 +178,31 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case priorityChangedMsg:
 		return m.handlePriorityChanged(msg)
 
-	case issueDeletedMsg:
-		return m.handleIssueDeleted(msg)
-
 	case pickerCancelledMsg:
 		// Return to board view (used by view menu picker)
 		m.view = ViewBoard
 		return m, nil
 
-	case details.DeleteIssueMsg:
-		issue := m.getIssueByID(msg.IssueID)
-		if issue == nil {
-			return m, nil
-		}
-		m.modal, m.deleteIssueIDs = shared.CreateDeleteModal(issue, m.services.Executor)
-		m.modal.SetSize(m.width, m.height)
-		m.selectedIssue = issue
-		m.view = ViewDeleteConfirm
-		return m, m.modal.Init()
-
-	case details.NavigateToDependencyMsg:
-		issue := m.getIssueByID(msg.IssueID)
-		if issue == nil {
-			return m, nil
-		}
-		// Create new details view for the dependency (pass executor for deps, client for comments)
-		m.details = details.New(*issue, m.services.Executor, m.services.Client).
-			SetMarkdownStyle(m.services.Config.UI.MarkdownStyle).
-			SetSize(m.width, m.height)
-		return m, nil
-
-	case openDetailsMsg:
-		issue := m.getIssueByID(msg.issueID)
-		if issue == nil {
-			return m, nil
-		}
-		m.details = details.New(*issue, m.services.Executor, m.services.Client).
-			SetMarkdownStyle(m.services.Config.UI.MarkdownStyle).
-			SetSize(m.width, m.height)
-		m.view = ViewDetails
-		return m, nil
-
-	case details.OpenEditMenuMsg:
+	case OpenEditMenuMsg:
 		m.issueEditor = issueeditor.New(msg.IssueID, msg.Labels, msg.Priority, msg.Status).
 			SetSize(m.width, m.height)
-		// Track the current view to return to after save/cancel
-		// When opened via Ctrl+E from board, m.view is still ViewBoard
-		// When opened via 'e' from details, m.view is ViewDetails
-		m.issueEditorPreviousView = m.view
 		m.view = ViewEditIssue
 		return m, m.issueEditor.Init()
 
 	case issueeditor.SaveMsg:
-		m.view = m.issueEditorPreviousView
-		// If returning to board, refresh to show changes
-		if m.view == ViewBoard {
-			m.pendingCursor = m.saveCursor()
-			m.loading = true
-			m.board = m.board.InvalidateViews()
-			return m, tea.Batch(
-				updatePriorityCmd(msg.IssueID, msg.Priority),
-				updateStatusCmd(msg.IssueID, msg.Status),
-				setLabelsCmd(msg.IssueID, msg.Labels),
-				m.board.LoadAllColumns(),
-			)
-		}
+		m.view = ViewBoard
+		m.pendingCursor = m.saveCursor()
+		m.loading = true
+		m.board = m.board.InvalidateViews()
 		return m, tea.Batch(
 			updatePriorityCmd(msg.IssueID, msg.Priority),
 			updateStatusCmd(msg.IssueID, msg.Status),
 			setLabelsCmd(msg.IssueID, msg.Labels),
+			m.board.LoadAllColumns(),
 		)
 
 	case issueeditor.CancelMsg:
-		m.view = m.issueEditorPreviousView
+		m.view = ViewBoard
 		return m, nil
 
 	case labelsChangedMsg:
@@ -377,8 +311,6 @@ func (m Model) View() string {
 // renderCurrentView renders the current view without the quit modal overlay.
 func (m Model) renderCurrentView() string {
 	switch m.view {
-	case ViewDetails:
-		return m.details.View()
 	case ViewHelp:
 		// Render help overlay on top of board
 		bg := m.board.View()
@@ -396,22 +328,13 @@ func (m Model) renderCurrentView() string {
 			bg += "\n" + m.renderStatusBar()
 		}
 		return m.modal.Overlay(bg)
-	case ViewDeleteConfirm:
-		// Render modal overlay on top of details view
-		return m.modal.Overlay(m.details.View())
-	case ViewDetailsEditMenu:
-		// Render edit menu overlay on top of details view
-		return m.picker.Overlay(m.details.View())
 	case ViewEditIssue:
-		// Render issue editor overlay on top of the view it was opened from
-		if m.issueEditorPreviousView == ViewBoard {
-			bg := m.board.View()
-			if m.showStatusBar {
-				bg += "\n" + m.renderStatusBar()
-			}
-			return m.issueEditor.Overlay(bg)
+		// Render issue editor overlay on top of board
+		bg := m.board.View()
+		if m.showStatusBar {
+			bg += "\n" + m.renderStatusBar()
 		}
-		return m.issueEditor.Overlay(m.details.View())
+		return m.issueEditor.Overlay(bg)
 	case ViewViewMenu:
 		// Render view menu overlay on top of board
 		bg := m.board.View()
@@ -529,50 +452,6 @@ func (m Model) configPath() string {
 		return ".perles.yaml"
 	}
 	return m.services.ConfigPath
-}
-
-// findIssueByIDFromColumns searches loaded columns for an issue by ID.
-func (m Model) findIssueByIDFromColumns(id string) *beads.Issue {
-	for i := 0; i < m.board.ColCount(); i++ {
-		col := m.board.Column(i)
-		for _, issue := range col.Items() {
-			if issue.ID == id {
-				return &issue
-			}
-		}
-	}
-	return nil
-}
-
-// getIssueByID fetches an issue from the existing columns first.
-func (m Model) getIssueByID(id string) *beads.Issue {
-	issue := m.findIssueByIDFromColumns(id)
-	if issue != nil {
-		return issue
-	}
-
-	if m.services.Executor != nil {
-		query := bql.BuildIDQuery([]string{id})
-		issues, err := m.services.Executor.Execute(query)
-		if err == nil && len(issues) == 1 {
-			return &issues[0]
-		}
-	}
-
-	return nil
-}
-
-// OpenDetails opens the details view for an issue by ID.
-// Returns a command that fetches the issue if not already loaded.
-func (m Model) OpenDetails(issueID string) tea.Cmd {
-	return func() tea.Msg {
-		return openDetailsMsg{issueID: issueID}
-	}
-}
-
-// openDetailsMsg is produced when the details view should be opened for an issue.
-type openDetailsMsg struct {
-	issueID string
 }
 
 func (m Model) renderStatusBar() string {
@@ -757,6 +636,14 @@ type SwitchToSearchMsg struct {
 // SwitchToOrchestrationMsg requests switching to orchestration mode.
 type SwitchToOrchestrationMsg struct{}
 
+// OpenEditMenuMsg requests opening the issue editor modal.
+type OpenEditMenuMsg struct {
+	IssueID  string
+	Labels   []string
+	Priority beads.Priority
+	Status   beads.Status
+}
+
 type errMsg struct {
 	err     error
 	context string
@@ -776,11 +663,6 @@ type priorityChangedMsg struct {
 	issueID  string
 	priority beads.Priority
 	err      error
-}
-
-type issueDeletedMsg struct {
-	issueID string
-	err     error
 }
 
 type labelsChangedMsg struct {
@@ -814,16 +696,6 @@ func updatePriorityCmd(issueID string, priority beads.Priority) tea.Cmd {
 	return func() tea.Msg {
 		err := beads.UpdatePriority(issueID, priority)
 		return priorityChangedMsg{issueID, priority, err}
-	}
-}
-
-func deleteIssueCmd(issueIDs []string) tea.Cmd {
-	return func() tea.Msg {
-		if len(issueIDs) == 0 {
-			return issueDeletedMsg{err: nil}
-		}
-		err := beads.DeleteIssues(issueIDs)
-		return issueDeletedMsg{issueID: issueIDs[0], err: err}
 	}
 }
 
