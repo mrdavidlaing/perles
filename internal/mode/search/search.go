@@ -551,7 +551,7 @@ func (m Model) SetSize(width, height int) Model {
 	if m.tree != nil {
 		// Tree height accounts for: borders (2)
 		treeHeight := max(height-2, 1)
-		m.tree.SetSize(leftWidth-3, treeHeight) // -2 for border, -1 for left padding in renderTreeLeftPanel
+		m.tree.SetSize(leftWidth-2, treeHeight) // -2 for border
 	}
 
 	// Update quit modal
@@ -1644,7 +1644,7 @@ func (m Model) handleTreeLoaded(msg treeLoadedMsg) (Model, tea.Cmd) {
 	leftWidth := m.width / 2
 	// Tree height accounts for: borders (2)
 	treeHeight := max(m.height-2, 1)
-	m.tree.SetSize(leftWidth-3, treeHeight) // -2 for border, -1 for left padding in renderTreeLeftPanel
+	m.tree.SetSize(leftWidth-2, treeHeight) // -2 for border
 
 	// Restore cursor to previously selected issue if it exists in new tree
 	if previousSelectedID != "" {
@@ -1851,10 +1851,9 @@ func renderCompactProgress(closed, total int) string {
 
 // renderTreeLeftPanel renders the left panel with tree content (tree sub-mode).
 func (m Model) renderTreeLeftPanel(width int) string {
-	// Tree content with left padding for breathing room
 	var content string
 	if m.tree != nil {
-		content = lipgloss.NewStyle().PaddingLeft(1).Render(m.tree.View())
+		content = m.tree.View()
 	} else {
 		emptyStyle := lipgloss.NewStyle().
 			Foreground(styles.TextSecondaryColor).
