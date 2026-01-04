@@ -5,13 +5,17 @@ Perles is a terminal UI for [beads](https://github.com/steveyegge/beads) issue t
 <p align="center">
   <img src="./assets/search.png" width="1440" alt="search">
 </p>
-
+<p align="center">
+  <img src="./assets/issues-dependencies.png" width="1440" alt="board">
+</p>
 <p align="center">
   <img src="./assets/board.png" width="1440" alt="board">
 </p>
-
 <p align="center">
-  <img src="./assets/issues-dependencies.png" width="1440" alt="board">
+  <img src="./assets/edit-issue.png" width="1440" alt="board">
+</p>
+<p align="center">
+  <img src="./assets/delete-issue.png" width="1440" alt="board">
 </p>
 
 ## Requirements
@@ -90,11 +94,11 @@ perles
 
 ### Global Keybindings
 
-| Key | Action |
-|-----|--------|
-| `Ctrl+Space` | Switch between Kanban and Search modes |
-| `?` | Toggle help overlay |
-| `Ctrl+C` | Quit |
+| Key          | Action |
+|--------------|--------|
+| `ctrl+space` | Switch between Kanban and Search modes |
+| `?`          | Toggle help overlay |
+| `ctrl+c`     | Quit |
 
 ---
 
@@ -152,9 +156,10 @@ https://github.com/user-attachments/assets/8ce16144-15dd-4509-8cd9-aa8e07477b5d
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+J` / `Ctrl+N` | Next view |
-| `Ctrl+K` / `Ctrl+P` | Previous view |
-| `Ctrl+V` | View menu (Create/Delete/Rename) |
+| `ctrl+j` / `ctrl+n` | Next view |
+| `ctrl+k` / `ctrl+p` | Previous view |
+| `ctrl+v` | View menu (Create/Delete/Rename) |
+| `w`      | Toggle status bar          |
 
 #### Columns
 
@@ -163,26 +168,18 @@ https://github.com/user-attachments/assets/8ce16144-15dd-4509-8cd9-aa8e07477b5d
 | `a` | Add new column |
 | `e` | Edit current column |
 | `d` | Delete current column |
-| `Ctrl+H` | Move column left |
-| `Ctrl+L` | Move column right |
+| `ctrl+h` | Move column left |
+| `ctrl+l` | Move column right |
 | `/` | Open search with column's BQL query |
 
 #### Issues
 
-| Key | Action |
-|-----|--------|
-| `r` | Refresh issues |
-| `y` | Copy issue ID to clipboard |
-| `w` | Toggle status bar |
-
-### Details View
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+E` | Edit issue (labels, priority, status) |
-| `Ctrl+D` | Delete issue |
-| `j` / `k` | Scroll content |
-| `Esc` | Back to kanban board |
+| Key      | Action                     |
+|----------|----------------------------|
+| `y`      | Copy issue ID to clipboard |
+| `r`      | Refresh issues             |
+| `ctrl+e` | Edit issue                 |
+| `ctrl+d` | Delete issue               |
 
 ### Default Columns
 
@@ -238,7 +235,7 @@ https://github.com/user-attachments/assets/21085552-a62f-441e-bba7-0960c00f5029
 | `y` | Copy issue ID |
 | `s` | Change status |
 | `p` | Change priority |
-| `Ctrl+S` | Save search as column |
+| `ctrl+s` | Save search as column |
 | `Esc` | Exit to kanban mode |
 
 ---
@@ -612,7 +609,7 @@ PERLES_LOG=/tmp/perles.log perles --debug
 ### Features
 
 - **Log file**: All log output is written to `debug.log` (or custom path via `PERLES_LOG`)
-- **Log overlay**: Press `Ctrl+X` to view logs in-app without leaving the TUI
+- **Log overlay**: Press `ctrl+x` to view logs in-app without leaving the TUI
 - **Lifecycle logging**: Application startup and shutdown events are logged
 
 <p align="center">
