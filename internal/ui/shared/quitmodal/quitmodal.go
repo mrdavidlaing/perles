@@ -104,8 +104,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd, Result) {
 	// Handle key messages directly for immediate response
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch keyMsg.Type {
-		case tea.KeyCtrlC, tea.KeyEnter:
-			// Force-quit (Ctrl+C) or confirm (Enter) when modal visible
+		case tea.KeyCtrlC:
+			// Force-quit (Ctrl+C) when modal visible
 			m.visible = false
 			return m, nil, ResultQuit
 		case tea.KeyEscape:
@@ -113,6 +113,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd, Result) {
 			m.visible = false
 			return m, nil, ResultCancel
 		}
+		// Enter is delegated to inner modal to respect button focus
 	}
 
 	// Delegate to inner modal for other messages (navigation, etc.)

@@ -1045,13 +1045,19 @@ func TestSearch_CtrlC_QuitsWhenModalOpen(t *testing.T) {
 
 func TestSearch_Enter_QuitsWhenModalOpen(t *testing.T) {
 	m := createTestModel(t)
-	// First, open the quit modal
+	// First, open the quit modal (focus starts on Confirm button)
 	m.quitModal.Show()
 	require.True(t, m.quitModal.IsVisible(), "precondition: quitModal should be visible")
 
-	// Simulate Enter while modal is open
-	msg := tea.KeyMsg{Type: tea.KeyEnter}
-	m, cmd := m.Update(msg)
+	// Enter key delegates to inner modal which returns SubmitMsg command
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd, "Enter should produce a command from inner modal")
+
+	// Execute the command to get SubmitMsg
+	msg := cmd()
+
+	// Process the SubmitMsg - this triggers ResultQuit
+	m, cmd = m.Update(msg)
 
 	// Should clear modal and quit
 	require.False(t, m.quitModal.IsVisible(), "expected quitModal to be hidden")

@@ -270,17 +270,50 @@ func TestUpdate_EscapeReturnsResultCancel(t *testing.T) {
 	require.False(t, m.IsVisible(), "expected modal to be hidden after cancel")
 }
 
-func TestUpdate_EnterReturnsResultQuit(t *testing.T) {
+func TestUpdate_EnterOnConfirmButton_ReturnsResultQuit(t *testing.T) {
 	m := New(Config{
 		Title:   "Exit?",
 		Message: "Are you sure?",
 	})
 	m.Show()
 
-	// Enter key should return ResultQuit immediately
+	// Enter key delegates to inner modal which returns SubmitMsg command
+	// Modal starts with focus on Confirm button
 	m, cmd, result := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
-	require.Equal(t, ResultQuit, result, "expected ResultQuit on Enter")
-	require.Nil(t, cmd, "expected no command")
+	require.Equal(t, ResultNone, result, "first update returns command, not result")
+	require.NotNil(t, cmd, "expected command from inner modal")
+
+	// Execute the command to get the SubmitMsg
+	msg := cmd()
+
+	// Process the SubmitMsg
+	m, _, result = m.Update(msg)
+	require.Equal(t, ResultQuit, result, "expected ResultQuit on SubmitMsg")
 	require.False(t, m.IsVisible(), "expected modal to be hidden after confirm")
+}
+
+func TestUpdate_EnterOnCancelButton_ReturnsResultCancel(t *testing.T) {
+	m := New(Config{
+		Title:   "Exit?",
+		Message: "Are you sure?",
+	})
+	m.Show()
+
+	// Navigate to Cancel button (right arrow)
+	m, _, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+
+	// Enter on Cancel button should return CancelMsg command
+	m, cmd, result := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	require.Equal(t, ResultNone, result, "first update returns command, not result")
+	require.NotNil(t, cmd, "expected command from inner modal")
+
+	// Execute the command to get the CancelMsg
+	msg := cmd()
+
+	// Process the CancelMsg
+	m, _, result = m.Update(msg)
+	require.Equal(t, ResultCancel, result, "expected ResultCancel on CancelMsg")
+	require.False(t, m.IsVisible(), "expected modal to be hidden after cancel")
 }

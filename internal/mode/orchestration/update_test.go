@@ -1094,23 +1094,59 @@ func TestQuitConfirmation_ForceQuit_DoubleCtrlC(t *testing.T) {
 
 func TestQuitConfirmation_EnterConfirmsQuit(t *testing.T) {
 	// Test that Enter on the quit modal confirms quit (returns QuitMsg)
+	// when the Confirm button is focused (default)
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+
+	// Simulate quit modal being shown (focus starts on Confirm button)
+	m.quitModal.Show()
+
+	// Press Enter - inner modal returns SubmitMsg command
+	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd, "Enter should produce a command from inner modal")
+
+	// Execute the command to get SubmitMsg
+	msg := cmd()
+
+	// Process the SubmitMsg - this triggers ResultQuit
+	m, cmd = m.Update(msg)
+
+	// Modal should be hidden after confirmation
+	require.False(t, m.quitModal.IsVisible(), "quitModal should be hidden after confirm")
+
+	// Should produce QuitMsg via ResultQuit
+	require.NotNil(t, cmd, "should return a command from modal")
+	msg = cmd()
+	_, isQuitMsg := msg.(QuitMsg)
+	require.True(t, isQuitMsg, "Enter on Confirm should produce QuitMsg")
+}
+
+func TestQuitConfirmation_EnterOnCancelButton_DismissesModal(t *testing.T) {
+	// Test that Enter on the Cancel button dismisses the modal without quitting
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 
 	// Simulate quit modal being shown
 	m.quitModal.Show()
 
-	// Press Enter (should confirm quit via ResultQuit)
+	// Navigate to Cancel button (right arrow)
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+
+	// Press Enter - inner modal returns CancelMsg command
 	m, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd, "Enter should produce a command from inner modal")
 
-	// Modal should be hidden after confirmation
-	require.False(t, m.quitModal.IsVisible(), "quitModal should be hidden after Enter")
-
-	// Should produce QuitMsg via ResultQuit
-	require.NotNil(t, cmd, "should return a command from modal")
+	// Execute the command to get CancelMsg
 	msg := cmd()
-	_, isQuitMsg := msg.(QuitMsg)
-	require.True(t, isQuitMsg, "Enter should produce QuitMsg via confirmation")
+
+	// Process the CancelMsg - this triggers ResultCancel
+	m, cmd = m.Update(msg)
+
+	// Modal should be hidden after cancel
+	require.False(t, m.quitModal.IsVisible(), "quitModal should be hidden after cancel")
+
+	// Should NOT produce a quit command
+	require.Nil(t, cmd, "Enter on Cancel should not produce a command")
 }
 
 // === Quit Confirmation Test Suite ===

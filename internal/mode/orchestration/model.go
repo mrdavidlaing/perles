@@ -251,7 +251,7 @@ func New(cfg Config) Model {
 		workflowRegistry:      cfg.WorkflowRegistry,
 		quitModal: quitmodal.New(quitmodal.Config{
 			Title:   "Exit Orchestration Mode?",
-			Message: "Active workers will be stopped.\n\nPress Enter to exit or Esc to cancel.",
+			Message: "Active workers will be stopped.",
 		}),
 	}
 }
