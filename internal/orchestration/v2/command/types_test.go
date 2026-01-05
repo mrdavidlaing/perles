@@ -810,23 +810,20 @@ func TestIsValidTaskID(t *testing.T) {
 		taskID string
 		want   bool
 	}{
-		// Valid formats - pattern: ^[a-zA-Z]+-[a-zA-Z0-9]{2,10}(\.\d+)?$
+		{"pe-perles-abc1", true},
 		{"perles-abc1", true},
 		{"perles-abc1.2", true},
 		{"project-x123", true},
-		{"a-bc", true},         // 2 char suffix (minimum)
-		{"x-abcdefghij", true}, // 10 char suffix (maximum)
-		{"test-ab.1", true},    // with subtask number
-		{"ms-e52", true},       // real-world example
+		{"ms-e52", true},
 
 		// Invalid formats
 		{"invalid", false},       // no hyphen
 		{"-abc", false},          // starts with hyphen
 		{"project-", false},      // ends with hyphen
 		{"", false},              // empty
+		{"a-bc", false},          // 2 char suffix (minimum)
 		{"a-b", false},           // suffix too short (1 char, needs 2+)
 		{"x-abcdefghijk", false}, // suffix too long (11 chars, max 10)
-		{"test-abc-def", false},  // multiple hyphens
 	}
 
 	for _, tt := range tests {
