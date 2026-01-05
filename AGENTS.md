@@ -7,13 +7,15 @@ commands observed in this repository.
 ## Project Overview
 
 Perles is a terminal-based search and kanban board for [beads](https://github.com/steveyegge/beads)
-issue tracking, built in Go using the Bubble Tea TUI framework.
+issue tracking, built in Go using the Bubble Tea TUI framework. It includes a
+**multi-agent AI orchestration system** for coordinating AI-powered development workflows.
 
 **Requirements:**
 
 - Go 1.24+
 - A beads-enabled project (`.beads/` directory with `beads.db`)
 - golangci-lint (for linting)
+- mockery (for mock generation)
 
 ## Essential Commands
 
@@ -30,6 +32,8 @@ make clean          # Clean build artifacts
 ./perles -d         # Run with debug mode
 ./perles -c path    # Use specific config file
 ./perles -b path    # Specify beads directory
+./perles playground # Run the vimtextarea playground
+./perles workflows  # List available workflow templates
 ```
 
 ### Testing
@@ -41,10 +45,13 @@ make test-update    # Update golden test files for teatest snapshots
 
 # Update specific golden tests
 go test -update ./internal/mode/search/...
+go test -update ./internal/mode/orchestration/...
 go test -update ./internal/ui/board/...
+go test -update ./internal/ui/shared/vimtextarea/...
 
 # Run specific package tests
 go test ./internal/bql/...
+go test ./internal/orchestration/v2/...
 go test -v ./cmd/...
 ```
 
@@ -52,6 +59,8 @@ go test -v ./cmd/...
 
 ```bash
 make lint           # Run golangci-lint (configured in .golangci.yml)
+make mocks          # Generate mocks using mockery
+make mocks-clean    # Remove generated mocks
 go fmt ./...        # Format code (Go standard)
 ```
 
@@ -72,30 +81,55 @@ perles/
 ├── cmd/                    # CLI commands (cobra)
 │   ├── root.go            # Main command setup
 │   ├── init.go            # Init command
-│   └── themes.go          # Theme commands
+│   ├── themes.go          # Theme commands
+│   ├── workflows.go       # Workflow listing command
+│   └── playground.go      # Playground command
 ├── internal/              # Internal packages (not exported)
 │   ├── app/              # Root application model & orchestration
 │   ├── mode/             # Application modes with Controller interface
 │   │   ├── kanban/       # Kanban board mode
-│   │   └── search/       # Search mode
+│   │   ├── search/       # Search mode
+│   │   ├── orchestration/# AI orchestration mode (multi-agent TUI)
+│   │   ├── playground/   # VimTextarea testing playground
+│   │   └── shared/       # Cross-mode utilities (Clipboard, Clock)
 │   ├── beads/            # Database client and domain models
 │   ├── bql/              # Query language implementation
 │   │   ├── lexer.go      # Tokenization
 │   │   ├── parser.go     # AST building
 │   │   ├── executor.go   # Query execution
 │   │   └── validator.go  # Query validation
+│   ├── cachemanager/     # Generic caching infrastructure
+│   ├── git/              # Git executor for worktree operations
+│   ├── orchestration/    # AI orchestration system
+│   │   ├── client/       # Provider-agnostic headless AI client
+│   │   ├── amp/          # Amp CLI integration
+│   │   ├── claude/       # Claude Code CLI integration
+│   │   ├── codex/        # OpenAI Codex CLI integration
+│   │   ├── v2/           # V2 command processor & handlers
+│   │   ├── mcp/          # Model Context Protocol server
+│   │   ├── events/       # Process event types
+│   │   ├── workflow/     # Workflow template registry
+│   │   ├── session/      # Session tracking
+│   │   ├── metrics/      # Token usage tracking
+│   │   └── message/      # Inter-agent message log
+│   ├── pubsub/           # Generic pub/sub event broker
 │   ├── ui/               # UI components
 │   │   ├── board/        # Kanban board view
 │   │   ├── tree/         # Tree view for dependencies
 │   │   ├── details/      # Issue details panel
-│   │   ├── forms/        # Form components
+│   │   ├── coleditor/    # Column editor UI
+│   │   ├── commandpalette/ # Command palette for orchestration
 │   │   ├── modals/       # Modal dialogs
+│   │   ├── nobeads/      # Empty state when no .beads DB
+│   │   ├── outdated/     # Database version too old state
 │   │   ├── shared/       # Reusable UI components
+│   │   │   └── vimtextarea/ # Vim-like textarea widget
 │   │   └── styles/       # Theme system
 │   ├── config/           # Configuration management
 │   ├── log/              # Debug logging
 │   ├── watcher/          # File system watching
 │   ├── keys/             # Keyboard shortcut definitions
+│   ├── mocks/            # Generated mockery mocks
 │   └── testutil/         # Test utilities and builders
 ├── examples/             # Example configurations
 │   └── themes/          # Theme examples
@@ -103,6 +137,7 @@ perles/
 ├── main.go              # Entry point
 ├── Makefile             # Build automation
 ├── go.mod               # Go module dependencies
+├── .mockery.yaml        # Mockery configuration
 └── .golangci.yml        # Linter configuration
 ```
 
@@ -125,7 +160,7 @@ perles/
 - **Exported types:** PascalCase (`Model`, `Client`, `Controller`)
 - **Unexported types:** camelCase (`searchModel`, `columnConfig`)
 - **Messages:** Descriptive with `Msg` suffix (`DBChangedMsg`, `SaveSearchAsColumnMsg`)
-- **Constants:** PascalCase for enums (`FocusSearch`, `ModeKanban`)
+- **Constants:** PascalCase for enums (`FocusSearch`, `ModeKanban`, `ModeOrchestration`)
 - **Interfaces:** Small, focused, verb-er naming (`Controller`, `Builder`)
 
 ### Import Organization
@@ -157,9 +192,19 @@ import (
 
 ### Test Frameworks
 
-- **testify:** For assertions (`require`)
-- **teatest:** For golden/snapshot testing of TUI components
-- Standard Go testing package as base
+| Library | Purpose |
+|---------|---------|
+| `github.com/stretchr/testify` | Assertions (`require.NoError`, `require.Equal`) |
+| `github.com/charmbracelet/x/exp/teatest` | Golden/snapshot testing for TUI components |
+| `pgregory.net/rapid` | Property-based testing for stress testing |
+| Standard `testing` package | Base test infrastructure |
+
+### Mock Generation
+
+- **Tool**: [mockery](https://github.com/vektra/mockery) with `.mockery.yaml` config
+- **Output**: `internal/mocks/` directory
+- **Command**: `make mocks` to regenerate
+- **Interfaces mocked**: `BeadsClient`, `BQLExecutor`, `CacheManager`, `Clock`, `Clipboard`, `HeadlessClient`, `HeadlessProcess`, `GitExecutor`
 
 ### Test File Organization
 
@@ -201,6 +246,17 @@ func TestWithDB(t *testing.T) {
 }
 ```
 
+**Property-Based Test (with Rapid):**
+
+```go
+func TestProcessor_Concurrent(t *testing.T) {
+    rapid.Check(t, func(t *rapid.T) {
+        // Generate random inputs
+        // Verify invariants hold
+    })
+}
+```
+
 ### Test Data Builders
 
 The `testutil` package provides fluent builders for creating test issue setup:
@@ -221,6 +277,7 @@ make test-update
 
 # Update specific package
 go test -update ./internal/mode/search/...
+go test -update ./internal/mode/orchestration/...
 ```
 
 ## Architecture Patterns
@@ -249,10 +306,15 @@ Shared dependencies passed via `Services` struct:
 
 ```go
 type Services struct {
-    Client  *beads.Client
-    Config  *config.Config
-    Logger  *log.Logger
-    Watcher *watcher.Watcher
+    Client             beads.BeadsClient
+    Executor           bql.BQLExecutor
+    Config             *config.Config
+    ConfigPath         string
+    DBPath             string
+    WorkDir            string
+    Clipboard          shared.Clipboard
+    Clock              shared.Clock
+    GitExecutorFactory func(path string) git.GitExecutor
 }
 ```
 
@@ -262,12 +324,111 @@ Different modes implement the same interface:
 
 ```go
 type Controller interface {
-    Update(tea.Msg) (tea.Model, tea.Cmd)
-    View() string
     Init() tea.Cmd
-    SetSize(width, height int)
+    Update(msg tea.Msg) (Controller, tea.Cmd)
+    View() string
+    SetSize(width, height int) Controller
 }
 ```
+
+### Application Modes
+
+```go
+const (
+    ModeKanban AppMode = iota
+    ModeSearch
+    ModeOrchestration
+)
+```
+
+## AI Orchestration System
+
+Perles includes a sophisticated multi-agent AI orchestration layer for coordinating AI-powered development workflows.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Orchestration Mode (TUI)                  │
+├─────────────┬───────────────────────┬───────────────────────┤
+│ Coordinator │   Shared Message Log  │    Worker Outputs     │
+│    Chat     │                       │                       │
+│   (~25%)    │       (~40%)          │       (~35%)          │
+└─────────────┴───────────────────────┴───────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     V2 Command Processor                     │
+│  CQRS-style: Commands mutate state, Queries bypass          │
+├─────────────────────────────────────────────────────────────┤
+│  Handlers: SpawnProcess, AssignTask, SendToProcess, etc.    │
+│  Repositories: ProcessRepo, TaskRepo, QueueRepo (in-memory) │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Headless AI Clients                       │
+├──────────────────┬──────────────────┬───────────────────────┤
+│   Claude Code    │       Amp        │      Codex            │
+│   (claude/)      │     (amp/)       │    (codex/)           │
+└──────────────────┴──────────────────┴───────────────────────┘
+```
+
+### Key Components
+
+| Package | Purpose |
+|---------|---------|
+| `orchestration/client/` | Provider-agnostic `HeadlessClient` and `HeadlessProcess` interfaces |
+| `orchestration/amp/` | Amp CLI integration |
+| `orchestration/claude/` | Claude Code CLI integration |
+| `orchestration/codex/` | OpenAI Codex CLI integration |
+| `orchestration/v2/` | Command processor, handlers, adapters, repositories |
+| `orchestration/mcp/` | MCP server exposing coordinator/worker tools |
+| `orchestration/events/` | Unified `ProcessEvent` type |
+| `orchestration/workflow/` | Workflow template registry (built-in + user-defined) |
+| `orchestration/session/` | On-disk session logging |
+| `orchestration/metrics/` | Token usage and cost tracking |
+
+### Process Events
+
+All orchestration events use the unified `ProcessEvent` type:
+
+```go
+type ProcessEvent struct {
+    Type      ProcessEventType  // ProcessSpawned, ProcessOutput, ProcessStatusChange, etc.
+    ProcessID string
+    Role      ProcessRole       // RoleCoordinator or RoleWorker
+    Status    ProcessStatus     // Pending, Ready, Working, Paused, Stopped, Retired, Failed
+    Phase     ProcessPhase      // Idle, Implementing, Reviewing, Committing, etc.
+    Output    string
+    Metrics   *metrics.TokenMetrics
+    // ...
+}
+
+// Filter by role
+if event.IsCoordinator() { ... }
+if event.IsWorker() { ... }
+```
+
+### MCP Coordinator Tools
+
+Tools exposed to the AI coordinator via MCP:
+
+- `spawn_worker`, `assign_task`, `replace_worker`, `retire_worker`
+- `send_to_worker`, `post_message`, `read_message_log`
+- `get_task_status`, `mark_task_complete`, `mark_task_failed`
+- `prepare_handoff`, `stop_worker`, `generate_accountability_summary`
+
+### Workflow Templates
+
+Built-in workflows in `orchestration/workflow/`:
+- `quick_plan.md` - Quick planning workflow
+- `cook.md` - Cooking/implementation workflow
+- `research_to_tasks.md` - Research to task breakdown
+
+User workflows: `~/.config/perles/workflows/`
+
+List available: `perles workflows`
 
 ## BQL (Beads Query Language)
 
@@ -320,6 +481,7 @@ auto_refresh: true                    # Watch for changes
 ui:
   show_counts: true                   # Show issue counts
   show_status_bar: true              # Show status bar
+  markdown_style: dark               # Markdown rendering style
 
 theme:
   preset: "catppuccin-mocha"         # Built-in theme
@@ -338,6 +500,10 @@ views:                               # Board views
         type: "tree"
         issue_id: "ISSUE-123"
         tree_mode: "deps"            # or "child"
+
+orchestration:                       # AI orchestration settings
+  client: "claude"                   # claude, amp, or codex
+  disable_worktrees: false           # Disable git worktree isolation
 ```
 
 ## Environment Variables
@@ -364,6 +530,14 @@ views:                               # Board views
 - **Actions:** `s` (status), `p` (priority), `y` (copy ID)
 - **Save:** `Ctrl+s` (save to view)
 - **General:** `Ctrl+Space` (kanban), `?` (help), `q` (quit)
+
+### Orchestration Mode
+
+- **Navigation:** `Ctrl+f` (cycle focus between panes)
+- **Coordinator:** Type in chat input, `Enter` (send)
+- **Control:** `Ctrl+z` (pause), `Ctrl+r` (replace coordinator)
+- **Workflows:** `Ctrl+p` (workflow template palette)
+- **General:** `?` (help), `q` (quit with confirmation)
 
 ## Important Gotchas
 
@@ -396,6 +570,12 @@ views:                               # Board views
 - **BQL columns:** Filter issues with queries
 - **Tree columns:** Show dependency trees or child hierarchies
 - Mixed column types supported in same view
+
+### Orchestration Safety
+
+- Orchestration mode can create/delete git worktrees
+- Prompts if worktree has uncommitted changes before exit
+- Use `disable_worktrees: true` to disable worktree isolation
 
 ## CI/CD
 
@@ -443,8 +623,8 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 ### Performance Considerations
 
 - Database queries are the main bottleneck
-- Use pagination for large result sets
-- Cache frequently accessed data
+- BQL queries and dependency graphs are cached via `CacheManager`
+- Caches are flushed on database file changes
 - Debounce file system events
 
 ## Common Tasks
@@ -454,7 +634,7 @@ PERLES_DEBUG=1 ./perles     # Alternative debug enable
 1. Update `ColumnConfig` in `internal/config/config.go`
 2. Implement renderer in `internal/ui/board/`
 3. Add validation in `ValidateColumns()`
-4. Update form in `internal/ui/forms/columneditor/`
+4. Update form in `internal/ui/coleditor/`
 5. Write tests for new functionality
 
 ### Adding a BQL Operator
@@ -479,17 +659,8 @@ Perles uses a generic pub/sub broker for decoupled event communication between t
 
 ### Event Types
 
-Two event types are used in orchestration:
+All orchestration events use the unified `ProcessEvent` type (`internal/orchestration/events/process.go`):
 
-**CoordinatorEvent** (`internal/orchestration/events/coordinator.go`):
-- `CoordinatorChat` - Text output from the coordinator
-- `CoordinatorStatusChange` - Status transitions (ready, working, paused, stopped)
-- `CoordinatorTokenUsage` - Token usage updates
-- `CoordinatorError` - Error notifications
-- `CoordinatorReady` - Coordinator ready for input
-- `CoordinatorWorking` - Coordinator processing
-
-**ProcessEvent** (`internal/orchestration/events/process.go`) - Unified event type for both coordinator and worker processes:
 - `ProcessSpawned` - New process created
 - `ProcessOutput` - Process produced output
 - `ProcessStatusChange` - Process status changed
@@ -513,23 +684,19 @@ import (
     "perles/internal/pubsub"
 )
 
-// Subscribe to coordinator events
 ctx, cancel := context.WithCancel(context.Background())
 defer cancel()
 
-// Coordinator events come from coordinator.Broker()
-coordCh := coordinator.Broker().Subscribe(ctx)
+// Subscribe to unified event bus
+ch := v2EventBus.Subscribe(ctx)
 
-// Worker events flow through v2EventBus (unified event stream)
-// Subscribe via the v2EventBus broker instead
-
-// Receive coordinator events
-for event := range coordCh {
-    switch event.Payload.Type {
-    case events.CoordinatorChat:
-        fmt.Printf("[%s] %s\n", event.Payload.Role, event.Payload.Content)
-    case events.CoordinatorTokenUsage:
-        fmt.Printf("Tokens: %d/%d\n", event.Payload.ContextTokens, event.Payload.ContextWindow)
+for event := range ch {
+    if processEvent, ok := event.Payload.(events.ProcessEvent); ok {
+        if processEvent.IsCoordinator() {
+            // Handle coordinator event
+        } else if processEvent.IsWorker() {
+            // Handle worker event
+        }
     }
 }
 ```
@@ -547,46 +714,29 @@ import (
 )
 
 type Model struct {
-    coordListener *pubsub.ContinuousListener[events.CoordinatorEvent]
-    v2Listener    *pubsub.ContinuousListener[any]  // Unified event bus for worker events
-    ctx           context.Context
-    cancel        context.CancelFunc
+    v2Listener *pubsub.ContinuousListener[any]
+    ctx        context.Context
+    cancel     context.CancelFunc
 }
 
-// Initialize listeners after coordinator starts
-func (m Model) initListeners(coord *coordinator.Coordinator, v2EventBus *pubsub.Broker[any]) (Model, tea.Cmd) {
-    m.coordListener = pubsub.NewContinuousListener(m.ctx, coord.Broker())
+// Initialize listener
+func (m Model) initListeners(v2EventBus *pubsub.Broker[any]) (Model, tea.Cmd) {
     m.v2Listener = pubsub.NewContinuousListener(m.ctx, v2EventBus)
-
-    return m, tea.Batch(
-        m.coordListener.Listen(),
-        m.v2Listener.Listen(),
-    )
+    return m, m.v2Listener.Listen()
 }
 
 // Handle events in Update
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
     switch msg := msg.(type) {
-    case pubsub.Event[events.CoordinatorEvent]:
-        // Handle coordinator event
-        switch msg.Payload.Type {
-        case events.CoordinatorChat:
-            m = m.addMessage(msg.Payload.Role, msg.Payload.Content)
-        case events.CoordinatorReady:
-            m.status = "ready"
-        }
-        // Continue listening (always!)
-        return m, m.coordListener.Listen()
-
     case pubsub.Event[any]:
-        // Handle v2 events (worker events, command results, etc.)
-        if processEvent, ok := msg.Payload.(events.ProcessEvent); ok && processEvent.IsWorker() {
-            switch processEvent.Type {
-            case events.ProcessOutput:
-                m = m.addWorkerOutput(processEvent.ProcessID, processEvent.Output)
+        if processEvent, ok := msg.Payload.(events.ProcessEvent); ok {
+            if processEvent.IsWorker() {
+                // Handle worker event
+            } else if processEvent.IsCoordinator() {
+                // Handle coordinator event
             }
         }
-        // Continue listening (always!)
+        // Always continue listening!
         return m, m.v2Listener.Listen()
     }
     return m, nil
@@ -621,11 +771,27 @@ count := broker.SubscriberCount()
 broker.Close()
 ```
 
+## Key Dependencies
+
+| Dependency | Purpose |
+|------------|---------|
+| `github.com/charmbracelet/bubbletea` | TUI framework |
+| `github.com/charmbracelet/bubbles` | TUI components |
+| `github.com/charmbracelet/lipgloss` | TUI styling |
+| `github.com/charmbracelet/glamour` | Markdown rendering |
+| `github.com/charmbracelet/x/exp/teatest` | Golden/snapshot testing |
+| `github.com/spf13/cobra` | CLI commands |
+| `github.com/spf13/viper` | Configuration loading |
+| `github.com/ncruces/go-sqlite3` | SQLite database driver |
+| `github.com/fsnotify/fsnotify` | File system watching |
+| `github.com/stretchr/testify` | Test assertions |
+| `pgregory.net/rapid` | Property-based testing |
+
 ## Resources
 
 - [Bubble Tea Documentation](https://github.com/charmbracelet/bubbletea)
 - [Beads Issue Tracker](https://github.com/steveyegge/beads)
 - [Lipgloss Styling](https://github.com/charmbracelet/lipgloss)
+- [Orchestration V2 Docs](./internal/orchestration/v2/docs/README.md)
 - [Project README](./README.md)
 - [Contributing Guide](./CONTRIBUTING.md)
-
