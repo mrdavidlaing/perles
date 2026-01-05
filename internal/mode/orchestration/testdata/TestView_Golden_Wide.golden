@@ -16,7 +16,7 @@
 │                                                                    ││                                                              │                                                                  
 │                                                                    ││                                                              │                                                                  
 │                                                                    ││                                                              │                                                                  
-│                                                                    ││                                                              │                      No workers spawned yet                      
+│                                                                    ││                                                              │     No workers spawned yet. Use ctrl+p to select a workflow      
 │                                                                    ││                                                              │                                                                  
 │                                                                    ││                                                              │                                                                  
 │                                                                    ││                                                              │                                                                  

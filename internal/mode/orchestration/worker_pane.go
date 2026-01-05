@@ -158,7 +158,7 @@ func (m Model) renderWorkerPanes(width, height int) string {
 
 // renderEmptyWorkerPane renders a centered placeholder when no workers exist.
 func (m Model) renderEmptyWorkerPane(width, height int) string {
-	msg := "No workers spawned yet"
+	msg := "No workers spawned yet. Use ctrl+p to select a workflow"
 	styledMsg := lipgloss.NewStyle().
 		Foreground(styles.TextSecondaryColor).
 		Render(msg)
