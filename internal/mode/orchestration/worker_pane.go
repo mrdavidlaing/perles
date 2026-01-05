@@ -158,21 +158,28 @@ func (m Model) renderWorkerPanes(width, height int) string {
 
 // renderEmptyWorkerPane renders a centered placeholder when no workers exist.
 func (m Model) renderEmptyWorkerPane(width, height int) string {
-	msg := "No workers spawned yet. Use ctrl+p to select a workflow"
-	styledMsg := lipgloss.NewStyle().
-		Foreground(styles.TextSecondaryColor).
-		Render(msg)
+	line1 := "No workers spawned yet.\n"
+	line2 := "Use ctrl+p to select a workflow."
 
-	// Center vertically and horizontally
-	msgWidth := lipgloss.Width(styledMsg)
-	leftPad := max((width-msgWidth)/2, 0)
-	topPad := height / 2
+	style := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
+	styledLine1 := style.Render(line1)
+	styledLine2 := style.Render(line2)
+
+	// Center each line horizontally
+	line1Width := lipgloss.Width(styledLine1)
+	line2Width := lipgloss.Width(styledLine2)
+	leftPad1 := max((width-line1Width)/2, 0)
+	leftPad2 := max((width-line2Width)/2, 0)
+
+	// Center vertically (account for 2 lines)
+	topPad := (height - 2) / 2
 
 	var lines []string
 	for range topPad {
 		lines = append(lines, "")
 	}
-	lines = append(lines, strings.Repeat(" ", leftPad)+styledMsg)
+	lines = append(lines, strings.Repeat(" ", leftPad1)+styledLine1)
+	lines = append(lines, strings.Repeat(" ", leftPad2)+styledLine2)
 
 	// Pad remaining height
 	for len(lines) < height {
