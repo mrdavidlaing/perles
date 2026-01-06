@@ -279,6 +279,7 @@ func (cs *CoordinatorServer) registerTools() {
 				"task_id":        {Type: "string", Description: "The bd task ID being reviewed"},
 				"implementer_id": {Type: "string", Description: "Worker ID who implemented the task"},
 				"summary":        {Type: "string", Description: "Brief summary of what was implemented"},
+				"review_type":    {Type: "string", Description: "Review complexity: 'simple' (reviewer checks all dimensions directly) or 'complex' (spawn sub-agents for thorough parallel review). Defaults to 'complex'."},
 			},
 			Required: []string{"reviewer_id", "task_id", "implementer_id", "summary"},
 		},

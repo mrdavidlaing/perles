@@ -29,6 +29,21 @@ func (v Verdict) String() string {
 	return string(v)
 }
 
+// ReviewType represents the complexity level for code reviews.
+type ReviewType string
+
+const (
+	// ReviewTypeSimple indicates a streamlined review without sub-agents.
+	ReviewTypeSimple ReviewType = "simple"
+	// ReviewTypeComplex indicates a comprehensive review with parallel sub-agents.
+	ReviewTypeComplex ReviewType = "complex"
+)
+
+// IsValid returns true if the review type is a valid value.
+func (r ReviewType) IsValid() bool {
+	return r == ReviewTypeSimple || r == ReviewTypeComplex
+}
+
 // ===========================================================================
 // Task Assignment Commands
 // ===========================================================================
@@ -69,19 +84,21 @@ func (c *AssignTaskCommand) Validate() error {
 // AssignReviewCommand assigns a reviewer to an implemented task.
 type AssignReviewCommand struct {
 	*BaseCommand
-	ReviewerID    string // Required: ID of the worker who will review
-	TaskID        string // Required: BD task ID being reviewed
-	ImplementerID string // Required: ID of the worker who implemented the task
+	ReviewerID    string     // Required: ID of the worker who will review
+	TaskID        string     // Required: BD task ID being reviewed
+	ImplementerID string     // Required: ID of the worker who implemented the task
+	ReviewType    ReviewType // Optional: "simple" or "complex", defaults to "complex"
 }
 
 // NewAssignReviewCommand creates a new AssignReviewCommand.
-func NewAssignReviewCommand(source CommandSource, reviewerID, taskID, implementerID string) *AssignReviewCommand {
+func NewAssignReviewCommand(source CommandSource, reviewerID, taskID, implementerID string, reviewType ReviewType) *AssignReviewCommand {
 	base := NewBaseCommand(CmdAssignReview, source)
 	return &AssignReviewCommand{
 		BaseCommand:   &base,
 		ReviewerID:    reviewerID,
 		TaskID:        taskID,
 		ImplementerID: implementerID,
+		ReviewType:    reviewType,
 	}
 }
 

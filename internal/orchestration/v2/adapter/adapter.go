@@ -139,6 +139,7 @@ type assignTaskReviewArgs struct {
 	TaskID        string `json:"task_id"`
 	ImplementerID string `json:"implementer_id"`
 	Summary       string `json:"summary,omitempty"`
+	ReviewType    string `json:"review_type,omitempty"`
 }
 
 // assignReviewFeedbackArgs holds arguments for assign_review_feedback tool.
@@ -641,7 +642,13 @@ func (a *V2Adapter) HandleAssignTaskReview(ctx context.Context, args json.RawMes
 		return nil, fmt.Errorf("invalid arguments: %w", err)
 	}
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, parsed.ReviewerID, parsed.TaskID, parsed.ImplementerID)
+	// Parse review type with default to complex
+	reviewType := command.ReviewTypeComplex
+	if parsed.ReviewType == string(command.ReviewTypeSimple) {
+		reviewType = command.ReviewTypeSimple
+	}
+
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, parsed.ReviewerID, parsed.TaskID, parsed.ImplementerID, reviewType)
 	if err := cmd.Validate(); err != nil {
 		return nil, fmt.Errorf("assign_task_review command validation failed: %w", err)
 	}

@@ -422,6 +422,73 @@ report_review_verdict(
 )`, implementerID, taskID, taskID)
 }
 
+// ReviewAssignmentPromptSimple generates a streamlined review prompt for simple changes.
+// Unlike ReviewAssignmentPrompt, this does NOT instruct the reviewer to spawn sub-agents.
+// The reviewer performs all quality checks directly in a single pass.
+func ReviewAssignmentPromptSimple(taskID, implementerID string) string {
+	return fmt.Sprintf(`[REVIEW ASSIGNMENT]
+
+You are being assigned to review the work completed by %s on task **%s**.
+
+---
+
+## Step 1: Gather Context
+
+- Read the task description: `+"`bd show %s`"+`
+- Get the git diff to see what changed
+- Note the acceptance criteria (checkboxes in the task)
+
+---
+
+## Step 2: Quick Review Checklist
+
+Work through each dimension directly:
+
+### ✓ Correctness & Logic
+- Any obvious logic errors or typos?
+- Edge cases handled (nil checks, empty inputs)?
+- Errors propagated correctly (no swallowed errors)?
+
+### ✓ Tests
+**CRITICAL: Run the tests - do not just read them. This is mandatory, not optional.**
+`+"```bash"+`
+go test ./path/to/package -v
+`+"```"+`
+- Do all tests pass?
+- Is the change adequately tested?
+
+### ✓ Dead Code
+- Any new functions that aren't called from production code?
+- Verify with grep: `+"`grep -rn 'FunctionName' --include='*.go' | grep -v '_test.go'`"+`
+- Test-only helpers are ALWAYS wrong - reject if found
+
+### ✓ Acceptance Criteria
+- Does the change meet EACH criterion in the task?
+- Run any verification commands specified in the task
+
+---
+
+## Step 3: Report Your Verdict
+
+**DENY if ANY of:**
+- Tests fail
+- Obvious bugs or logic errors
+- Acceptance criteria not met
+- Dead code or test-only helpers found
+
+**APPROVE if:**
+- All tests pass
+- Code is correct
+- All acceptance criteria met
+
+`+"```"+`
+report_review_verdict(
+    verdict="APPROVED|DENIED",
+    comments="Quick review: [1-2 sentence summary]. Tests: PASS/FAIL. Acceptance: X/X met. [If DENIED: specific issues to fix]"
+)
+`+"```"+``, implementerID, taskID, taskID)
+}
+
 // ReviewFeedbackPrompt generates the prompt sent to an implementer when their code was denied.
 func ReviewFeedbackPrompt(taskID, feedback string) string {
 	return fmt.Sprintf(`[REVIEW FEEDBACK]

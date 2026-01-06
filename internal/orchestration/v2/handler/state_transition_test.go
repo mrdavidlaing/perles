@@ -850,7 +850,7 @@ func TestFullImplementReviewApproveCycle(t *testing.T) {
 
 	// Step 2: Assign reviewer
 	reviewAssignHandler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
-	reviewAssignCmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	reviewAssignCmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, err = reviewAssignHandler.Handle(context.Background(), reviewAssignCmd)
 	require.NoError(t, err, "assign review error")
 
@@ -913,7 +913,7 @@ func TestImplementReviewDenyAddressReviewCycle(t *testing.T) {
 
 	// Step 2: Assign reviewer
 	reviewAssignHandler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
-	reviewAssignCmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	reviewAssignCmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, _ = reviewAssignHandler.Handle(context.Background(), reviewAssignCmd)
 
 	// Step 3: DENY verdict
@@ -938,7 +938,7 @@ func TestImplementReviewDenyAddressReviewCycle(t *testing.T) {
 	require.Equal(t, events.ProcessPhaseAwaitingReview, *impl.Phase)
 
 	// Step 5: Re-assign reviewer (they're now idle)
-	reviewAssignCmd2 := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	reviewAssignCmd2 := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, _ = reviewAssignHandler.Handle(context.Background(), reviewAssignCmd2)
 
 	// Step 6: Approve
@@ -1856,7 +1856,7 @@ func TestIntegration_DenialToReReviewCycle(t *testing.T) {
 
 	// === STEP 2: Assign reviewer ===
 	t.Log("STEP 2: Assign reviewer")
-	cmd2 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1")
+	cmd2 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1", command.ReviewTypeComplex)
 	result2, err := assignReviewHandler.Handle(ctx, cmd2)
 	require.NoError(t, err, "Step 2 failed")
 	require.True(t, result2.Success, "Step 2 not successful: %v", result2.Error)
@@ -1909,7 +1909,7 @@ func TestIntegration_DenialToReReviewCycle(t *testing.T) {
 
 	// === STEP 5: Assign reviewer AGAIN ===
 	t.Log("STEP 5: Assign reviewer again for second review")
-	cmd5 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1")
+	cmd5 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1", command.ReviewTypeComplex)
 	result5, err := assignReviewHandler.Handle(ctx, cmd5)
 	require.NoError(t, err, "Step 5 failed")
 	require.True(t, result5.Success, "Step 5 not successful: %v", result5.Error)
@@ -2013,7 +2013,7 @@ func TestIntegration_ReAssignReviewAfterDenial(t *testing.T) {
 	_, _ = reportCompleteHandler.Handle(ctx, cmd1)
 
 	// Step 2: Assign reviewer (first time)
-	cmd2 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1")
+	cmd2 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1", command.ReviewTypeComplex)
 	_, err := assignReviewHandler.Handle(ctx, cmd2)
 	require.NoError(t, err, "First assign_task_review failed")
 
@@ -2045,7 +2045,7 @@ func TestIntegration_ReAssignReviewAfterDenial(t *testing.T) {
 	// Step 5: Coordinator tries to assign the SAME reviewer again for re-review
 	// THIS IS THE BUG SCENARIO - this should work!
 	t.Log("Attempting to re-assign same reviewer after denial...")
-	cmd5 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1")
+	cmd5 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1", command.ReviewTypeComplex)
 	result5, err := assignReviewHandler.Handle(ctx, cmd5)
 	require.NoError(t, err, "Re-assign review after denial failed")
 	require.True(t, result5.Success, "Re-assign review not successful: %v", result5.Error)
@@ -2126,7 +2126,7 @@ func TestIntegration_ApproveCommitFailsWhenTaskDenied(t *testing.T) {
 	_, _ = reportCompleteHandler.Handle(ctx, cmd1)
 
 	// Step 2: Assign reviewer
-	cmd2 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1")
+	cmd2 := command.NewAssignReviewCommand(command.SourceInternal, "worker-2", "task-123", "worker-1", command.ReviewTypeComplex)
 	_, _ = assignReviewHandler.Handle(ctx, cmd2)
 
 	// Step 3: Reviewer DENIES

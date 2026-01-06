@@ -397,7 +397,7 @@ func TestAssignReviewHandler_AssignsReviewer(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	result, err := handler.Handle(context.Background(), cmd)
 
 	require.NoError(t, err)
@@ -433,7 +433,7 @@ func TestAssignReviewHandler_FailsIfReviewerIsImplementer(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-1", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-1", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, err := handler.Handle(context.Background(), cmd)
 
 	require.Error(t, err, "expected error for reviewer == implementer")
@@ -457,7 +457,7 @@ func TestAssignReviewHandler_FailsIfReviewerNotReady(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, err := handler.Handle(context.Background(), cmd)
 
 	require.Error(t, err, "expected error for non-ready reviewer")
@@ -481,7 +481,7 @@ func TestAssignReviewHandler_FailsIfReviewerNotIdlePhase(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, err := handler.Handle(context.Background(), cmd)
 
 	require.Error(t, err, "expected error for non-idle phase reviewer")
@@ -512,7 +512,7 @@ func TestAssignReviewHandler_UpdatesReviewerPhaseToReviewing(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, err := handler.Handle(context.Background(), cmd)
 
 	require.NoError(t, err)
@@ -529,7 +529,7 @@ func TestAssignReviewHandler_FailsForUnknownReviewer(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "unknown-worker", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "unknown-worker", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, err := handler.Handle(context.Background(), cmd)
 
 	require.Error(t, err, "expected error for unknown reviewer")
@@ -552,7 +552,7 @@ func TestAssignReviewHandler_FailsForUnknownTask(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "unknown-task", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "unknown-task", "worker-1", command.ReviewTypeComplex)
 	_, err := handler.Handle(context.Background(), cmd)
 
 	require.Error(t, err, "expected error for unknown task")
@@ -583,7 +583,7 @@ func TestAssignReviewHandler_FailsForMismatchedImplementer(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	_, err := handler.Handle(context.Background(), cmd)
 
 	require.Error(t, err, "expected error for mismatched implementer")
@@ -614,7 +614,7 @@ func TestAssignReviewHandler_EmitsStatusChangeEvent(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	result, err := handler.Handle(context.Background(), cmd)
 
 	require.NoError(t, err)
@@ -655,7 +655,7 @@ func TestAssignReviewHandler_ReturnsAssignReviewResult(t *testing.T) {
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
 
-	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	result, err := handler.Handle(context.Background(), cmd)
 
 	require.NoError(t, err)
@@ -666,6 +666,123 @@ func TestAssignReviewHandler_ReturnsAssignReviewResult(t *testing.T) {
 	require.Equal(t, "worker-2", reviewResult.ReviewerID)
 	require.Equal(t, "perles-abc1.2", reviewResult.TaskID)
 	require.Equal(t, "worker-1", reviewResult.ImplementerID)
+}
+
+func TestAssignReviewHandler_UsesSimplePromptForSimpleReviewType(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+
+	reviewer := &repository.Process{
+		ID:        "worker-2",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusReady,
+		Phase:     phasePtr(events.ProcessPhaseIdle),
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(reviewer)
+
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Status:      repository.TaskImplementing,
+		StartedAt:   time.Now(),
+	}
+	_ = taskRepo.Save(task)
+
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
+
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeSimple)
+	_, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+
+	// Verify message was queued and contains simple review prompt markers
+	queue := queueRepo.GetOrCreate("worker-2")
+	require.Equal(t, 1, queue.Size())
+
+	msg, _ := queue.Dequeue()
+	require.Contains(t, msg.Content, "[REVIEW ASSIGNMENT]", "expected review prompt")
+	require.Contains(t, msg.Content, "CRITICAL: Run the tests", "expected mandatory test execution language")
+}
+
+func TestAssignReviewHandler_UsesComplexPromptForComplexReviewType(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+
+	reviewer := &repository.Process{
+		ID:        "worker-2",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusReady,
+		Phase:     phasePtr(events.ProcessPhaseIdle),
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(reviewer)
+
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Status:      repository.TaskImplementing,
+		StartedAt:   time.Now(),
+	}
+	_ = taskRepo.Save(task)
+
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
+
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
+	_, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+
+	// Verify message was queued and contains complex review prompt markers
+	queue := queueRepo.GetOrCreate("worker-2")
+	require.Equal(t, 1, queue.Size())
+
+	msg, _ := queue.Dequeue()
+	require.Contains(t, msg.Content, "[REVIEW ASSIGNMENT]", "expected complex review prompt")
+	require.Contains(t, msg.Content, "Spawn 4 sub-agents", "expected sub-agent instruction")
+	require.NotContains(t, msg.Content, "[SIMPLE REVIEW ASSIGNMENT]", "expected not to be simple prompt")
+}
+
+func TestAssignReviewHandler_UsesComplexPromptWhenReviewTypeEmpty(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+
+	reviewer := &repository.Process{
+		ID:        "worker-2",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusReady,
+		Phase:     phasePtr(events.ProcessPhaseIdle),
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(reviewer)
+
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Status:      repository.TaskImplementing,
+		StartedAt:   time.Now(),
+	}
+	_ = taskRepo.Save(task)
+
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	handler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
+
+	// Empty ReviewType should default to complex
+	cmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", "")
+	_, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+
+	// Verify message was queued and contains complex review prompt markers
+	queue := queueRepo.GetOrCreate("worker-2")
+	require.Equal(t, 1, queue.Size())
+
+	msg, _ := queue.Dequeue()
+	require.Contains(t, msg.Content, "[REVIEW ASSIGNMENT]", "expected complex review prompt for empty type")
+	require.Contains(t, msg.Content, "Spawn 4 sub-agents", "expected sub-agent instruction for empty type")
+	require.NotContains(t, msg.Content, "[SIMPLE REVIEW ASSIGNMENT]", "expected not to be simple prompt")
 }
 
 // ===========================================================================
@@ -983,7 +1100,7 @@ func TestFullAssignReviewApproveWorkflow(t *testing.T) {
 
 	// Step 3: Assign reviewer
 	reviewHandler := NewAssignReviewHandler(processRepo, taskRepo, queueRepo)
-	reviewCmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1")
+	reviewCmd := command.NewAssignReviewCommand(command.SourceMCPTool, "worker-2", "perles-abc1.2", "worker-1", command.ReviewTypeComplex)
 	result, err = reviewHandler.Handle(context.Background(), reviewCmd)
 	require.NoError(t, err, "assign review error")
 	require.True(t, result.Success, "assign review failed: %v", result.Error)

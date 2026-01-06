@@ -50,6 +50,33 @@ func TestVerdict_String(t *testing.T) {
 }
 
 // ===========================================================================
+// ReviewType Tests
+// ===========================================================================
+
+func TestReviewType_IsValid(t *testing.T) {
+	tests := []struct {
+		name       string
+		reviewType ReviewType
+		want       bool
+	}{
+		{"simple is valid", ReviewTypeSimple, true},
+		{"complex is valid", ReviewTypeComplex, true},
+		{"empty is invalid", "", false},
+		{"uppercase Simple is invalid", "Simple", false},
+		{"uppercase SIMPLE is invalid", "SIMPLE", false},
+		{"uppercase Complex is invalid", "Complex", false},
+		{"uppercase COMPLEX is invalid", "COMPLEX", false},
+		{"random string is invalid", "medium", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.reviewType.IsValid())
+		})
+	}
+}
+
+// ===========================================================================
 // AssignTaskCommand Tests
 // ===========================================================================
 
@@ -191,7 +218,7 @@ func TestAssignReviewCommand_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := NewAssignReviewCommand(SourceMCPTool, tt.reviewerID, tt.taskID, tt.implementerID)
+			cmd := NewAssignReviewCommand(SourceMCPTool, tt.reviewerID, tt.taskID, tt.implementerID, ReviewTypeComplex)
 			err := cmd.Validate()
 			if tt.wantErr {
 				require.Error(t, err)
@@ -206,8 +233,25 @@ func TestAssignReviewCommand_Validate(t *testing.T) {
 }
 
 func TestAssignReviewCommand_Type(t *testing.T) {
-	cmd := NewAssignReviewCommand(SourceMCPTool, "worker-2", "perles-abc1", "worker-1")
+	cmd := NewAssignReviewCommand(SourceMCPTool, "worker-2", "perles-abc1", "worker-1", ReviewTypeComplex)
 	require.Equal(t, CmdAssignReview, cmd.Type())
+}
+
+func TestAssignReviewCommand_ReviewType(t *testing.T) {
+	tests := []struct {
+		name       string
+		reviewType ReviewType
+	}{
+		{"simple review type", ReviewTypeSimple},
+		{"complex review type", ReviewTypeComplex},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := NewAssignReviewCommand(SourceMCPTool, "worker-2", "perles-abc1", "worker-1", tt.reviewType)
+			require.Equal(t, tt.reviewType, cmd.ReviewType)
+		})
+	}
 }
 
 func TestAssignReviewCommand_ImplementsCommand(t *testing.T) {
@@ -877,9 +921,9 @@ func TestEmptyStringValidation(t *testing.T) {
 		{"ReplaceProcess empty ProcessID", NewReplaceProcessCommand(SourceMCPTool, "", "reason"), true},
 		{"AssignTask empty WorkerID", NewAssignTaskCommand(SourceMCPTool, "", "task-1", ""), true},
 		{"AssignTask empty TaskID", NewAssignTaskCommand(SourceMCPTool, "worker-1", "", ""), true},
-		{"AssignReview empty ReviewerID", NewAssignReviewCommand(SourceMCPTool, "", "task-1", "worker-1"), true},
-		{"AssignReview empty TaskID", NewAssignReviewCommand(SourceMCPTool, "worker-2", "", "worker-1"), true},
-		{"AssignReview empty ImplementerID", NewAssignReviewCommand(SourceMCPTool, "worker-2", "task-1", ""), true},
+		{"AssignReview empty ReviewerID", NewAssignReviewCommand(SourceMCPTool, "", "task-1", "worker-1", ReviewTypeComplex), true},
+		{"AssignReview empty TaskID", NewAssignReviewCommand(SourceMCPTool, "worker-2", "", "worker-1", ReviewTypeComplex), true},
+		{"AssignReview empty ImplementerID", NewAssignReviewCommand(SourceMCPTool, "worker-2", "task-1", "", ReviewTypeComplex), true},
 		{"ApproveCommit empty ImplementerID", NewApproveCommitCommand(SourceMCPTool, "", "task-1"), true},
 		{"ApproveCommit empty TaskID", NewApproveCommitCommand(SourceMCPTool, "worker-1", ""), true},
 		{"SendToProcess empty ProcessID", NewSendToProcessCommand(SourceMCPTool, "", "content"), true},

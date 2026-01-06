@@ -134,6 +134,65 @@ The `assign_task_review` tool sends a comprehensive review prompt to the reviewe
 - Instructions to review all dimensions (correctness, tests, dead code, acceptance)
 - Instructions to use `report_review_verdict("APPROVED", comments)` or `report_review_verdict("DENIED", comments)`
 
+**Choosing Review Complexity:**
+
+When calling `assign_task_review`, set `review_type` based on observable factors:
+
+| Factor | Use `review_type="simple"` | Use `review_type="complex"` |
+|--------|----------------------------|------------------------------|
+| **Files changed** | 1-2 files | 3+ files |
+| **Lines changed** | < 50 lines | 50+ lines |
+| **Change nature** | Typo fix, config tweak, rename, doc update | New feature, refactoring, API change |
+| **Risk level** | Low-risk areas (docs, tests, logging, comments) | High-risk areas (auth, payments, data, core logic) |
+| **Interface changes** | No interface/API changes | Changes to public interfaces |
+
+**Quick decision rule:** If you can describe the change in one sentence AND it touches ≤2 files AND it's not in a high-risk area → use `simple`.
+
+**Always use `complex` for these file patterns:**
+- `**/auth/**`, `**/security/**`, `**/crypto/**` - Security-sensitive code
+- `go.mod`, `go.sum` - Dependency changes
+- `Makefile` - Build process changes
+- `.github/**` - CI/CD configuration
+
+**Examples:**
+
+```
+# Simple reviews - streamlined, no sub-agents
+assign_task_review(
+    reviewer_id="worker-2",
+    task_id="proj-abc.1",
+    implementer_id="worker-1",
+    summary="Fixed typo in README",
+    review_type="simple"
+)
+
+assign_task_review(
+    reviewer_id="worker-2",
+    task_id="proj-abc.2",
+    implementer_id="worker-1",
+    summary="Updated log level from INFO to DEBUG",
+    review_type="simple"
+)
+
+# Complex reviews (default) - spawns 4 parallel sub-agents
+assign_task_review(
+    reviewer_id="worker-2",
+    task_id="proj-abc.3",
+    implementer_id="worker-1",
+    summary="Added new validation layer for user input"
+)  # review_type defaults to "complex"
+
+assign_task_review(
+    reviewer_id="worker-2",
+    task_id="proj-abc.4",
+    implementer_id="worker-1",
+    summary="Refactored authentication flow across 5 files",
+    review_type="complex"
+)
+```
+
+**When in doubt, use `complex`.** It's better to over-review than to miss issues. The overhead of complex reviews is acceptable; the cost of shipping bugs is not.
+
 #### Step 4: Handle Review Results
 
 The reviewer will call `report_review_verdict(verdict, comments)` which:

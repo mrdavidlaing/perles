@@ -829,7 +829,7 @@ func TestHandleAssignTask(t *testing.T) {
 }
 
 func TestHandleAssignTaskReview(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
+	t.Run("success_defaults_to_complex", func(t *testing.T) {
 		adapter, handler, cleanup := testAdapter(t)
 		defer cleanup()
 
@@ -855,6 +855,82 @@ func TestHandleAssignTaskReview(t *testing.T) {
 		assert.Equal(t, "worker-reviewer", assignCmd.ReviewerID)
 		assert.Equal(t, "perles-xyz9", assignCmd.TaskID)
 		assert.Equal(t, "worker-impl", assignCmd.ImplementerID)
+		assert.Equal(t, command.ReviewTypeComplex, assignCmd.ReviewType)
+	})
+
+	t.Run("review_type_simple_passes_simple", func(t *testing.T) {
+		adapter, handler, cleanup := testAdapter(t)
+		defer cleanup()
+
+		args := toJSON(t, map[string]string{
+			"reviewer_id":    "worker-reviewer",
+			"task_id":        "perles-xyz9",
+			"implementer_id": "worker-impl",
+			"review_type":    "simple",
+		})
+
+		result, err := adapter.HandleAssignTaskReview(context.Background(), args)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.IsError)
+
+		// Verify command has ReviewTypeSimple
+		cmds := handler.getCommands()
+		require.Len(t, cmds, 1)
+		assignCmd, ok := cmds[0].(*command.AssignReviewCommand)
+		require.True(t, ok)
+		assert.Equal(t, command.ReviewTypeSimple, assignCmd.ReviewType)
+	})
+
+	t.Run("review_type_complex_passes_complex", func(t *testing.T) {
+		adapter, handler, cleanup := testAdapter(t)
+		defer cleanup()
+
+		args := toJSON(t, map[string]string{
+			"reviewer_id":    "worker-reviewer",
+			"task_id":        "perles-xyz9",
+			"implementer_id": "worker-impl",
+			"review_type":    "complex",
+		})
+
+		result, err := adapter.HandleAssignTaskReview(context.Background(), args)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.IsError)
+
+		// Verify command has ReviewTypeComplex
+		cmds := handler.getCommands()
+		require.Len(t, cmds, 1)
+		assignCmd, ok := cmds[0].(*command.AssignReviewCommand)
+		require.True(t, ok)
+		assert.Equal(t, command.ReviewTypeComplex, assignCmd.ReviewType)
+	})
+
+	t.Run("review_type_invalid_defaults_to_complex", func(t *testing.T) {
+		adapter, handler, cleanup := testAdapter(t)
+		defer cleanup()
+
+		args := toJSON(t, map[string]string{
+			"reviewer_id":    "worker-reviewer",
+			"task_id":        "perles-xyz9",
+			"implementer_id": "worker-impl",
+			"review_type":    "invalid",
+		})
+
+		result, err := adapter.HandleAssignTaskReview(context.Background(), args)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.IsError)
+
+		// Verify command defaults to ReviewTypeComplex for invalid value
+		cmds := handler.getCommands()
+		require.Len(t, cmds, 1)
+		assignCmd, ok := cmds[0].(*command.AssignReviewCommand)
+		require.True(t, ok)
+		assert.Equal(t, command.ReviewTypeComplex, assignCmd.ReviewType)
 	})
 
 	t.Run("missing_reviewer_id", func(t *testing.T) {

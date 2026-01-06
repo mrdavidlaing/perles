@@ -288,9 +288,14 @@ func (h *AssignReviewHandler) Handle(ctx context.Context, cmd command.Command) (
 		return nil, fmt.Errorf("failed to save reviewer: %w", err)
 	}
 
-	// 7. Queue ReviewAssignmentPrompt to the reviewer (from coordinator)
+	// 7. Queue the appropriate review prompt based on review type
 	// Note: Summary is not stored in TaskAssignment yet, so we use a placeholder
-	prompt := mcp.ReviewAssignmentPrompt(reviewCmd.TaskID, reviewCmd.ImplementerID)
+	var prompt string
+	if reviewCmd.ReviewType == command.ReviewTypeSimple {
+		prompt = mcp.ReviewAssignmentPromptSimple(reviewCmd.TaskID, reviewCmd.ImplementerID)
+	} else {
+		prompt = mcp.ReviewAssignmentPrompt(reviewCmd.TaskID, reviewCmd.ImplementerID)
+	}
 	queue := h.queueRepo.GetOrCreate(reviewCmd.ReviewerID)
 	if err := queue.Enqueue(prompt, repository.SenderCoordinator); err != nil {
 		return nil, fmt.Errorf("failed to queue review prompt: %w", err)
