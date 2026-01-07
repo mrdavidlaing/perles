@@ -28,7 +28,7 @@ func TestIntegration_ProcessEventFlow(t *testing.T) {
 	ch := broker.Subscribe(ctx)
 
 	// Simulate coordinator publishing events via v2EventBus
-	testMetrics := &metrics.TokenMetrics{ContextTokens: 1500, ContextWindow: 200000}
+	testMetrics := &metrics.TokenMetrics{TokensUsed: 1500, TotalTokens: 200000}
 	testEvents := []events.ProcessEvent{
 		{Type: events.ProcessOutput, Role: events.RoleCoordinator, Output: "Starting epic execution"},
 		{Type: events.ProcessWorking, Role: events.RoleCoordinator},
@@ -109,7 +109,7 @@ func TestIntegration_ProcessEventForwarding(t *testing.T) {
 	ch := processBroker.Subscribe(ctx)
 
 	// Simulate worker events
-	workerMetrics := &metrics.TokenMetrics{ContextTokens: 500, ContextWindow: 200000}
+	workerMetrics := &metrics.TokenMetrics{TokensUsed: 500, TotalTokens: 200000}
 	testEvents := []events.ProcessEvent{
 		{Type: events.ProcessSpawned, ProcessID: "worker-1", Role: events.RoleWorker, TaskID: "task-1"},
 		{Type: events.ProcessStatusChange, ProcessID: "worker-1", Role: events.RoleWorker, TaskID: "task-1"},

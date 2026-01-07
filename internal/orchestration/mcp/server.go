@@ -78,7 +78,6 @@ func (s *Server) RegisterTool(tool Tool, handler ToolHandler) {
 	defer s.mu.Unlock()
 	s.tools[tool.Name] = tool
 	s.handlers[tool.Name] = handler
-	log.Debug(log.CatMCP, "Registered tool", "name", tool.Name)
 }
 
 // Broker returns the MCP event broker for session logging.

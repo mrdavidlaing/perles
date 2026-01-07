@@ -45,7 +45,7 @@ func (m Model) renderCoordinatorPane(width, height int, fullscreen bool) string 
 	} else {
 		// Normal: dynamic status title with metrics
 		leftTitle = m.buildCoordinatorTitle()
-		if m.coordinatorMetrics != nil && m.coordinatorMetrics.ContextTokens > 0 {
+		if m.coordinatorMetrics != nil && m.coordinatorMetrics.TokensUsed > 0 {
 			metricsDisplay = m.coordinatorMetrics.FormatContextDisplay()
 		}
 		hasNewContent = m.coordinatorPane.hasNewContent

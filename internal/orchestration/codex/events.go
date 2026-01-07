@@ -166,13 +166,12 @@ func ParseEvent(line []byte) (client.OutputEvent, error) {
 	// Handle turn.completed -> EventResult with usage
 	if raw.Type == "turn.completed" {
 		if raw.Usage != nil {
+			// Codex: TokensUsed = input_tokens + cached_input_tokens
+			tokensUsed := raw.Usage.InputTokens + raw.Usage.CachedInputTokens
 			event.Usage = &client.UsageInfo{
-				InputTokens:  raw.Usage.InputTokens,
+				TokensUsed:   tokensUsed,
+				TotalTokens:  200000, // Default context window
 				OutputTokens: raw.Usage.OutputTokens,
-				// Map cached_input_tokens to CacheReadInputTokens
-				// CacheCreationInputTokens is 0 as Codex doesn't report it separately
-				CacheReadInputTokens:     raw.Usage.CachedInputTokens,
-				CacheCreationInputTokens: 0,
 			}
 		}
 		return event, nil

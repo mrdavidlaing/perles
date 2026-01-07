@@ -586,7 +586,7 @@ func (s *Session) handleCoordinatorProcessEvent(event events.ProcessEvent) {
 	case events.ProcessTokenUsage:
 		// Update token usage in metadata
 		if event.Metrics != nil {
-			s.updateTokenUsage(event.Metrics.InputTokens, event.Metrics.OutputTokens, event.Metrics.TotalCostUSD)
+			s.updateTokenUsage(event.Metrics.TokensUsed, event.Metrics.OutputTokens, event.Metrics.TotalCostUSD)
 		}
 
 	case events.ProcessError:
@@ -720,7 +720,7 @@ func (s *Session) handleProcessEvent(event events.ProcessEvent) {
 	case events.ProcessTokenUsage:
 		// Update token usage in metadata
 		if event.Metrics != nil {
-			s.updateTokenUsage(event.Metrics.InputTokens, event.Metrics.OutputTokens, event.Metrics.TotalCostUSD)
+			s.updateTokenUsage(event.Metrics.TokensUsed, event.Metrics.OutputTokens, event.Metrics.TotalCostUSD)
 		}
 
 	case events.ProcessIncoming:
@@ -811,7 +811,9 @@ func (s *Session) updateTokenUsage(inputTokens, outputTokens int, costUSD float6
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.tokenUsage.TotalInputTokens += inputTokens
+	// Context tokens (inputTokens) are cumulative per-turn (includes CacheRead),
+	// so we replace rather than accumulate. Output tokens and cost are incremental.
+	s.tokenUsage.TotalInputTokens = inputTokens
 	s.tokenUsage.TotalOutputTokens += outputTokens
 	s.tokenUsage.TotalCostUSD += costUSD
 }

@@ -109,13 +109,10 @@ func TestParseEvent_TurnCompleted(t *testing.T) {
 	require.True(t, event.IsResult())
 	require.NotNil(t, event.Usage)
 
-	// Verify token usage mapping
-	require.Equal(t, 24763, event.Usage.InputTokens)
+	// Verify token usage (TokensUsed = input_tokens + cached_input_tokens)
+	require.Equal(t, 24763+24448, event.Usage.TokensUsed) // input + cached
+	require.Equal(t, 200000, event.Usage.TotalTokens)     // default context window
 	require.Equal(t, 122, event.Usage.OutputTokens)
-	// cached_input_tokens -> CacheReadInputTokens
-	require.Equal(t, 24448, event.Usage.CacheReadInputTokens)
-	// CacheCreationInputTokens should be 0 (Codex doesn't report it)
-	require.Equal(t, 0, event.Usage.CacheCreationInputTokens)
 }
 
 func TestParseEvent_TurnFailed(t *testing.T) {
@@ -192,16 +189,15 @@ func TestParseEvent_UnknownEventType(t *testing.T) {
 }
 
 func TestGetContextTokens(t *testing.T) {
-	// Test: GetContextTokens() calculation correctness
+	// Test: GetContextTokens() returns TokensUsed
 	data := readTestData(t, "turn_completed.json")
 
 	event, err := ParseEvent(data)
 	require.NoError(t, err)
 
-	// GetContextTokens = InputTokens + CacheReadInputTokens + CacheCreationInputTokens
-	// = 24763 + 24448 + 0 = 49211
-	expectedContext := 24763 + 24448 + 0
-	require.Equal(t, expectedContext, event.GetContextTokens())
+	// GetContextTokens() now returns TokensUsed directly
+	// TokensUsed = input_tokens + cached_input_tokens = 24763 + 24448 = 49211
+	require.Equal(t, 24763+24448, event.GetContextTokens())
 }
 
 func TestParseEvent_RawDataPreserved(t *testing.T) {

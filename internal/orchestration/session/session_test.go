@@ -1337,7 +1337,7 @@ func TestSession_CoordinatorSubscriber(t *testing.T) {
 		Type: events.ProcessTokenUsage,
 		Role: events.RoleCoordinator,
 		Metrics: &metrics.TokenMetrics{
-			InputTokens:  100,
+			TokensUsed:   100,
 			OutputTokens: 50,
 			TotalCostUSD: 0.05,
 		},
@@ -1701,7 +1701,7 @@ func TestSession_TokenUsageAggregation(t *testing.T) {
 		Type: events.ProcessTokenUsage,
 		Role: events.RoleCoordinator,
 		Metrics: &metrics.TokenMetrics{
-			InputTokens:  100,
+			TokensUsed:   100,
 			OutputTokens: 50,
 			TotalCostUSD: 0.01,
 		},
@@ -1712,7 +1712,7 @@ func TestSession_TokenUsageAggregation(t *testing.T) {
 		Role:      events.RoleWorker,
 		ProcessID: "worker-1",
 		Metrics: &metrics.TokenMetrics{
-			InputTokens:  200,
+			TokensUsed:   200,
 			OutputTokens: 75,
 			TotalCostUSD: 0.02,
 		},
@@ -1723,7 +1723,7 @@ func TestSession_TokenUsageAggregation(t *testing.T) {
 		Role:      events.RoleWorker,
 		ProcessID: "worker-2",
 		Metrics: &metrics.TokenMetrics{
-			InputTokens:  300,
+			TokensUsed:   300,
 			OutputTokens: 100,
 			TotalCostUSD: 0.03,
 		},
@@ -1736,10 +1736,13 @@ func TestSession_TokenUsageAggregation(t *testing.T) {
 	err = session.Close(StatusCompleted)
 	require.NoError(t, err)
 
-	// Verify aggregated token usage
+	// Verify token usage:
+	// - TotalInputTokens: last value only (context is cumulative per-turn, not additive)
+	// - TotalOutputTokens: accumulated (output tokens are incremental per-turn)
+	// - TotalCostUSD: accumulated (cost is incremental per-turn)
 	meta, err := Load(sessionDir)
 	require.NoError(t, err)
-	require.Equal(t, 600, meta.TokenUsage.TotalInputTokens)  // 100 + 200 + 300
+	require.Equal(t, 300, meta.TokenUsage.TotalInputTokens)  // Last value (worker-2), not sum
 	require.Equal(t, 225, meta.TokenUsage.TotalOutputTokens) // 50 + 75 + 100
 	require.InDelta(t, 0.06, meta.TokenUsage.TotalCostUSD, 0.001)
 }

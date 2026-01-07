@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/claude"
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	"github.com/zjrosen/perles/internal/orchestration/events"
@@ -186,6 +187,24 @@ func (p *Process) handleOutputEvent(event *client.OutputEvent) {
 		p.setSessionID(event.SessionID)
 	}
 
+	if event.Usage != nil {
+		// Build TokenMetrics from simplified event usage
+		m := &metrics.TokenMetrics{
+			TokensUsed:    event.Usage.TokensUsed,
+			TotalTokens:   event.Usage.TotalTokens,
+			OutputTokens:  event.Usage.OutputTokens,
+			TurnCostUSD:   event.TotalCostUSD,
+			LastUpdatedAt: time.Now(),
+		}
+
+		p.setMetrics(m)
+
+		// Emit token usage event
+		if m.TokensUsed > 0 {
+			p.publishTokenUsageEvent(m)
+		}
+	}
+
 	// Handle error events (e.g., turn.failed, error from Codex)
 	if event.Type == client.EventError {
 		errMsg := event.GetErrorMessage()
@@ -206,29 +225,6 @@ func (p *Process) handleOutputEvent(event *client.OutputEvent) {
 			// Publish immediately for real-time TUI visibility
 			p.handleInFlightError(fmt.Errorf("process error: %s", errMsg))
 			return
-		}
-
-		// Extract token usage from successful result events
-		if event.Usage != nil {
-			// Build comprehensive TokenMetrics from event usage
-			m := &metrics.TokenMetrics{
-				InputTokens:              event.Usage.InputTokens,
-				OutputTokens:             event.Usage.OutputTokens,
-				CacheReadInputTokens:     event.Usage.CacheReadInputTokens,
-				CacheCreationInputTokens: event.Usage.CacheCreationInputTokens,
-				ContextTokens:            event.GetContextTokens(),
-				ContextWindow:            p.getContextWindow(event),
-				TurnCostUSD:              event.TotalCostUSD,
-				LastUpdatedAt:            time.Now(),
-			}
-
-			// Update metrics
-			p.setMetrics(m)
-
-			// Emit token usage event
-			if m.ContextTokens > 0 {
-				p.publishTokenUsageEvent(m)
-			}
 		}
 	}
 
@@ -393,18 +389,6 @@ func (p *Process) publishErrorEvent(err error) {
 	})
 }
 
-// getContextWindow returns the context window size from the event or a default.
-func (p *Process) getContextWindow(event *client.OutputEvent) int {
-	// Try to get from ModelUsage first (has ContextWindow field)
-	for _, usage := range event.ModelUsage {
-		if usage.ContextWindow > 0 {
-			return usage.ContextWindow
-		}
-	}
-	// Default context window for AI models
-	return 200000
-}
-
 // setSessionID updates the session ID thread-safely.
 func (p *Process) setSessionID(id string) {
 	p.mu.Lock()
@@ -423,8 +407,12 @@ func (p *Process) SessionID() string {
 func (p *Process) setMetrics(m *metrics.TokenMetrics) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	// Accumulate turn cost into cumulative total
 	p.cumulativeCostUSD += m.TurnCostUSD
+
+	log.Debug(log.CatOrch, "tokens", "id", p.ID, "session", p.sessionID, "tokens", m.TokensUsed, "cost", m.TurnCostUSD)
+
 	// Update metrics with cumulative totals
 	m.CumulativeCostUSD = p.cumulativeCostUSD
 	m.TotalCostUSD = p.cumulativeCostUSD

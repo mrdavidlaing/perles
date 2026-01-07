@@ -259,12 +259,23 @@ func TestOutputEventParsing(t *testing.T) {
 				require.True(t, e.IsResult())
 				require.InDelta(t, 0.0123, e.TotalCostUSD, 0.0001)
 				require.Equal(t, int64(45000), e.DurationMs)
+				// Usage is only populated for assistant events, not result events
+				require.Nil(t, e.Usage)
+			},
+		},
+		{
+			name: "assistant message with usage",
+			json: `{"type":"assistant","message":{"id":"msg_3","role":"assistant","content":[{"type":"text","text":"Hello!"}],"model":"claude-sonnet-4","usage":{"input_tokens":5000,"output_tokens":1500,"cache_read_input_tokens":10000,"cache_creation_input_tokens":2000}}}`,
+			validate: func(t *testing.T, e client.OutputEvent) {
+				require.Equal(t, client.EventAssistant, e.Type)
+				require.True(t, e.IsAssistant())
+				require.NotNil(t, e.Message)
+				// Usage is populated for assistant events
+				// TokensUsed = input(5000) + cacheRead(10000) + cacheCreate(2000) = 17000
 				require.NotNil(t, e.Usage)
-				require.Equal(t, 5000, e.Usage.InputTokens)
+				require.Equal(t, 17000, e.Usage.TokensUsed)
 				require.Equal(t, 1500, e.Usage.OutputTokens)
-				require.Equal(t, 10000, e.Usage.CacheReadInputTokens)
-				require.Equal(t, 2000, e.Usage.CacheCreationInputTokens)
-				require.Equal(t, 17000, e.GetContextTokens()) // InputTokens + CacheReadInputTokens + CacheCreationInputTokens (5000 + 10000 + 2000)
+				require.Equal(t, 200000, e.Usage.TotalTokens)
 			},
 		},
 		{
@@ -296,8 +307,7 @@ func TestOutputEventParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var event client.OutputEvent
-			err := json.Unmarshal([]byte(tt.json), &event)
+			event, err := parseEvent([]byte(tt.json))
 			require.NoError(t, err)
 			tt.validate(t, event)
 		})
@@ -719,6 +729,99 @@ func TestResumeWithConfig(t *testing.T) {
 			}
 
 			require.Equal(t, tt.expectedSessionID, cfg.SessionID)
+		})
+	}
+}
+
+func TestMainModelTokenCalculation(t *testing.T) {
+	tests := []struct {
+		name                 string
+		initJSON             string
+		resultJSON           string
+		expectedMainModel    string
+		expectedTokensUsed   int // Computed: input + cacheRead + cacheCreation
+		expectedOutputTokens int
+		expectedTotalTokens  int // From ContextWindow
+	}{
+		{
+			name:     "single model - no sub-agent",
+			initJSON: `{"type":"system","subtype":"init","session_id":"sess-123","model":"claude-opus-4-5-20251101"}`,
+			resultJSON: `{
+				"type":"result",
+				"subtype":"success",
+				"usage":{"input_tokens":2,"output_tokens":10,"cache_read_input_tokens":21927,"cache_creation_input_tokens":0},
+				"modelUsage":{
+					"claude-opus-4-5-20251101":{"inputTokens":4,"outputTokens":30,"cacheReadInputTokens":26053,"cacheCreationInputTokens":0,"contextWindow":200000}
+				},
+				"total_cost_usd":0.0137
+			}`,
+			expectedMainModel:    "claude-opus-4-5-20251101",
+			expectedTokensUsed:   4 + 26053 + 0, // input + cacheRead + cacheCreation
+			expectedOutputTokens: 30,
+			expectedTotalTokens:  200000,
+		},
+		{
+			name:     "with sub-agent - should use main model metrics",
+			initJSON: `{"type":"system","subtype":"init","session_id":"sess-456","model":"claude-opus-4-5-20251101"}`,
+			resultJSON: `{
+				"type":"result",
+				"subtype":"success",
+				"usage":{"input_tokens":2,"output_tokens":158,"cache_read_input_tokens":34599,"cache_creation_input_tokens":9441},
+				"modelUsage":{
+					"claude-opus-4-5-20251101":{"inputTokens":4,"outputTokens":177,"cacheReadInputTokens":34599,"cacheCreationInputTokens":13567,"contextWindow":200000,"costUSD":0.1065},
+					"claude-haiku-4-5-20251001":{"inputTokens":4002,"outputTokens":339,"cacheReadInputTokens":0,"cacheCreationInputTokens":14563,"contextWindow":200000,"costUSD":0.0239}
+				},
+				"total_cost_usd":0.1304
+			}`,
+			expectedMainModel:    "claude-opus-4-5-20251101",
+			expectedTokensUsed:   4 + 34599 + 13567, // Main model's input + cacheRead + cacheCreation
+			expectedOutputTokens: 177,               // Main model's output, not haiku's
+			expectedTotalTokens:  200000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := newTestProcess()
+
+			// Simulate parsing init event to capture main model
+			var initData struct {
+				Model string `json:"model"`
+			}
+			err := json.Unmarshal([]byte(tt.initJSON), &initData)
+			require.NoError(t, err)
+			p.mainModel = initData.Model
+
+			require.Equal(t, tt.expectedMainModel, p.mainModel)
+
+			// Parse result event using parseEvent (which populates Usage from raw JSON)
+			resultEvent, err := parseEvent([]byte(tt.resultJSON))
+			require.NoError(t, err)
+
+			// Simulate the fix: populate Usage from main model's ModelUsage (as done in parseOutput)
+			if resultEvent.ModelUsage != nil && p.mainModel != "" {
+				if mainUsage, ok := resultEvent.ModelUsage[p.mainModel]; ok {
+					tokensUsed := mainUsage.InputTokens + mainUsage.CacheReadInputTokens + mainUsage.CacheCreationInputTokens
+					totalTokens := mainUsage.ContextWindow
+					if totalTokens == 0 {
+						totalTokens = 200000
+					}
+					resultEvent.Usage = &client.UsageInfo{
+						TokensUsed:   tokensUsed,
+						TotalTokens:  totalTokens,
+						OutputTokens: mainUsage.OutputTokens,
+					}
+				}
+			}
+
+			// Verify Usage now contains main model's simplified metrics
+			require.NotNil(t, resultEvent.Usage)
+			require.Equal(t, tt.expectedTokensUsed, resultEvent.Usage.TokensUsed)
+			require.Equal(t, tt.expectedOutputTokens, resultEvent.Usage.OutputTokens)
+			require.Equal(t, tt.expectedTotalTokens, resultEvent.Usage.TotalTokens)
+
+			// Verify GetContextTokens returns TokensUsed
+			require.Equal(t, tt.expectedTokensUsed, resultEvent.GetContextTokens())
 		})
 	}
 }

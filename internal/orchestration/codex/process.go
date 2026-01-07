@@ -235,10 +235,9 @@ func (p *Process) parseOutput() {
 			if event.Usage != nil {
 				log.Debug(log.CatOrch, "USAGE_DETAILS",
 					"subsystem", "codex",
-					"inputTokens", event.Usage.InputTokens,
-					"outputTokens", event.Usage.OutputTokens,
-					"cacheReadInputTokens", event.Usage.CacheReadInputTokens,
-					"cacheCreationInputTokens", event.Usage.CacheCreationInputTokens)
+					"tokensUsed", event.Usage.TokensUsed,
+					"totalTokens", event.Usage.TotalTokens,
+					"outputTokens", event.Usage.OutputTokens)
 			}
 		}
 

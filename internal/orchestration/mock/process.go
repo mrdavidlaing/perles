@@ -255,12 +255,13 @@ func (p *Process) SendToolResultEvent(toolID, toolName, output string) {
 }
 
 // SendResultEvent sends a successful result event with token usage.
-func (p *Process) SendResultEvent(inputTokens, outputTokens int, costUSD float64) {
+func (p *Process) SendResultEvent(tokensUsed, outputTokens int, costUSD float64) {
 	p.SendEvent(client.OutputEvent{
 		Type:      client.EventResult,
 		Timestamp: time.Now(),
 		Usage: &client.UsageInfo{
-			InputTokens:  inputTokens,
+			TokensUsed:   tokensUsed,
+			TotalTokens:  200000,
 			OutputTokens: outputTokens,
 		},
 		TotalCostUSD: costUSD,

@@ -122,6 +122,7 @@ type Process struct {
 	stdout     io.ReadCloser
 	stderr     io.ReadCloser
 	sessionID  string
+	mainModel  string // Main model name from init event, used to extract correct usage from modelUsage
 	workDir    string
 	status     client.ProcessStatus
 	events     chan client.OutputEvent
@@ -346,82 +347,63 @@ func (p *Process) parseOutput() {
 	defer p.wg.Done()
 	defer close(p.events)
 
-	log.Debug(log.CatOrch, "starting output parser", "subsystem", "claude")
-
 	scanner := bufio.NewScanner(p.stdout)
 	// Increase buffer size for large outputs
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
-	lineCount := 0
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		lineCount++
-
 		if len(line) == 0 {
 			continue
 		}
 
-		// Log raw JSON for debugging - this helps us see what Claude actually outputs
-		log.Debug(log.CatOrch, "RAW_JSON", "subsystem", "claude", "lineNum", lineCount, "json", string(line))
-
-		var event client.OutputEvent
-		if err := json.Unmarshal(line, &event); err != nil {
-			log.Debug(log.CatOrch, "failed to unmarshal JSON", "subsystem", "claude", "error", err, "line", string(line[:min(100, len(line))]))
+		event, err := parseEvent(line)
+		if err != nil {
+			log.Debug(log.CatOrch, "parse error", "error", err, "line", string(line[:min(100, len(line))]))
 			continue
-		}
-
-		log.Debug(log.CatOrch, "parsed event", "subsystem", "claude", "type", event.Type, "subtype", event.SubType, "hasTool", event.Tool != nil, "hasMessage", event.Message != nil)
-
-		// Log Usage data specifically for result events to debug token tracking
-		if event.Type == client.EventResult {
-			hasUsage := event.Usage != nil
-			hasModelUsage := event.ModelUsage != nil
-			log.Debug(log.CatOrch, "RESULT_EVENT_USAGE",
-				"subsystem", "claude",
-				"hasUsage", hasUsage,
-				"hasModelUsage", hasModelUsage,
-				"totalCostUSD", event.TotalCostUSD,
-				"durationMs", event.DurationMs)
-			if hasUsage {
-				log.Debug(log.CatOrch, "USAGE_DETAILS",
-					"subsystem", "claude",
-					"inputTokens", event.Usage.InputTokens,
-					"outputTokens", event.Usage.OutputTokens,
-					"cacheReadInputTokens", event.Usage.CacheReadInputTokens,
-					"cacheCreationInputTokens", event.Usage.CacheCreationInputTokens)
-			}
-			if hasModelUsage {
-				for modelName, usage := range event.ModelUsage {
-					log.Debug(log.CatOrch, "MODEL_USAGE_DETAILS",
-						"subsystem", "claude",
-						"model", modelName,
-						"inputTokens", usage.InputTokens,
-						"outputTokens", usage.OutputTokens,
-						"cacheReadInputTokens", usage.CacheReadInputTokens,
-						"cacheCreationInputTokens", usage.CacheCreationInputTokens,
-						"contextWindow", usage.ContextWindow)
-				}
-			}
 		}
 
 		event.Raw = make([]byte, len(line))
 		copy(event.Raw, line)
 		event.Timestamp = time.Now()
 
-		// Extract session ID from init event
-		if event.Type == client.EventSystem && event.SubType == "init" && event.SessionID != "" {
-			p.mu.Lock()
-			p.sessionID = event.SessionID
-			p.mu.Unlock()
-			log.Debug(log.CatOrch, "got session ID", "subsystem", "claude", "sessionID", event.SessionID)
+		// Extract session ID and model from init event
+		if event.Type == client.EventSystem && event.SubType == "init" {
+			// Parse model from raw JSON since it's not in OutputEvent struct
+			var initData struct {
+				SessionID string `json:"session_id"`
+				Model     string `json:"model"`
+			}
+			if err := json.Unmarshal(line, &initData); err == nil {
+				p.mu.Lock()
+				if initData.SessionID != "" {
+					p.sessionID = initData.SessionID
+				}
+				if initData.Model != "" {
+					p.mainModel = initData.Model
+				}
+				p.mu.Unlock()
+				log.Debug(log.CatOrch, "session init", "sessionID", initData.SessionID, "model", initData.Model)
+			}
+		}
+
+		// TODO this could be wrong but currently the EventResult doesnt' feel like its the correct token usage.
+		// will need to revisit this to understand if this is a Claude bug or if we should be using the assistant event
+		if event.Type == client.EventAssistant && event.Usage != nil {
+			p.mu.RLock()
+			sessionID := p.sessionID
+			p.mu.RUnlock()
+
+			log.Debug(log.CatOrch, "result context",
+				"session", sessionID,
+				"tokensUsed", event.Usage.TokensUsed,
+				"pctUsed", float64(event.Usage.TokensUsed)/200000*100)
 		}
 
 		select {
 		case p.events <- event:
-			log.Debug(log.CatOrch, "sent event to channel", "subsystem", "claude", "type", event.Type)
 		case <-p.ctx.Done():
-			log.Debug(log.CatOrch, "context done, stopping parser", "subsystem", "claude")
 			return
 		}
 	}

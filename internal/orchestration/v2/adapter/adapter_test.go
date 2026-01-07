@@ -2164,8 +2164,8 @@ func TestHandleQueryWorkerState_MatchesCoordinatorFormat(t *testing.T) {
 		SessionID: "session-abc",
 		CreatedAt: specificTime,
 		Metrics: &metrics.TokenMetrics{
-			ContextTokens: 50000,
-			ContextWindow: 200000,
+			TokensUsed:  50000,
+			TotalTokens: 200000,
 		},
 	})
 

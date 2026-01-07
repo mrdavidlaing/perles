@@ -234,15 +234,14 @@ func TestProcessTurnCompleteCommand_StoresSucceeded_False(t *testing.T) {
 
 func TestProcessTurnCompleteCommand_StoresMetrics(t *testing.T) {
 	m := &metrics.TokenMetrics{
-		InputTokens:   1000,
-		OutputTokens:  500,
-		TotalCostUSD:  0.05,
-		ContextTokens: 10000,
-		ContextWindow: 200000,
+		TokensUsed:   1000,
+		OutputTokens: 500,
+		TotalCostUSD: 0.05,
+		TotalTokens:  200000,
 	}
 	cmd := NewProcessTurnCompleteCommand("worker-1", true, m, nil)
 	require.NotNil(t, cmd.Metrics)
-	require.Equal(t, 1000, cmd.Metrics.InputTokens)
+	require.Equal(t, 1000, cmd.Metrics.TokensUsed)
 	require.Equal(t, 500, cmd.Metrics.OutputTokens)
 }
 

@@ -427,19 +427,6 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 						return nil, fmt.Errorf("failed to save process: %w", err)
 					}
 
-					// Build events - only emit token usage, NOT ProcessReady (to avoid UI confusion)
-					var resultEvents []any
-					if turnCmd.Metrics != nil {
-						tokenEvent := events.ProcessEvent{
-							Type:      events.ProcessTokenUsage,
-							ProcessID: proc.ID,
-							Role:      proc.Role,
-							Metrics:   turnCmd.Metrics,
-							TaskID:    proc.TaskID,
-						}
-						resultEvents = append(resultEvents, tokenEvent)
-					}
-
 					// Create DeliverProcessQueuedCommand to deliver the reminder
 					deliverCmd := command.NewDeliverProcessQueuedCommand(command.SourceInternal, proc.ID)
 					if turnCmd.TraceID() != "" {
@@ -454,7 +441,7 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 						EnforcementTriggered: true,
 					}
 
-					return SuccessWithEventsAndFollowUp(result, resultEvents, []command.Command{deliverCmd}), nil
+					return SuccessWithEventsAndFollowUp(result, nil, []command.Command{deliverCmd}), nil
 				}
 				// Max retries exceeded - log warning and allow turn to complete
 				h.enforcer.OnMaxRetriesExceeded(proc.ID, missingTools)
@@ -485,25 +472,12 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 			evErr = fmt.Errorf("process %s first turn failed; exited before establishing a session", proc.ID)
 		}
 
-		var resultEvents []any
 		errorEvent := events.ProcessEvent{
 			Type:      events.ProcessError,
 			ProcessID: proc.ID,
 			Role:      proc.Role,
 			Status:    events.ProcessStatusFailed,
 			Error:     evErr,
-		}
-		resultEvents = append(resultEvents, errorEvent)
-
-		// Include token usage if available
-		if turnCmd.Metrics != nil {
-			tokenEvent := events.ProcessEvent{
-				Type:      events.ProcessTokenUsage,
-				ProcessID: proc.ID,
-				Role:      proc.Role,
-				Metrics:   turnCmd.Metrics,
-			}
-			resultEvents = append(resultEvents, tokenEvent)
 		}
 
 		result := &ProcessTurnCompleteResult{
@@ -512,7 +486,7 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 			WasNoOp:   false,
 		}
 
-		return SuccessWithEvents(result, resultEvents...), nil
+		return SuccessWithEvents(result, errorEvent), nil
 	}
 	// ===========================================================================
 	// End of startup failure handling
@@ -537,29 +511,12 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 		return nil, fmt.Errorf("failed to save process: %w", err)
 	}
 
-	// Build events
-	var resultEvents []any
-
-	// Emit ProcessReady event
 	readyEvent := events.ProcessEvent{
 		Type:      events.ProcessReady,
 		ProcessID: proc.ID,
 		Role:      proc.Role,
 		Status:    events.ProcessStatusReady,
 		TaskID:    proc.TaskID,
-	}
-	resultEvents = append(resultEvents, readyEvent)
-
-	// Emit ProcessTokenUsage if metrics provided
-	if turnCmd.Metrics != nil {
-		tokenEvent := events.ProcessEvent{
-			Type:      events.ProcessTokenUsage,
-			ProcessID: proc.ID,
-			Role:      proc.Role,
-			Metrics:   turnCmd.Metrics,
-			TaskID:    proc.TaskID,
-		}
-		resultEvents = append(resultEvents, tokenEvent)
 	}
 
 	// Check for queued messages - same logic for both roles
@@ -580,7 +537,7 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 		WasNoOp:        false,
 	}
 
-	return SuccessWithEventsAndFollowUp(result, resultEvents, followUps), nil
+	return SuccessWithEventsAndFollowUp(result, []any{readyEvent}, followUps), nil
 }
 
 // ProcessTurnCompleteResult contains the result of handling turn completion.

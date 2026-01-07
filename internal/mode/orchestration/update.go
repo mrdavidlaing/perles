@@ -713,12 +713,7 @@ func (m Model) handleV2Event(event pubsub.Event[any]) (Model, tea.Cmd) {
 		}
 
 	case processor.CommandErrorEvent:
-		// Log command errors (display deferred to Phase 2)
-		log.Debug(log.CatOrch, "V2 command error",
-			"subsystem", "update",
-			"commandID", payload.CommandID,
-			"commandType", payload.CommandType,
-			"error", payload.Error)
+		log.Debug(log.CatOrch, "command error", "type", payload.CommandType, "error", payload.Error)
 
 	case processor.CommandLogEvent:
 		// CRITICAL: Always append entries regardless of showCommandPane state.
@@ -750,13 +745,6 @@ func (m Model) handleV2Event(event pubsub.Event[any]) (Model, tea.Cmd) {
 			m.commandPane.hasNewContent = true
 		}
 
-		log.Debug(log.CatOrch, "Command log entry added",
-			"subsystem", "update",
-			"commandID", payload.CommandID,
-			"commandType", payload.CommandType,
-			"success", payload.Success,
-			"entryCount", len(m.commandPane.entries))
-
 	default:
 		// Unknown event types are handled gracefully - just continue listening
 	}
@@ -769,76 +757,42 @@ func (m Model) handleV2Event(event pubsub.Event[any]) (Model, tea.Cmd) {
 func (m Model) handleCoordinatorProcessEvent(evt events.ProcessEvent) Model {
 	switch evt.Type {
 	case events.ProcessSpawned:
-		log.Debug(log.CatOrch, "coordinator process spawned",
-			"subsystem", "update",
-			"processID", evt.ProcessID)
 		// Coordinator pane initialization is handled elsewhere (initializer)
 
 	case events.ProcessOutput:
-		log.Debug(log.CatOrch, "coordinator output received",
-			"subsystem", "update",
-			"processID", evt.ProcessID,
-			"outputLen", len(evt.Output))
 		if evt.Output != "" {
 			m = m.AddChatMessage("coordinator", evt.Output)
 		}
 
 	case events.ProcessReady:
-		log.Debug(log.CatOrch, "coordinator ready",
-			"subsystem", "update",
-			"processID", evt.ProcessID)
 		m.coordinatorWorking = false
 		m.coordinatorStatus = events.ProcessStatusReady
 
 	case events.ProcessWorking:
-		log.Debug(log.CatOrch, "coordinator working",
-			"subsystem", "update",
-			"processID", evt.ProcessID)
 		m.coordinatorWorking = true
 		m.coordinatorStatus = events.ProcessStatusWorking
 
 	case events.ProcessIncoming:
-		log.Debug(log.CatOrch, "coordinator incoming message",
-			"subsystem", "update",
-			"processID", evt.ProcessID,
-			"messageLen", len(evt.Message))
 		if evt.Message != "" {
 			m = m.AddChatMessage("user", evt.Message)
 		}
 
 	case events.ProcessTokenUsage:
 		if evt.Metrics != nil {
-			log.Debug(log.CatOrch, "coordinator token usage",
-				"subsystem", "update",
-				"processID", evt.ProcessID,
-				"contextTokens", evt.Metrics.ContextTokens,
-				"contextWindow", evt.Metrics.ContextWindow,
-				"totalCost", evt.Metrics.TotalCostUSD)
 			m.coordinatorMetrics = evt.Metrics
 		}
 
 	case events.ProcessError:
-		log.Debug(log.CatOrch, "coordinator error",
-			"subsystem", "update",
-			"processID", evt.ProcessID,
-			"error", evt.Error)
+		log.Debug(log.CatOrch, "coordinator error", "error", evt.Error)
 		// Only show error modal when past initialization - init screen shows errors inline
 		if evt.Error != nil && m.getInitPhase() == InitReady {
 			m = m.SetError(evt.Error.Error())
 		}
 
 	case events.ProcessQueueChanged:
-		log.Debug(log.CatOrch, "coordinator queue changed",
-			"subsystem", "update",
-			"processID", evt.ProcessID,
-			"queueCount", evt.QueueCount)
 		m.coordinatorPane.queueCount = evt.QueueCount
 
 	case events.ProcessStatusChange:
-		log.Debug(log.CatOrch, "coordinator status changed",
-			"subsystem", "update",
-			"processID", evt.ProcessID,
-			"status", evt.Status)
 		// Update coordinator status for UI rendering
 		m.coordinatorStatus = evt.Status
 		m = m.updateStatusFromProcessStatus(evt.Status)
@@ -862,75 +816,39 @@ func (m Model) handleWorkerProcessEvent(evt events.ProcessEvent) Model {
 
 	switch evt.Type {
 	case events.ProcessSpawned:
-		log.Debug(log.CatOrch, "worker process spawned",
-			"subsystem", "update",
-			"workerID", workerID,
-			"taskID", evt.TaskID)
 		m = m.UpdateWorker(workerID, evt.Status)
 
 	case events.ProcessOutput:
-		log.Debug(log.CatOrch, "worker output received",
-			"subsystem", "update",
-			"workerID", workerID,
-			"outputLen", len(evt.Output))
 		if evt.Output != "" {
 			m = m.AddWorkerMessage(workerID, evt.Output)
 		}
 
 	case events.ProcessReady:
-		log.Debug(log.CatOrch, "worker ready",
-			"subsystem", "update",
-			"workerID", workerID)
 		m = m.UpdateWorker(workerID, events.ProcessStatusReady)
 
 	case events.ProcessWorking:
-		log.Debug(log.CatOrch, "worker working",
-			"subsystem", "update",
-			"workerID", workerID)
 		m = m.UpdateWorker(workerID, events.ProcessStatusWorking)
 
 	case events.ProcessIncoming:
 		// ProcessIncoming indicates a message was delivered to the worker.
 		// Display messages from both user and coordinator.
-		log.Debug(log.CatOrch, "worker incoming message",
-			"subsystem", "update",
-			"workerID", workerID,
-			"sender", evt.Sender,
-			"messageLen", len(evt.Message))
 		if evt.Message != "" {
 			m = m.AddWorkerMessageWithRole(workerID, evt.Sender, evt.Message)
 		}
 
 	case events.ProcessTokenUsage:
 		if evt.Metrics != nil {
-			log.Debug(log.CatOrch, "worker token usage",
-				"subsystem", "update",
-				"workerID", workerID,
-				"contextTokens", evt.Metrics.ContextTokens,
-				"contextWindow", evt.Metrics.ContextWindow,
-				"totalCost", evt.Metrics.TotalCostUSD)
 			m.workerPane.workerMetrics[workerID] = evt.Metrics
 		}
 
 	case events.ProcessError:
-		log.Debug(log.CatOrch, "worker error",
-			"subsystem", "update",
-			"workerID", workerID,
-			"error", evt.Error)
+		log.Debug(log.CatOrch, "worker error", "workerID", workerID, "error", evt.Error)
 		// Worker errors are logged but not shown in modal (non-fatal)
 
 	case events.ProcessQueueChanged:
-		log.Debug(log.CatOrch, "worker queue changed",
-			"subsystem", "update",
-			"workerID", workerID,
-			"queueCount", evt.QueueCount)
 		m = m.SetQueueCount(workerID, evt.QueueCount)
 
 	case events.ProcessStatusChange:
-		log.Debug(log.CatOrch, "worker status changed",
-			"subsystem", "update",
-			"workerID", workerID,
-			"status", evt.Status)
 		m = m.UpdateWorker(workerID, evt.Status)
 	}
 

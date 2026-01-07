@@ -210,7 +210,7 @@ func (m Model) renderSingleWorkerPane(workerID string, width, height int) string
 
 	// Build metrics display for right title
 	var metricsDisplay string
-	if workerMetrics, ok := m.workerPane.workerMetrics[workerID]; ok && workerMetrics != nil && workerMetrics.ContextTokens > 0 {
+	if workerMetrics, ok := m.workerPane.workerMetrics[workerID]; ok && workerMetrics != nil && workerMetrics.TokensUsed > 0 {
 		metricsDisplay = workerMetrics.FormatContextDisplay()
 	}
 

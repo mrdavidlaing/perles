@@ -2674,9 +2674,9 @@ func TestHandleCoordinatorProcessEvent_ProcessTokenUsage(t *testing.T) {
 	m = m.SetSize(120, 40)
 
 	testMetrics := &metrics.TokenMetrics{
-		ContextTokens: 10000,
-		ContextWindow: 200000,
-		TotalCostUSD:  0.5,
+		TokensUsed:   10000,
+		TotalTokens:  200000,
+		TotalCostUSD: 0.5,
 	}
 
 	evt := events.ProcessEvent{
@@ -2689,8 +2689,8 @@ func TestHandleCoordinatorProcessEvent_ProcessTokenUsage(t *testing.T) {
 	m = m.handleCoordinatorProcessEvent(evt)
 
 	require.NotNil(t, m.coordinatorMetrics)
-	require.Equal(t, 10000, m.coordinatorMetrics.ContextTokens)
-	require.Equal(t, 200000, m.coordinatorMetrics.ContextWindow)
+	require.Equal(t, 10000, m.coordinatorMetrics.TokensUsed)
+	require.Equal(t, 200000, m.coordinatorMetrics.TotalTokens)
 }
 
 func TestHandleCoordinatorProcessEvent_ProcessTokenUsage_NilMetrics(t *testing.T) {
@@ -2947,9 +2947,9 @@ func TestHandleWorkerProcessEvent_ProcessTokenUsage(t *testing.T) {
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
 
 	testMetrics := &metrics.TokenMetrics{
-		ContextTokens: 5000,
-		ContextWindow: 100000,
-		TotalCostUSD:  0.25,
+		TokensUsed:   5000,
+		TotalTokens:  100000,
+		TotalCostUSD: 0.25,
 	}
 
 	evt := events.ProcessEvent{
@@ -2962,7 +2962,7 @@ func TestHandleWorkerProcessEvent_ProcessTokenUsage(t *testing.T) {
 	m = m.handleWorkerProcessEvent(evt)
 
 	require.NotNil(t, m.workerPane.workerMetrics["worker-1"])
-	require.Equal(t, 5000, m.workerPane.workerMetrics["worker-1"].ContextTokens)
+	require.Equal(t, 5000, m.workerPane.workerMetrics["worker-1"].TokensUsed)
 }
 
 func TestHandleWorkerProcessEvent_ProcessTokenUsage_NilMetrics(t *testing.T) {

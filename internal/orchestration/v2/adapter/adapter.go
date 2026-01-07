@@ -406,8 +406,8 @@ func (a *V2Adapter) HandleQueryWorkerState(_ context.Context, args json.RawMessa
 		}
 
 		// Add context usage if metrics available
-		if p.Metrics != nil && p.Metrics.ContextTokens > 0 && p.Metrics.ContextWindow > 0 {
-			info.ContextUsage = formatContextUsage(p.Metrics.ContextTokens, p.Metrics.ContextWindow)
+		if p.Metrics != nil && p.Metrics.TokensUsed > 0 && p.Metrics.TotalTokens > 0 {
+			info.ContextUsage = formatContextUsage(p.Metrics.TokensUsed, p.Metrics.TotalTokens)
 		}
 
 		// Get current task assignment if task repository is available

@@ -85,11 +85,11 @@ func parseEvent(line []byte) (client.OutputEvent, error) {
 
 		// Extract usage info from message (Amp puts it here, not in result events)
 		if raw.Message.Usage != nil {
+			tokensUsed := raw.Message.Usage.InputTokens + raw.Message.Usage.CacheReadInputTokens + raw.Message.Usage.CacheCreationInputTokens
 			event.Usage = &client.UsageInfo{
-				InputTokens:              raw.Message.Usage.InputTokens,
-				OutputTokens:             raw.Message.Usage.OutputTokens,
-				CacheReadInputTokens:     raw.Message.Usage.CacheReadInputTokens,
-				CacheCreationInputTokens: raw.Message.Usage.CacheCreationInputTokens,
+				TokensUsed:   tokensUsed,
+				TotalTokens:  200000, // Default context window for all current models
+				OutputTokens: raw.Message.Usage.OutputTokens,
 			}
 		}
 

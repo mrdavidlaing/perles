@@ -41,8 +41,6 @@ type LoggingMiddlewareConfig struct {
 }
 
 // NewLoggingMiddleware creates a middleware that logs command execution.
-// It logs before processing with command details, and after processing
-// with success/error status and duration.
 func NewLoggingMiddleware(cfg LoggingMiddlewareConfig) Middleware {
 	return func(next CommandHandler) CommandHandler {
 		return HandlerFunc(func(ctx context.Context, cmd command.Command) (*command.CommandResult, error) {
@@ -62,14 +60,6 @@ func NewLoggingMiddleware(cfg LoggingMiddlewareConfig) Middleware {
 				source = string(hasSource.Source())
 			}
 
-			// Log before processing
-			log.Debug(log.CatCommands, "processing command",
-				"command_id", cmd.ID(),
-				"command_type", cmd.Type().String(),
-				"trace_id", traceID,
-				"source", source,
-			)
-
 			// Execute the handler
 			result, err := next.Handle(ctx, cmd)
 
@@ -83,6 +73,7 @@ func NewLoggingMiddleware(cfg LoggingMiddlewareConfig) Middleware {
 					"command_type", cmd.Type().String(),
 					"trace_id", traceID,
 					"duration", duration,
+					"source", source,
 					"error", err.Error(),
 				)
 			} else if result != nil && !result.Success {
@@ -95,6 +86,7 @@ func NewLoggingMiddleware(cfg LoggingMiddlewareConfig) Middleware {
 					"command_type", cmd.Type().String(),
 					"trace_id", traceID,
 					"duration", duration,
+					"source", source,
 					"error", errMsg,
 				)
 			} else {
@@ -103,6 +95,7 @@ func NewLoggingMiddleware(cfg LoggingMiddlewareConfig) Middleware {
 					"command_type", cmd.Type().String(),
 					"trace_id", traceID,
 					"duration", duration,
+					"source", source,
 					"success", result != nil && result.Success,
 				)
 			}

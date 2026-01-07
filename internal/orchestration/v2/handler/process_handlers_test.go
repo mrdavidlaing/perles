@@ -598,7 +598,7 @@ func TestProcessTurnCompleteHandler_UpdatesMetricsWhenProvided(t *testing.T) {
 	h := handler.NewProcessTurnCompleteHandler(processRepo, queueRepo)
 
 	m := &metrics.TokenMetrics{
-		InputTokens:  1000,
+		TokensUsed:   1000,
 		OutputTokens: 500,
 	}
 	cmd := command.NewProcessTurnCompleteCommand("worker-1", true, m, nil)
@@ -607,7 +607,7 @@ func TestProcessTurnCompleteHandler_UpdatesMetricsWhenProvided(t *testing.T) {
 
 	updated, _ := processRepo.Get("worker-1")
 	assert.NotNil(t, updated.Metrics)
-	assert.Equal(t, 1000, updated.Metrics.InputTokens)
+	assert.Equal(t, 1000, updated.Metrics.TokensUsed)
 	assert.Equal(t, 500, updated.Metrics.OutputTokens)
 }
 
@@ -638,32 +638,9 @@ func TestProcessTurnCompleteHandler_EmitsProcessReadyEvent(t *testing.T) {
 	assert.True(t, foundReady)
 }
 
-func TestProcessTurnCompleteHandler_EmitsProcessTokenUsageWhenMetricsProvided(t *testing.T) {
-	processRepo, queueRepo := setupProcessRepos()
-
-	worker := &repository.Process{
-		ID:     "worker-1",
-		Role:   repository.RoleWorker,
-		Status: repository.StatusWorking,
-	}
-	processRepo.AddProcess(worker)
-
-	h := handler.NewProcessTurnCompleteHandler(processRepo, queueRepo)
-
-	m := &metrics.TokenMetrics{InputTokens: 100}
-	cmd := command.NewProcessTurnCompleteCommand("worker-1", true, m, nil)
-	result, err := h.Handle(context.Background(), cmd)
-	require.NoError(t, err)
-
-	var foundTokenUsage bool
-	for _, evt := range result.Events {
-		if pe, ok := evt.(events.ProcessEvent); ok && pe.Type == events.ProcessTokenUsage {
-			foundTokenUsage = true
-			assert.Equal(t, 100, pe.Metrics.InputTokens)
-		}
-	}
-	assert.True(t, foundTokenUsage)
-}
+// NOTE: ProcessTokenUsage is emitted by process.go when result events arrive,
+// NOT by the handler. This avoids double-counting in session token tracking.
+// See process.go publishTokenUsageEvent() for the single source of truth.
 
 func TestProcessTurnCompleteHandler_ReturnsDeliverProcessQueuedCommandIfQueueNotEmpty(t *testing.T) {
 	processRepo, queueRepo := setupProcessRepos()

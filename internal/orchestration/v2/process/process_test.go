@@ -130,7 +130,7 @@ func TestNew_InitializesEmptyMetrics(t *testing.T) {
 
 	m := p.Metrics()
 	assert.NotNil(t, m)
-	assert.Equal(t, 0, m.InputTokens)
+	assert.Equal(t, 0, m.TokensUsed)
 	assert.Equal(t, 0, m.OutputTokens)
 }
 
@@ -492,10 +492,10 @@ func TestMetrics_ReturnsTokenMetrics(t *testing.T) {
 	require.NotNil(t, m)
 
 	// Update metrics
-	p.setMetrics(&metrics.TokenMetrics{InputTokens: 100, OutputTokens: 50})
+	p.setMetrics(&metrics.TokenMetrics{TokensUsed: 100, OutputTokens: 50})
 
 	updated := p.Metrics()
-	assert.Equal(t, 100, updated.InputTokens)
+	assert.Equal(t, 100, updated.TokensUsed)
 	assert.Equal(t, 50, updated.OutputTokens)
 }
 
@@ -508,7 +508,7 @@ func TestMetrics_IsThreadSafe(t *testing.T) {
 		wg.Add(2)
 		go func(n int) {
 			defer wg.Done()
-			p.setMetrics(&metrics.TokenMetrics{InputTokens: n})
+			p.setMetrics(&metrics.TokenMetrics{TokensUsed: n})
 		}(i)
 		go func() {
 			defer wg.Done()
@@ -1195,7 +1195,8 @@ func TestCumulativeCostAccumulation_EmittedInTokenUsageEvent(t *testing.T) {
 	proc.events <- client.OutputEvent{
 		Type: client.EventResult,
 		Usage: &client.UsageInfo{
-			InputTokens:  1000,
+			TokensUsed:   1000,
+			TotalTokens:  200000,
 			OutputTokens: 500,
 		},
 		TotalCostUSD: 0.05,
@@ -1238,7 +1239,8 @@ func TestCumulativeCostAccumulation_MultiTurnWithEvents(t *testing.T) {
 		proc.events <- client.OutputEvent{
 			Type: client.EventResult,
 			Usage: &client.UsageInfo{
-				InputTokens:  1000,
+				TokensUsed:   1000,
+				TotalTokens:  200000,
 				OutputTokens: 500,
 			},
 			TotalCostUSD: cost,
