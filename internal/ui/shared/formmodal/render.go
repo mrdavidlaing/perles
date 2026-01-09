@@ -78,7 +78,9 @@ func (m Model) View() string {
 
 	// Validation error (if any)
 	if m.validationError != "" {
-		errorStyle := lipgloss.NewStyle().Foreground(styles.StatusErrorColor)
+		errorStyle := lipgloss.NewStyle().
+			Foreground(styles.StatusErrorColor).
+			Width(contentWidth - 2) // Account for content padding
 		content.WriteString(contentPadding.Render(" " + errorStyle.Render(m.validationError)))
 		content.WriteString("\n\n")
 	}
