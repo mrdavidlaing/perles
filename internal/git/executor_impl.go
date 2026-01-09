@@ -34,6 +34,9 @@ var (
 
 	// ErrDetachedHead indicates HEAD is not pointing to a branch (detached HEAD state).
 	ErrDetachedHead = errors.New("detached HEAD state")
+
+	// ErrInvalidBranchName indicates the branch name format is invalid per git check-ref-format.
+	ErrInvalidBranchName = errors.New("invalid branch name format")
 )
 
 // Compile-time check that RealExecutor implements GitExecutor.
@@ -102,6 +105,11 @@ func parseGitError(stderr string, originalErr error) error {
 	// Not a git repository
 	if strings.Contains(stderrLower, "not a git repository") {
 		return fmt.Errorf("%w: %s", ErrNotGitRepo, stderr)
+	}
+
+	// Invalid branch name
+	if strings.Contains(stderrLower, "is not a valid branch name") {
+		return fmt.Errorf("%w: %s", ErrInvalidBranchName, stderr)
 	}
 
 	return fmt.Errorf("git error: %s: %w", stderr, originalErr)
@@ -486,6 +494,16 @@ func (e *RealExecutor) ListBranches() ([]BranchInfo, error) {
 func (e *RealExecutor) BranchExists(name string) bool {
 	err := e.runGit("show-ref", "--verify", "--quiet", "refs/heads/"+name)
 	return err == nil
+}
+
+// ValidateBranchName validates a branch name using git check-ref-format --branch.
+// Returns nil if valid, ErrInvalidBranchName if invalid.
+func (e *RealExecutor) ValidateBranchName(name string) error {
+	err := e.runGit("check-ref-format", "--branch", name)
+	if err != nil {
+		return ErrInvalidBranchName
+	}
+	return nil
 }
 
 // ErrDiffTimeout is returned when a git diff operation times out.

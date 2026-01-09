@@ -1370,6 +1370,52 @@ func (_c *MockGitExecutor_RemoveWorktree_Call) RunAndReturn(run func(string) err
 	return _c
 }
 
+// ValidateBranchName provides a mock function with given fields: name
+func (_m *MockGitExecutor) ValidateBranchName(name string) error {
+	ret := _m.Called(name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ValidateBranchName")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string) error); ok {
+		r0 = rf(name)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockGitExecutor_ValidateBranchName_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ValidateBranchName'
+type MockGitExecutor_ValidateBranchName_Call struct {
+	*mock.Call
+}
+
+// ValidateBranchName is a helper method to define mock.On call
+//   - name string
+func (_e *MockGitExecutor_Expecter) ValidateBranchName(name interface{}) *MockGitExecutor_ValidateBranchName_Call {
+	return &MockGitExecutor_ValidateBranchName_Call{Call: _e.mock.On("ValidateBranchName", name)}
+}
+
+func (_c *MockGitExecutor_ValidateBranchName_Call) Run(run func(name string)) *MockGitExecutor_ValidateBranchName_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockGitExecutor_ValidateBranchName_Call) Return(_a0 error) *MockGitExecutor_ValidateBranchName_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockGitExecutor_ValidateBranchName_Call) RunAndReturn(run func(string) error) *MockGitExecutor_ValidateBranchName_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // NewMockGitExecutor creates a new instance of MockGitExecutor. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewMockGitExecutor(t interface {

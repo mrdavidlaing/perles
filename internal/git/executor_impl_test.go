@@ -926,3 +926,94 @@ func TestRealExecutor_GetCommitLogForRef_NotGitRepo(t *testing.T) {
 	require.Error(t, err, "GetCommitLogForRef() outside git repo should error")
 	require.ErrorIs(t, err, ErrNotGitRepo, "GetCommitLogForRef() should return ErrNotGitRepo")
 }
+
+// TestRealExecutor_ValidateBranchName_Valid tests ValidateBranchName with valid branch names.
+func TestRealExecutor_ValidateBranchName_Valid(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	executor := NewRealExecutor(cwd)
+
+	validNames := []string{
+		"feature/foo",
+		"fix-123",
+		"release-v1.0",
+		"main",
+		"develop",
+		"my-feature-branch",
+		"feature/my/nested/branch",
+		"123-numeric-prefix",
+		"UPPERCASE",
+		"mixedCase",
+	}
+
+	for _, name := range validNames {
+		t.Run(name, func(t *testing.T) {
+			err := executor.ValidateBranchName(name)
+			require.NoError(t, err, "ValidateBranchName(%q) should return nil for valid name", name)
+		})
+	}
+}
+
+// TestRealExecutor_ValidateBranchName_InvalidSpaces tests ValidateBranchName rejects names with spaces.
+func TestRealExecutor_ValidateBranchName_InvalidSpaces(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	executor := NewRealExecutor(cwd)
+
+	err = executor.ValidateBranchName("my branch")
+	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('my branch') should return ErrInvalidBranchName")
+}
+
+// TestRealExecutor_ValidateBranchName_InvalidTilde tests ValidateBranchName rejects names with tilde.
+func TestRealExecutor_ValidateBranchName_InvalidTilde(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	executor := NewRealExecutor(cwd)
+
+	err = executor.ValidateBranchName("feat~name")
+	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('feat~name') should return ErrInvalidBranchName")
+}
+
+// TestRealExecutor_ValidateBranchName_InvalidCaret tests ValidateBranchName rejects names with caret.
+func TestRealExecutor_ValidateBranchName_InvalidCaret(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	executor := NewRealExecutor(cwd)
+
+	err = executor.ValidateBranchName("fix^123")
+	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('fix^123') should return ErrInvalidBranchName")
+}
+
+// TestRealExecutor_ValidateBranchName_InvalidLeadingDot tests ValidateBranchName rejects names starting with dot.
+func TestRealExecutor_ValidateBranchName_InvalidLeadingDot(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	executor := NewRealExecutor(cwd)
+
+	err = executor.ValidateBranchName(".hidden")
+	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('.hidden') should return ErrInvalidBranchName")
+}
+
+// TestRealExecutor_ValidateBranchName_InvalidLockSuffix tests ValidateBranchName rejects names ending with .lock.
+func TestRealExecutor_ValidateBranchName_InvalidLockSuffix(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	executor := NewRealExecutor(cwd)
+
+	err = executor.ValidateBranchName("name.lock")
+	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('name.lock') should return ErrInvalidBranchName")
+}
+
+// TestParseGitError_InvalidBranchName tests parseGitError correctly handles invalid branch name errors.
+func TestParseGitError_InvalidBranchName(t *testing.T) {
+	originalErr := errors.New("exit status 128")
+
+	err := parseGitError("fatal: 'my branch' is not a valid branch name", originalErr)
+	require.ErrorIs(t, err, ErrInvalidBranchName, "parseGitError should return ErrInvalidBranchName for invalid branch name stderr")
+}

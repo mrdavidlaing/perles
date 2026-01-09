@@ -31,6 +31,9 @@ type GitExecutor interface {
 	ListWorktrees() ([]WorktreeInfo, error)
 	ListBranches() ([]BranchInfo, error)
 	BranchExists(name string) bool
+	// ValidateBranchName validates a branch name using git check-ref-format --branch.
+	// Returns nil if valid, ErrInvalidBranchName if invalid.
+	ValidateBranchName(name string) error
 	IsGitRepo() bool
 	IsWorktree() (bool, error)
 	IsBareRepo() (bool, error)
