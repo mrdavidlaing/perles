@@ -438,3 +438,113 @@ func TestView_MultipleInputs_Golden(t *testing.T) {
 	})
 	teatest.RequireEqualOutput(t, []byte(m.View()))
 }
+
+func TestUpdate_YKeyConfirm(t *testing.T) {
+	// In confirmation mode, 'y' should submit
+	m := New(Config{
+		Title:   "Confirm Action",
+		Message: "Are you sure?",
+	})
+
+	yMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+	_, cmd := m.Update(yMsg)
+
+	require.NotNil(t, cmd, "expected command from 'y' key")
+
+	msg := cmd()
+	_, ok := msg.(SubmitMsg)
+	require.True(t, ok, "expected SubmitMsg from 'y' key, got %T", msg)
+}
+
+func TestUpdate_NKeyCancel(t *testing.T) {
+	// In confirmation mode, 'n' should cancel
+	m := New(Config{
+		Title:   "Confirm Action",
+		Message: "Are you sure?",
+	})
+
+	nMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
+	_, cmd := m.Update(nMsg)
+
+	require.NotNil(t, cmd, "expected command from 'n' key")
+
+	msg := cmd()
+	_, ok := msg.(CancelMsg)
+	require.True(t, ok, "expected CancelMsg from 'n' key, got %T", msg)
+}
+
+func TestUpdate_YKeyIgnoredInInputMode(t *testing.T) {
+	// When focused on an input field, 'y' should be typed, not trigger confirm
+	m := New(Config{
+		Title: "Input Modal",
+		Inputs: []InputConfig{
+			{Key: "name", Label: "Name", Placeholder: "Enter..."},
+		},
+	})
+
+	// Should start focused on input
+	require.Equal(t, 0, m.focusedInput)
+
+	yMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+	m, cmd := m.Update(yMsg)
+
+	// Should NOT produce a SubmitMsg
+	if cmd != nil {
+		msg := cmd()
+		_, ok := msg.(SubmitMsg)
+		require.False(t, ok, "expected 'y' to be typed in input, not trigger submit")
+	}
+
+	// The 'y' should have been forwarded to the input
+	require.Equal(t, "y", m.inputs[0].Value())
+}
+
+func TestUpdate_NKeyIgnoredInInputMode(t *testing.T) {
+	// When focused on an input field, 'n' should be typed, not trigger cancel
+	m := New(Config{
+		Title: "Input Modal",
+		Inputs: []InputConfig{
+			{Key: "name", Label: "Name", Placeholder: "Enter..."},
+		},
+	})
+
+	// Should start focused on input
+	require.Equal(t, 0, m.focusedInput)
+
+	nMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
+	m, cmd := m.Update(nMsg)
+
+	// Should NOT produce a CancelMsg
+	if cmd != nil {
+		msg := cmd()
+		_, ok := msg.(CancelMsg)
+		require.False(t, ok, "expected 'n' to be typed in input, not trigger cancel")
+	}
+
+	// The 'n' should have been forwarded to the input
+	require.Equal(t, "n", m.inputs[0].Value())
+}
+
+func TestUpdate_YKeyOnButtons(t *testing.T) {
+	// When on buttons in input mode, 'y' should still work
+	m := New(Config{
+		Title: "Input Modal",
+		Inputs: []InputConfig{
+			{Key: "name", Label: "Name", Placeholder: "Enter...", Value: "test"},
+		},
+	})
+
+	// Navigate to buttons
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	require.Equal(t, -1, m.focusedInput, "expected focus on buttons")
+
+	yMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
+	_, cmd := m.Update(yMsg)
+
+	require.NotNil(t, cmd, "expected command from 'y' key on buttons")
+
+	msg := cmd()
+	submitMsg, ok := msg.(SubmitMsg)
+	require.True(t, ok, "expected SubmitMsg from 'y' key on buttons, got %T", msg)
+	require.Equal(t, "test", submitMsg.Values["name"])
+}

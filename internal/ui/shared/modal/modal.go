@@ -185,6 +185,23 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if !m.config.Required {
 				return m, func() tea.Msg { return CancelMsg{} }
 			}
+
+		case msg.String() == "y":
+			// Only handle 'y' when not in an input field
+			if m.focusedInput == -1 || !m.hasInputs {
+				// Build values map
+				values := make(map[string]string)
+				for i, input := range m.inputs {
+					values[m.inputKeys[i]] = input.Value()
+				}
+				return m, func() tea.Msg { return SubmitMsg{Values: values} }
+			}
+
+		case msg.String() == "n":
+			// Only handle 'n' when not in an input field
+			if m.focusedInput == -1 || !m.hasInputs {
+				return m, func() tea.Msg { return CancelMsg{} }
+			}
 		}
 
 	case tea.WindowSizeMsg:
