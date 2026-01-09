@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/zjrosen/perles/internal/orchestration/events"
-	"github.com/zjrosen/perles/internal/orchestration/mcp"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
 
@@ -56,9 +56,9 @@ func (h *GenerateAccountabilitySummaryHandler) Handle(ctx context.Context, cmd c
 	}
 
 	// Step 3: Queue the aggregation prompt to the worker
-	prompt := mcp.AggregationWorkerPrompt(aggCmd.SessionDir)
+	aggPrompt := prompt.AggregationWorkerPrompt(aggCmd.SessionDir)
 	queue := h.queueRepo.GetOrCreate(aggCmd.WorkerID)
-	if err := queue.Enqueue(prompt, repository.SenderCoordinator); err != nil {
+	if err := queue.Enqueue(aggPrompt, repository.SenderCoordinator); err != nil {
 		return nil, fmt.Errorf("failed to queue aggregation prompt: %w", err)
 	}
 

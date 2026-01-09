@@ -10,6 +10,7 @@ import (
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/v2/adapter"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/orchestration/validation"
 )
@@ -74,11 +75,10 @@ type WorkerServer struct {
 }
 
 // NewWorkerServer creates a new worker MCP server.
-// Note: Instructions are generated dynamically via WorkerSystemPrompt.
-// The full instructions are provided via AppendSystemPrompt when spawning the worker.
+// Instructions are generated dynamically via prompt.WorkerMCPInstructions.
 func NewWorkerServer(workerID string, msgStore MessageStore) *WorkerServer {
-	// Generate instructions for this worker
-	instructions := WorkerSystemPrompt(workerID)
+	// Generate MCP instructions for this worker
+	instructions := prompt.WorkerMCPInstructions(workerID)
 
 	ws := &WorkerServer{
 		Server:   NewServer("perles-worker", "1.0.0", WithInstructions(instructions)),

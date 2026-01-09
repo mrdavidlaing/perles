@@ -435,3 +435,301 @@ func TestUserWorkflowDir(t *testing.T) {
 	assert.Contains(t, dir, ".perles")
 	assert.True(t, filepath.IsAbs(dir))
 }
+
+// --- Tests for AgentRoleConfig and agent_roles parsing ---
+
+func TestAgentRoleConfig_Fields(t *testing.T) {
+	// Verify that AgentRoleConfig has all expected fields
+	config := AgentRoleConfig{
+		SystemPromptAppend:   "append text",
+		SystemPromptOverride: "override text",
+		Constraints:          []string{"constraint1", "constraint2"},
+	}
+
+	assert.Equal(t, "append text", config.SystemPromptAppend)
+	assert.Equal(t, "override text", config.SystemPromptOverride)
+	assert.Equal(t, []string{"constraint1", "constraint2"}, config.Constraints)
+}
+
+func TestWorkflow_AgentRoles_DefaultsToNil(t *testing.T) {
+	content := `---
+name: "Test Workflow"
+description: "No agent_roles"
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "test.md", SourceBuiltIn)
+	require.NoError(t, err)
+	assert.Nil(t, wf.AgentRoles, "workflows without agent_roles should have nil AgentRoles")
+}
+
+func TestLoader_ParsesAgentRoles(t *testing.T) {
+	content := `---
+name: "Test Workflow"
+description: "Has agent_roles"
+agent_roles:
+  implementer:
+    system_prompt_append: "You are an implementer."
+    constraints:
+      - "Focus on implementation"
+      - "Write tests"
+  reviewer:
+    system_prompt_append: "You are a reviewer."
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "test.md", SourceBuiltIn)
+	require.NoError(t, err)
+	require.NotNil(t, wf.AgentRoles)
+	assert.Len(t, wf.AgentRoles, 2)
+
+	// Check implementer config
+	implConfig, ok := wf.AgentRoles["implementer"]
+	require.True(t, ok, "expected implementer key in AgentRoles")
+	assert.Equal(t, "You are an implementer.", implConfig.SystemPromptAppend)
+	assert.Equal(t, []string{"Focus on implementation", "Write tests"}, implConfig.Constraints)
+
+	// Check reviewer config
+	revConfig, ok := wf.AgentRoles["reviewer"]
+	require.True(t, ok, "expected reviewer key in AgentRoles")
+	assert.Equal(t, "You are a reviewer.", revConfig.SystemPromptAppend)
+}
+
+func TestLoader_ValidatesAgentRoleKeys(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid keys - implementer",
+			content: `---
+name: "Test"
+agent_roles:
+  implementer:
+    system_prompt_append: "test"
+---
+
+# Content
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid keys - reviewer",
+			content: `---
+name: "Test"
+agent_roles:
+  reviewer:
+    system_prompt_append: "test"
+---
+
+# Content
+`,
+			wantErr: false,
+		},
+		{
+			name: "valid keys - researcher",
+			content: `---
+name: "Test"
+agent_roles:
+  researcher:
+    system_prompt_append: "test"
+---
+
+# Content
+`,
+			wantErr: false,
+		},
+		{
+			name: "invalid key - unknown type",
+			content: `---
+name: "Test"
+agent_roles:
+  hacker:
+    system_prompt_append: "test"
+---
+
+# Content
+`,
+			wantErr:     true,
+			errContains: "invalid agent_role key",
+		},
+		{
+			name: "invalid key - shell injection attempt",
+			content: `---
+name: "Test"
+agent_roles:
+  "implementer; rm -rf /":
+    system_prompt_append: "test"
+---
+
+# Content
+`,
+			wantErr:     true,
+			errContains: "invalid agent_role key",
+		},
+		{
+			name: "invalid key - path traversal attempt",
+			content: `---
+name: "Test"
+agent_roles:
+  "../../../etc/passwd":
+    system_prompt_append: "test"
+---
+
+# Content
+`,
+			wantErr:     true,
+			errContains: "invalid agent_role key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseWorkflow(tt.content, "test.md", SourceBuiltIn)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestLoader_AllowsOverrideForBuiltIn(t *testing.T) {
+	content := `---
+name: "Test Workflow"
+description: "Built-in workflow with override"
+agent_roles:
+  implementer:
+    system_prompt_override: "Override system prompt"
+    system_prompt_append: "Additional text"
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "test.md", SourceBuiltIn)
+	require.NoError(t, err)
+	require.NotNil(t, wf.AgentRoles)
+
+	implConfig := wf.AgentRoles["implementer"]
+	assert.Equal(t, "Override system prompt", implConfig.SystemPromptOverride, "system_prompt_override should be allowed for built-in workflows")
+	assert.Equal(t, "Additional text", implConfig.SystemPromptAppend)
+}
+
+func TestLoader_ParsesConstraints(t *testing.T) {
+	content := `---
+name: "Test Workflow"
+description: "Workflow with constraints"
+agent_roles:
+  reviewer:
+    constraints:
+      - "Always check for security issues"
+      - "Verify test coverage"
+      - "Check for dead code"
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "test.md", SourceBuiltIn)
+	require.NoError(t, err)
+	require.NotNil(t, wf.AgentRoles)
+
+	revConfig := wf.AgentRoles["reviewer"]
+	require.Len(t, revConfig.Constraints, 3)
+	assert.Equal(t, "Always check for security issues", revConfig.Constraints[0])
+	assert.Equal(t, "Verify test coverage", revConfig.Constraints[1])
+	assert.Equal(t, "Check for dead code", revConfig.Constraints[2])
+}
+
+func TestLoader_ExistingWorkflowsUnchanged(t *testing.T) {
+	// Test that existing workflows (without agent_roles) work as before
+	content := `---
+name: "Legacy Workflow"
+description: "Old workflow without agent_roles"
+category: "Testing"
+workers: 3
+---
+
+# Legacy content
+This workflow has no agent_roles field and should work exactly as before.
+`
+	wf, err := parseWorkflow(content, "legacy.md", SourceBuiltIn)
+	require.NoError(t, err)
+
+	assert.Equal(t, "legacy", wf.ID)
+	assert.Equal(t, "Legacy Workflow", wf.Name)
+	assert.Equal(t, "Old workflow without agent_roles", wf.Description)
+	assert.Equal(t, "Testing", wf.Category)
+	assert.Equal(t, 3, wf.Workers)
+	assert.Nil(t, wf.AgentRoles)
+	assert.Equal(t, content, wf.Content)
+	assert.Equal(t, SourceBuiltIn, wf.Source)
+}
+
+func TestLoader_EmptyAgentRolesHandled(t *testing.T) {
+	// Test that empty agent_roles is handled correctly
+	content := `---
+name: "Test Workflow"
+description: "Empty agent_roles"
+agent_roles: {}
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "test.md", SourceBuiltIn)
+	require.NoError(t, err)
+	// Empty map should result in nil AgentRoles (since len == 0)
+	assert.Nil(t, wf.AgentRoles)
+}
+
+func TestLoader_MultipleAgentTypesWithAllFields(t *testing.T) {
+	content := `---
+name: "Full Workflow"
+description: "All agent types with all fields"
+agent_roles:
+  implementer:
+    system_prompt_append: "Implementer append"
+    system_prompt_override: "Implementer override"
+    constraints:
+      - "Impl constraint 1"
+  reviewer:
+    system_prompt_append: "Reviewer append"
+    constraints:
+      - "Rev constraint 1"
+      - "Rev constraint 2"
+  researcher:
+    system_prompt_append: "Researcher append"
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "full.md", SourceBuiltIn)
+	require.NoError(t, err)
+	require.NotNil(t, wf.AgentRoles)
+	assert.Len(t, wf.AgentRoles, 3)
+
+	// Verify implementer
+	impl := wf.AgentRoles["implementer"]
+	assert.Equal(t, "Implementer append", impl.SystemPromptAppend)
+	assert.Equal(t, "Implementer override", impl.SystemPromptOverride)
+	assert.Equal(t, []string{"Impl constraint 1"}, impl.Constraints)
+
+	// Verify reviewer
+	rev := wf.AgentRoles["reviewer"]
+	assert.Equal(t, "Reviewer append", rev.SystemPromptAppend)
+	assert.Empty(t, rev.SystemPromptOverride)
+	assert.Equal(t, []string{"Rev constraint 1", "Rev constraint 2"}, rev.Constraints)
+
+	// Verify researcher
+	res := wf.AgentRoles["researcher"]
+	assert.Equal(t, "Researcher append", res.SystemPromptAppend)
+	assert.Empty(t, res.SystemPromptOverride)
+	assert.Nil(t, res.Constraints)
+}

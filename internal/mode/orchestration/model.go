@@ -30,6 +30,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/session"
 	v2 "github.com/zjrosen/perles/internal/orchestration/v2"
 	"github.com/zjrosen/perles/internal/orchestration/v2/process"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
@@ -55,12 +56,16 @@ const (
 	PaneCommand     = 4
 )
 
-// ChatMessage represents a single message in the coordinator chat history.
-type ChatMessage struct {
-	Role       string // "user" or "coordinator"
-	Content    string
-	IsToolCall bool // True if this is a tool call (for grouped rendering)
+// activeWorkflowHolder holds a reference to the active workflow.
+// This is a pointer type so it survives Bubble Tea's value-based Model copies.
+// The adapter's WorkflowConfigProvider can read from this shared reference.
+type activeWorkflowHolder struct {
+	workflow *workflow.Workflow
 }
+
+// ChatMessage is an alias for the shared chatrender.Message type.
+// Used for coordinator and worker chat history.
+type ChatMessage = chatrender.Message
 
 // InitPhase represents the current initialization phase.
 type InitPhase int
@@ -167,6 +172,7 @@ type Model struct {
 	workflowPicker     *commandpalette.Model
 	showWorkflowPicker bool
 	workflowRegistry   *workflow.Registry
+	activeWorkflowRef  *activeWorkflowHolder // Shared reference to active workflow (survives Model copies)
 
 	// Coordinator refresh handoff state
 	pendingRefresh bool // True when waiting for handoff before refresh
@@ -282,6 +288,7 @@ func New(cfg Config) Model {
 		ampModel:              cfg.AmpModel,
 		ampMode:               cfg.AmpMode,
 		workflowRegistry:      cfg.WorkflowRegistry,
+		activeWorkflowRef:     &activeWorkflowHolder{},
 		tracingConfig:         cfg.TracingConfig,
 		quitModal: quitmodal.New(quitmodal.Config{
 			Title:   "Exit Orchestration Mode?",
@@ -841,8 +848,42 @@ func (m Model) sendWorkflowToCoordinator(workflowID string) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Track the active workflow for prompt customization
+	// Use a shared holder so it survives Bubble Tea's value-based Model copies
+	m.activeWorkflowRef.workflow = &wf
+
 	// Format as instruction to coordinator
 	content := fmt.Sprintf("[WORKFLOW: %s]\n\n%s", wf.Name, wf.Content)
 
 	return m.handleUserInputToCoordinator(content)
+}
+
+// GetWorkflowConfig implements adapter.WorkflowConfigProvider.
+// Returns the workflow-specific prompt config for the given agent type,
+// or nil if no workflow is active or no customizations exist for this agent type.
+func (m *Model) GetWorkflowConfig(agentType roles.AgentType) *roles.WorkflowConfig {
+	if m.activeWorkflowRef == nil || m.activeWorkflowRef.workflow == nil {
+		return nil
+	}
+	activeWf := m.activeWorkflowRef.workflow
+	if activeWf.AgentRoles == nil {
+		return nil
+	}
+
+	var roleKeys []string
+	for k := range activeWf.AgentRoles {
+		roleKeys = append(roleKeys, k)
+	}
+
+	roleConfig, ok := activeWf.AgentRoles[string(agentType)]
+	if !ok {
+		log.Debug(log.CatOrch, "GetWorkflowConfig: no config for agent_type=%s in workflow", agentType)
+		return nil
+	}
+
+	return &roles.WorkflowConfig{
+		SystemPromptAppend:   roleConfig.SystemPromptAppend,
+		SystemPromptOverride: roleConfig.SystemPromptOverride,
+		Constraints:          roleConfig.Constraints,
+	}
 }

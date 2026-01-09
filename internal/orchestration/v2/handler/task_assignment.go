@@ -16,9 +16,9 @@ import (
 
 	"github.com/zjrosen/perles/internal/beads"
 	"github.com/zjrosen/perles/internal/orchestration/events"
-	"github.com/zjrosen/perles/internal/orchestration/mcp"
 	"github.com/zjrosen/perles/internal/orchestration/tracing"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/orchestration/v2/types"
 )
@@ -221,9 +221,9 @@ func (h *AssignTaskHandler) handleAssign(_ context.Context, assignCmd *command.A
 
 	// 9. Queue TaskAssignmentPrompt to the worker
 	// The worker will receive instructions to work on the task (from coordinator)
-	prompt := mcp.TaskAssignmentPrompt(assignCmd.TaskID, assignCmd.TaskID, assignCmd.Summary)
+	taskPrompt := prompt.TaskAssignmentPrompt(assignCmd.TaskID, assignCmd.TaskID, assignCmd.Summary)
 	queue := h.queueRepo.GetOrCreate(assignCmd.WorkerID)
-	if err := queue.Enqueue(prompt, repository.SenderCoordinator); err != nil {
+	if err := queue.Enqueue(taskPrompt, repository.SenderCoordinator); err != nil {
 		return nil, fmt.Errorf("failed to queue task prompt: %w", err)
 	}
 
@@ -358,14 +358,14 @@ func (h *AssignReviewHandler) Handle(ctx context.Context, cmd command.Command) (
 
 	// 7. Queue the appropriate review prompt based on review type
 	// Note: Summary is not stored in TaskAssignment yet, so we use a placeholder
-	var prompt string
+	var reviewPrompt string
 	if reviewCmd.ReviewType == command.ReviewTypeSimple {
-		prompt = mcp.ReviewAssignmentPromptSimple(reviewCmd.TaskID, reviewCmd.ImplementerID)
+		reviewPrompt = prompt.ReviewAssignmentPromptSimple(reviewCmd.TaskID, reviewCmd.ImplementerID)
 	} else {
-		prompt = mcp.ReviewAssignmentPrompt(reviewCmd.TaskID, reviewCmd.ImplementerID)
+		reviewPrompt = prompt.ReviewAssignmentPrompt(reviewCmd.TaskID, reviewCmd.ImplementerID)
 	}
 	queue := h.queueRepo.GetOrCreate(reviewCmd.ReviewerID)
-	if err := queue.Enqueue(prompt, repository.SenderCoordinator); err != nil {
+	if err := queue.Enqueue(reviewPrompt, repository.SenderCoordinator); err != nil {
 		return nil, fmt.Errorf("failed to queue review prompt: %w", err)
 	}
 
@@ -486,9 +486,9 @@ func (h *ApproveCommitHandler) Handle(ctx context.Context, cmd command.Command) 
 	}
 
 	// 6. Queue CommitApprovalPrompt to the implementer (from coordinator)
-	prompt := mcp.CommitApprovalPrompt(approveCmd.TaskID, "")
+	commitPrompt := prompt.CommitApprovalPrompt(approveCmd.TaskID, "")
 	queue := h.queueRepo.GetOrCreate(approveCmd.ImplementerID)
-	if err := queue.Enqueue(prompt, repository.SenderCoordinator); err != nil {
+	if err := queue.Enqueue(commitPrompt, repository.SenderCoordinator); err != nil {
 		return nil, fmt.Errorf("failed to queue commit prompt: %w", err)
 	}
 
@@ -606,9 +606,9 @@ func (h *AssignReviewFeedbackHandler) Handle(ctx context.Context, cmd command.Co
 	}
 
 	// 6. Queue ReviewFeedbackPrompt to the implementer (from coordinator)
-	prompt := mcp.ReviewFeedbackPrompt(feedbackCmd.TaskID, feedbackCmd.Feedback)
+	feedbackPrompt := prompt.ReviewFeedbackPrompt(feedbackCmd.TaskID, feedbackCmd.Feedback)
 	queue := h.queueRepo.GetOrCreate(feedbackCmd.ImplementerID)
-	if err := queue.Enqueue(prompt, repository.SenderCoordinator); err != nil {
+	if err := queue.Enqueue(feedbackPrompt, repository.SenderCoordinator); err != nil {
 		return nil, fmt.Errorf("failed to queue feedback prompt: %w", err)
 	}
 

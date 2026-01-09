@@ -56,8 +56,9 @@ type ProcessSpawner interface {
 // Used by SpawnProcessHandler and ReplaceProcessHandler for role-aware spawning.
 type UnifiedProcessSpawner interface {
 	// SpawnProcess creates and starts a new AI process.
+	// The opts parameter provides optional configuration like AgentType for worker specialization.
 	// Returns the created process.Process instance.
-	SpawnProcess(ctx context.Context, id string, role repository.ProcessRole) (*process.Process, error)
+	SpawnProcess(ctx context.Context, id string, role repository.ProcessRole, opts SpawnOptions) (*process.Process, error)
 }
 
 // ===========================================================================
@@ -907,6 +908,7 @@ func (h *SpawnProcessHandler) handleSpawn(ctx context.Context, spawnCmd *command
 		Status:         repository.StatusPending,
 		CreatedAt:      time.Now(),
 		LastActivityAt: time.Now(),
+		AgentType:      spawnCmd.AgentType,
 	}
 
 	// Save to repository
@@ -917,8 +919,14 @@ func (h *SpawnProcessHandler) handleSpawn(ctx context.Context, spawnCmd *command
 	// Spawn live process if spawner is configured
 	var liveProcess *process.Process
 	if h.spawner != nil {
+		// Build spawn options from command
+		opts := SpawnOptions{
+			AgentType:      spawnCmd.AgentType,
+			WorkflowConfig: spawnCmd.WorkflowConfig,
+		}
+
 		var err error
-		liveProcess, err = h.spawner.SpawnProcess(ctx, processID, spawnCmd.Role)
+		liveProcess, err = h.spawner.SpawnProcess(ctx, processID, spawnCmd.Role, opts)
 		if err != nil {
 			// Rollback repository save - but for in-memory this isn't critical
 			return nil, fmt.Errorf("failed to spawn process: %w", err)
@@ -1081,7 +1089,8 @@ func (h *ReplaceProcessHandler) replaceCoordinator(ctx context.Context, proc *re
 
 	// Spawn new coordinator process
 	if h.spawner != nil {
-		newLiveProcess, err := h.spawner.SpawnProcess(ctx, repository.CoordinatorID, repository.RoleCoordinator)
+		// Coordinator always uses default (generic) agent type
+		newLiveProcess, err := h.spawner.SpawnProcess(ctx, repository.CoordinatorID, repository.RoleCoordinator, SpawnOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to spawn new coordinator: %w", err)
 		}
@@ -1172,7 +1181,8 @@ func (h *ReplaceProcessHandler) replaceWorker(ctx context.Context, proc *reposit
 
 	// Spawn new worker process
 	if h.spawner != nil {
-		newLiveProcess, err := h.spawner.SpawnProcess(ctx, newWorkerID, repository.RoleWorker)
+		// Replacement workers use generic agent type (agent type is not preserved across replacements)
+		newLiveProcess, err := h.spawner.SpawnProcess(ctx, newWorkerID, repository.RoleWorker, SpawnOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to spawn new worker: %w", err)
 		}

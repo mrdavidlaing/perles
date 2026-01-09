@@ -103,11 +103,17 @@ func (cs *CoordinatorServer) SetTracer(tracer trace.Tracer) {
 func (cs *CoordinatorServer) registerTools() {
 	cs.RegisterTool(Tool{
 		Name:        "spawn_worker",
-		Description: "Spawn a new idle worker. The worker starts in Ready state waiting for task assignment. Returns the new worker ID.",
+		Description: "Spawn a new idle worker. The worker starts in Ready state waiting for task assignment. Returns the new worker ID. Optionally specify agent_type for specialized agents.",
 		InputSchema: &InputSchema{
-			Type:       "object",
-			Properties: map[string]*PropertySchema{},
-			Required:   []string{},
+			Type: "object",
+			Properties: map[string]*PropertySchema{
+				"agent_type": {
+					Type:        "string",
+					Description: "Optional agent specialization: 'implementer' (code implementation), 'reviewer' (code review), 'researcher' (codebase exploration). Defaults to generic if omitted.",
+					Enum:        []string{"implementer", "reviewer", "researcher"},
+				},
+			},
+			Required: []string{},
 		},
 	}, cs.handleSpawnWorker)
 

@@ -2,6 +2,22 @@
 // It supports loading and managing both built-in and user-defined workflow templates.
 package workflow
 
+// AgentRoleConfig defines per-agent-type customizations for a workflow.
+// This allows workflows to customize prompts and constraints for specific agent types
+// (e.g., implementer, reviewer, researcher).
+type AgentRoleConfig struct {
+	// SystemPromptAppend is appended to the default system prompt for this agent type.
+	// Use this to add workflow-specific instructions without replacing the base prompt.
+	SystemPromptAppend string
+
+	// SystemPromptOverride completely replaces the default system prompt.
+	SystemPromptOverride string
+
+	// Constraints are behavioral constraints for this agent type within the workflow.
+	// These are advisory hints that may be included in prompt composition.
+	Constraints []string
+}
+
 // Source indicates where a workflow template originated from.
 type Source int
 
@@ -42,6 +58,11 @@ type Workflow struct {
 	// A value of 0 (or omitted in frontmatter) indicates lazy spawn mode,
 	// where workers are spawned on-demand as needed by the workflow.
 	Workers int
+
+	// AgentRoles contains per-agent-type customizations for this workflow.
+	// Keys are agent type strings (e.g., "implementer", "reviewer", "researcher").
+	// If nil or empty, the workflow uses default prompts for all agent types.
+	AgentRoles map[string]AgentRoleConfig
 
 	// Content is the full markdown content (including frontmatter).
 	Content string

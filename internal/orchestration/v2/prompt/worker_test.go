@@ -1,4 +1,4 @@
-package mcp
+package prompt
 
 import (
 	"strings"
@@ -130,14 +130,16 @@ func TestCommitApprovalPrompt_IncludesRetroStructure(t *testing.T) {
 	require.Contains(t, prompt, "patterns", "Prompt should show patterns in retro")
 }
 
-// TestWorkerSystemPrompt_ContainsTraceContextDocs verifies trace context documentation.
-func TestWorkerSystemPrompt_ContainsTraceContextDocs(t *testing.T) {
-	prompt := WorkerSystemPrompt("worker-1")
+// TestWorkerMCPInstructions_ContainsToolDescriptions verifies MCP instructions list available tools.
+func TestWorkerMCPInstructions_ContainsToolDescriptions(t *testing.T) {
+	instructions := WorkerMCPInstructions("worker-1")
 
-	require.Contains(t, prompt, "Trace Context",
-		"Prompt should document trace context")
-	require.Contains(t, prompt, "trace_id",
-		"Prompt should mention trace_id field")
-	require.Contains(t, prompt, "backwards compatibility",
-		"Prompt should mention backwards compatibility")
+	require.Contains(t, instructions, "worker-1",
+		"Instructions should include worker ID")
+	require.Contains(t, instructions, "signal_ready",
+		"Instructions should mention signal_ready tool")
+	require.Contains(t, instructions, "post_message",
+		"Instructions should mention post_message tool")
+	require.Contains(t, instructions, "report_implementation_complete",
+		"Instructions should mention report_implementation_complete tool")
 }

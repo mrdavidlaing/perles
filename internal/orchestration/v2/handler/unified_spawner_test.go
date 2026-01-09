@@ -9,6 +9,7 @@ import (
 
 	"github.com/zjrosen/perles/internal/orchestration/mock"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/pubsub"
 )
@@ -36,7 +37,7 @@ func TestUnifiedProcessSpawner_SpawnProcess_Worker(t *testing.T) {
 		EventBus:   eventBus,
 	})
 
-	proc, err := spawner.SpawnProcess(context.Background(), "worker-1", repository.RoleWorker)
+	proc, err := spawner.SpawnProcess(context.Background(), "worker-1", repository.RoleWorker, SpawnOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, proc)
 	assert.Equal(t, "worker-1", proc.ID)
@@ -60,7 +61,7 @@ func TestUnifiedProcessSpawner_SpawnProcess_Coordinator(t *testing.T) {
 		EventBus:   eventBus,
 	})
 
-	proc, err := spawner.SpawnProcess(context.Background(), repository.CoordinatorID, repository.RoleCoordinator)
+	proc, err := spawner.SpawnProcess(context.Background(), repository.CoordinatorID, repository.RoleCoordinator, SpawnOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, proc)
 	assert.Equal(t, repository.CoordinatorID, proc.ID)
@@ -83,10 +84,62 @@ func TestUnifiedProcessSpawner_SpawnProcess_NilClient(t *testing.T) {
 		EventBus:   eventBus,
 	})
 
-	proc, err := spawner.SpawnProcess(context.Background(), "worker-1", repository.RoleWorker)
+	proc, err := spawner.SpawnProcess(context.Background(), "worker-1", repository.RoleWorker, SpawnOptions{})
 	require.Error(t, err)
 	require.Nil(t, proc)
 	assert.Contains(t, err.Error(), "client is nil")
+}
+
+func TestSpawnOptions_AgentType(t *testing.T) {
+	opts := SpawnOptions{
+		AgentType: roles.AgentTypeImplementer,
+	}
+	assert.Equal(t, roles.AgentTypeImplementer, opts.AgentType)
+}
+
+func TestSpawnOptions_DefaultAgentType(t *testing.T) {
+	opts := SpawnOptions{}
+	// Default (zero value) should be AgentTypeGeneric (empty string)
+	assert.Equal(t, roles.AgentTypeGeneric, opts.AgentType)
+}
+
+func TestUnifiedProcessSpawner_SpawnProcess_WithAgentType(t *testing.T) {
+	testCases := []struct {
+		name      string
+		agentType roles.AgentType
+	}{
+		{"generic", roles.AgentTypeGeneric},
+		{"implementer", roles.AgentTypeImplementer},
+		{"reviewer", roles.AgentTypeReviewer},
+		{"researcher", roles.AgentTypeResearcher},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := mock.NewClient()
+			eventBus := pubsub.NewBroker[any]()
+			submitter := &mockCommandSubmitter{}
+
+			spawner := NewUnifiedProcessSpawner(UnifiedSpawnerConfig{
+				Client:     mockClient,
+				WorkDir:    "/test/workdir",
+				Port:       8080,
+				Extensions: nil,
+				Submitter:  submitter,
+				EventBus:   eventBus,
+			})
+
+			opts := SpawnOptions{AgentType: tc.agentType}
+			proc, err := spawner.SpawnProcess(context.Background(), "worker-1", repository.RoleWorker, opts)
+			require.NoError(t, err)
+			require.NotNil(t, proc)
+			assert.Equal(t, "worker-1", proc.ID)
+			assert.Equal(t, repository.RoleWorker, proc.Role)
+
+			// Cleanup
+			proc.Stop()
+		})
+	}
 }
 
 func TestUnifiedProcessSpawner_GenerateMCPConfig_HTTP(t *testing.T) {

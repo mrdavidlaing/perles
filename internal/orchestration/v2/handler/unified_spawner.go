@@ -11,9 +11,23 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/mcp"
 	"github.com/zjrosen/perles/internal/orchestration/v2/process"
 	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/pubsub"
 )
+
+// SpawnOptions contains optional configuration for spawning a process.
+type SpawnOptions struct {
+	// AgentType specifies the worker specialization (e.g., implementer, reviewer, researcher).
+	// Defaults to AgentTypeGeneric if not specified.
+	AgentType roles.AgentType
+
+	// WorkflowConfig contains optional workflow-specific prompt customizations.
+	// If nil, the default prompts for the agent type are used.
+	// If set, the compose functions use three-tier resolution:
+	// base prompts → override (if set) → append (if set).
+	WorkflowConfig *roles.WorkflowConfig
+}
 
 // UnifiedProcessSpawnerImpl implements UnifiedProcessSpawner for spawning real AI processes.
 // It creates process.Process instances that manage the AI event loop.
@@ -49,8 +63,9 @@ func NewUnifiedProcessSpawner(cfg UnifiedSpawnerConfig) *UnifiedProcessSpawnerIm
 }
 
 // SpawnProcess creates and starts a new AI process.
+// The opts parameter provides optional configuration like AgentType for worker specialization.
 // Returns the created process.Process instance.
-func (s *UnifiedProcessSpawnerImpl) SpawnProcess(ctx context.Context, id string, role repository.ProcessRole) (*process.Process, error) {
+func (s *UnifiedProcessSpawnerImpl) SpawnProcess(ctx context.Context, id string, role repository.ProcessRole, opts SpawnOptions) (*process.Process, error) {
 	if s.client == nil {
 		return nil, fmt.Errorf("client is nil")
 	}
@@ -81,15 +96,23 @@ func (s *UnifiedProcessSpawnerImpl) SpawnProcess(ctx context.Context, id string,
 			Extensions:      s.extensions,
 		}
 	} else {
-		// Worker uses worker idle prompts
+		// Worker uses role-specific prompts based on AgentType
 		mcpConfig, err := s.generateMCPConfig(id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate MCP config: %w", err)
 		}
+
+		// Compose prompts using three-tier resolution:
+		// 1. Base prompts from roles registry (based on AgentType)
+		// 2. Workflow override (if WorkflowConfig.SystemPromptOverride is set)
+		// 3. Workflow append (if WorkflowConfig.SystemPromptAppend is set)
+		systemPrompt := roles.ComposeSystemPrompt(id, opts.AgentType, opts.WorkflowConfig)
+		initialPrompt := roles.ComposeInitialPrompt(id, opts.AgentType, opts.WorkflowConfig)
+
 		cfg = client.Config{
 			WorkDir:         s.workDir,
-			Prompt:          mcp.WorkerIdlePrompt(id),
-			SystemPrompt:    mcp.WorkerSystemPrompt(id),
+			Prompt:          initialPrompt,
+			SystemPrompt:    systemPrompt,
 			MCPConfig:       mcpConfig,
 			SkipPermissions: true,
 			DisallowedTools: []string{"AskUserQuestion"},

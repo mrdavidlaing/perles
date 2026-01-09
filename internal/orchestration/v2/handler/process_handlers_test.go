@@ -15,6 +15,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/handler"
 	"github.com/zjrosen/perles/internal/orchestration/v2/process"
 	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
 
@@ -33,12 +34,13 @@ type mockProcessSpawner struct {
 }
 
 type spawnCall struct {
-	ID   string
-	Role repository.ProcessRole
+	ID        string
+	Role      repository.ProcessRole
+	AgentType roles.AgentType
 }
 
-func (m *mockProcessSpawner) SpawnProcess(ctx context.Context, id string, role repository.ProcessRole) (*process.Process, error) {
-	m.spawnCalls = append(m.spawnCalls, spawnCall{ID: id, Role: role})
+func (m *mockProcessSpawner) SpawnProcess(ctx context.Context, id string, role repository.ProcessRole, opts handler.SpawnOptions) (*process.Process, error) {
+	m.spawnCalls = append(m.spawnCalls, spawnCall{ID: id, Role: role, AgentType: opts.AgentType})
 	if m.spawnErr != nil {
 		return nil, m.spawnErr
 	}
@@ -1709,6 +1711,75 @@ func TestSpawnProcessHandler_MarksCoordinatorAsNewlySpawned(t *testing.T) {
 	// Verify coordinator is also marked as newly spawned
 	assert.True(t, enforcer.IsNewlySpawned(repository.CoordinatorID),
 		"coordinator should be marked as newly spawned")
+}
+
+func TestSpawnProcessHandler_PassesAgentTypeToSpawner(t *testing.T) {
+	processRepo, _ := setupProcessRepos()
+	spawner := &mockProcessSpawner{}
+
+	// Pass nil registry to avoid registering the nil process returned by mock
+	h := handler.NewSpawnProcessHandler(processRepo, nil, handler.WithUnifiedSpawner(spawner))
+
+	// Create command with specific agent type
+	cmd := command.NewSpawnProcessCommand(command.SourceMCPTool, repository.RoleWorker, command.WithAgentType(roles.AgentTypeImplementer))
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify spawner was called with correct agent type
+	require.Len(t, spawner.spawnCalls, 1)
+	assert.Equal(t, roles.AgentTypeImplementer, spawner.spawnCalls[0].AgentType)
+}
+
+func TestSpawnProcessHandler_PassesDefaultAgentTypeToSpawner(t *testing.T) {
+	processRepo, _ := setupProcessRepos()
+	spawner := &mockProcessSpawner{}
+
+	// Pass nil registry to avoid registering the nil process returned by mock
+	h := handler.NewSpawnProcessHandler(processRepo, nil, handler.WithUnifiedSpawner(spawner))
+
+	// Create command without specifying agent type (defaults to generic)
+	cmd := command.NewSpawnProcessCommand(command.SourceMCPTool, repository.RoleWorker)
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify spawner was called with generic agent type
+	require.Len(t, spawner.spawnCalls, 1)
+	assert.Equal(t, roles.AgentTypeGeneric, spawner.spawnCalls[0].AgentType)
+}
+
+func TestSpawnProcessHandler_PassesAllAgentTypesToSpawner(t *testing.T) {
+	testCases := []struct {
+		name      string
+		agentType roles.AgentType
+	}{
+		{"generic", roles.AgentTypeGeneric},
+		{"implementer", roles.AgentTypeImplementer},
+		{"reviewer", roles.AgentTypeReviewer},
+		{"researcher", roles.AgentTypeResearcher},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			processRepo, _ := setupProcessRepos()
+			spawner := &mockProcessSpawner{}
+
+			// Pass nil registry to avoid registering the nil process returned by mock
+			h := handler.NewSpawnProcessHandler(processRepo, nil, handler.WithUnifiedSpawner(spawner))
+
+			cmd := command.NewSpawnProcessCommand(command.SourceMCPTool, repository.RoleWorker, command.WithAgentType(tc.agentType))
+			result, err := h.Handle(context.Background(), cmd)
+
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+
+			require.Len(t, spawner.spawnCalls, 1)
+			assert.Equal(t, tc.agentType, spawner.spawnCalls[0].AgentType)
+		})
+	}
 }
 
 // ===========================================================================

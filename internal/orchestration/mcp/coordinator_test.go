@@ -16,6 +16,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/adapter"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/processor"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
 
@@ -898,22 +899,22 @@ func TestReplaceWorker_Routing(t *testing.T) {
 
 // TestTaskAssignmentPrompt_WithSummary verifies TaskAssignmentPrompt includes summary when provided.
 func TestTaskAssignmentPrompt_WithSummary(t *testing.T) {
-	prompt := TaskAssignmentPrompt("perles-abc.1", "Test Task", "Focus on error handling.")
+	p := prompt.TaskAssignmentPrompt("perles-abc.1", "Test Task", "Focus on error handling.")
 
-	require.True(t, containsInternal(prompt, "## Coordinator Instructions"), "Prompt should contain 'Coordinator Instructions:' section when summary provided")
-	require.True(t, containsInternal(prompt, "Focus on error handling."), "Prompt should contain the summary content")
+	require.True(t, containsInternal(p, "## Coordinator Instructions"), "Prompt should contain 'Coordinator Instructions:' section when summary provided")
+	require.True(t, containsInternal(p, "Focus on error handling."), "Prompt should contain the summary content")
 }
 
 // TestTaskAssignmentPrompt_WithoutSummary verifies TaskAssignmentPrompt excludes summary section when empty.
 func TestTaskAssignmentPrompt_WithoutSummary(t *testing.T) {
-	prompt := TaskAssignmentPrompt("perles-abc.1", "Test Task", "")
+	p := prompt.TaskAssignmentPrompt("perles-abc.1", "Test Task", "")
 
-	require.False(t, containsInternal(prompt, "## Coordinator Instructions"), "Prompt should NOT contain 'Coordinator Instructions:' section when summary is empty")
+	require.False(t, containsInternal(p, "## Coordinator Instructions"), "Prompt should NOT contain 'Coordinator Instructions:' section when summary is empty")
 }
 
 // TestTaskAssignmentPrompt_AllSections verifies TaskAssignmentPrompt includes all sections when provided.
 func TestTaskAssignmentPrompt_AllSections(t *testing.T) {
-	prompt := TaskAssignmentPrompt(
+	p := prompt.TaskAssignmentPrompt(
 		"perles-abc.1",
 		"Implement Feature X",
 		"Important: Check existing patterns in module Y",
@@ -930,7 +931,7 @@ func TestTaskAssignmentPrompt_AllSections(t *testing.T) {
 	}
 
 	for _, section := range sections {
-		require.True(t, containsInternal(prompt, section), "Prompt should contain %q", section)
+		require.True(t, containsInternal(p, section), "Prompt should contain %q", section)
 	}
 }
 
@@ -1150,38 +1151,38 @@ func TestReadMessageLog_ReadAll(t *testing.T) {
 // CommitApprovalPrompt includes post_accountability_summary instructions for the worker.
 func TestCommitApprovalPrompt_IncludesAccountabilityInstructions(t *testing.T) {
 	taskID := "perles-abc.1"
-	prompt := CommitApprovalPrompt(taskID, "")
+	p := prompt.CommitApprovalPrompt(taskID, "")
 
-	require.Contains(t, prompt, "post_accountability_summary", "Prompt should include post_accountability_summary instruction")
-	require.Contains(t, prompt, "After Committing", "Prompt should instruct to document after committing")
-	require.Contains(t, prompt, "task_id", "Prompt should show task_id parameter")
-	require.Contains(t, prompt, "summary", "Prompt should show summary parameter")
-	require.Contains(t, prompt, "commits", "Prompt should show commits parameter")
-	require.Contains(t, prompt, "verification_points", "Prompt should show verification_points parameter")
+	require.Contains(t, p, "post_accountability_summary", "Prompt should include post_accountability_summary instruction")
+	require.Contains(t, p, "After Committing", "Prompt should instruct to document after committing")
+	require.Contains(t, p, "task_id", "Prompt should show task_id parameter")
+	require.Contains(t, p, "summary", "Prompt should show summary parameter")
+	require.Contains(t, p, "commits", "Prompt should show commits parameter")
+	require.Contains(t, p, "verification_points", "Prompt should show verification_points parameter")
 }
 
 // TestCommitApprovalPrompt_TaskIDInterpolated verifies that the task ID is interpolated
 // into the post_accountability_summary example in the prompt.
 func TestCommitApprovalPrompt_TaskIDInterpolated(t *testing.T) {
 	taskID := "perles-xyz.42"
-	prompt := CommitApprovalPrompt(taskID, "")
+	p := prompt.CommitApprovalPrompt(taskID, "")
 
 	// The task ID should appear twice - once in the approval message, once in the example
-	occurrences := strings.Count(prompt, taskID)
+	occurrences := strings.Count(p, taskID)
 	require.GreaterOrEqual(t, occurrences, 2, "Task ID should appear at least twice (in message and example)")
 
 	// Verify it appears in the post_accountability_summary example format
-	require.Contains(t, prompt, `task_id="`+taskID+`"`, "Task ID should be in the post_accountability_summary example")
+	require.Contains(t, p, `task_id="`+taskID+`"`, "Task ID should be in the post_accountability_summary example")
 }
 
 // TestCommitApprovalPrompt_WithCommitMessage verifies commit message is included when provided.
 func TestCommitApprovalPrompt_WithCommitMessage(t *testing.T) {
 	taskID := "perles-test.1"
 	commitMsg := "feat(orchestration): add reflection support"
-	prompt := CommitApprovalPrompt(taskID, commitMsg)
+	p := prompt.CommitApprovalPrompt(taskID, commitMsg)
 
-	require.Contains(t, prompt, commitMsg, "Prompt should include the suggested commit message")
-	require.Contains(t, prompt, "Suggested commit message", "Prompt should have commit message section")
+	require.Contains(t, p, commitMsg, "Prompt should include the suggested commit message")
+	require.Contains(t, p, "Suggested commit message", "Prompt should have commit message section")
 }
 
 // ============================================================================
@@ -1292,5 +1293,41 @@ func TestCoordinatorMCP_StopWorkerTool_RequiresWorkerID(t *testing.T) {
 				require.Contains(t, err.Error(), "worker_id is required")
 			}
 		})
+	}
+}
+
+// TestCoordinatorMCP_SpawnWorkerSchema_IncludesAgentType verifies spawn_worker schema has agent_type property.
+func TestCoordinatorMCP_SpawnWorkerSchema_IncludesAgentType(t *testing.T) {
+	cs := NewCoordinatorServer(claude.NewClient(), nil, "/tmp/test", 8765, nil, mocks.NewMockBeadsExecutor(t))
+
+	tool, ok := cs.tools["spawn_worker"]
+	require.True(t, ok, "spawn_worker tool not registered")
+
+	// Verify tool schema
+	require.Equal(t, "spawn_worker", tool.Name)
+	require.NotEmpty(t, tool.Description)
+	require.NotNil(t, tool.InputSchema)
+
+	// Verify agent_type property exists
+	agentTypeProp, ok := tool.InputSchema.Properties["agent_type"]
+	require.True(t, ok, "spawn_worker schema should include 'agent_type' property")
+
+	// Verify property definition
+	require.Equal(t, "string", agentTypeProp.Type, "agent_type property type mismatch")
+	require.NotEmpty(t, agentTypeProp.Description, "agent_type property should have a description")
+	require.Contains(t, agentTypeProp.Description, "implementer", "description should mention implementer")
+	require.Contains(t, agentTypeProp.Description, "reviewer", "description should mention reviewer")
+	require.Contains(t, agentTypeProp.Description, "researcher", "description should mention researcher")
+
+	// Verify enum values
+	require.NotNil(t, agentTypeProp.Enum, "agent_type property should have Enum values")
+	require.Len(t, agentTypeProp.Enum, 3, "agent_type should have 3 enum values")
+	require.Contains(t, agentTypeProp.Enum, "implementer", "enum should include 'implementer'")
+	require.Contains(t, agentTypeProp.Enum, "reviewer", "enum should include 'reviewer'")
+	require.Contains(t, agentTypeProp.Enum, "researcher", "enum should include 'researcher'")
+
+	// Verify agent_type is NOT in required list (it's optional)
+	for _, req := range tool.InputSchema.Required {
+		require.NotEqual(t, "agent_type", req, "agent_type should NOT be in Required list (it's optional)")
 	}
 }

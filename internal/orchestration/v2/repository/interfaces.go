@@ -10,6 +10,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/pubsub"
 )
 
@@ -96,6 +97,9 @@ type Process struct {
 	TaskID string
 	// RetiredAt is when this process was retired (zero if still active).
 	RetiredAt time.Time
+	// AgentType is the worker's specialization (generic, implementer, reviewer, researcher).
+	// Empty string represents generic (default). Only relevant for workers.
+	AgentType roles.AgentType
 }
 
 // IsCoordinator returns true if this is the coordinator process.

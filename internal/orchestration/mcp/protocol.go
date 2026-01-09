@@ -207,6 +207,7 @@ type PropertySchema struct {
 	Properties  map[string]*PropertySchema `json:"properties,omitempty"` // For nested objects
 	Items       *PropertySchema            `json:"items,omitempty"`      // For array items
 	Required    []string                   `json:"required,omitempty"`   // For object types
+	Enum        []string                   `json:"enum,omitempty"`       // For string enumerations
 }
 
 // ToolsListResult is the response for tools/list.

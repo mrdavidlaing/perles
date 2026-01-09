@@ -11,15 +11,23 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/zjrosen/perles/internal/log"
 	mcptypes "github.com/zjrosen/perles/internal/orchestration/mcp/types"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/processor"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
 
 // DefaultTimeout is the default timeout for command execution.
 const DefaultTimeout = 30 * time.Second
+
+// WorkflowConfigProvider returns workflow-specific prompt configuration for a given agent type.
+// This allows the adapter to inject workflow customizations when spawning processes.
+type WorkflowConfigProvider interface {
+	GetWorkflowConfig(agentType roles.AgentType) *roles.WorkflowConfig
+}
 
 // V2Adapter bridges MCP tool calls to v2 commands.
 // It parses MCP arguments, creates commands, submits them to the processor,
@@ -29,14 +37,15 @@ const DefaultTimeout = 30 * time.Second
 // reads directly from repositories without going through the CommandProcessor,
 // since these operations don't mutate state and don't require FIFO ordering.
 type V2Adapter struct {
-	processor   *processor.CommandProcessor
-	processRepo repository.ProcessRepository
-	taskRepo    repository.TaskRepository
-	queueRepo   repository.QueueRepository
-	msgRepo     repository.MessageRepository
-	timeout     time.Duration
-	sessionID   string // Session ID for accountability summary generation
-	workDir     string // Working directory for deriving session paths
+	processor        *processor.CommandProcessor
+	processRepo      repository.ProcessRepository
+	taskRepo         repository.TaskRepository
+	queueRepo        repository.QueueRepository
+	msgRepo          repository.MessageRepository
+	workflowProvider WorkflowConfigProvider
+	timeout          time.Duration
+	sessionID        string // Session ID for accountability summary generation
+	workDir          string // Working directory for deriving session paths
 }
 
 // Option configures the V2Adapter.
@@ -96,6 +105,13 @@ func NewV2Adapter(proc *processor.CommandProcessor, opts ...Option) *V2Adapter {
 		opt(a)
 	}
 	return a
+}
+
+// SetWorkflowConfigProvider sets the workflow config provider after construction.
+// This is useful when the provider (e.g., the orchestration Model) is created after
+// the adapter, but needs to provide workflow configuration for process spawning.
+func (a *V2Adapter) SetWorkflowConfigProvider(provider WorkflowConfigProvider) {
+	a.workflowProvider = provider
 }
 
 // ===========================================================================
@@ -167,15 +183,52 @@ type reportReviewVerdictArgs struct {
 	Comments string `json:"comments,omitempty"`
 }
 
+// spawnWorkerArgs holds arguments for spawn_worker tool.
+type spawnWorkerArgs struct {
+	AgentType string `json:"agent_type,omitempty"`
+}
+
 // ===========================================================================
 // Process Lifecycle Handlers
 // ===========================================================================
 
+// ErrAgentTypeNotFound is returned when an invalid agent_type is specified.
+var ErrAgentTypeNotFound = errors.New("agent_type not found: must be one of 'implementer', 'reviewer', 'researcher', or omitted for generic")
+
 // HandleSpawnProcess handles the spawn_process MCP tool call.
 // For workers, it spawns a new idle worker ready for task assignment.
+// Supports optional agent_type parameter for specialized workers.
 func (a *V2Adapter) HandleSpawnProcess(ctx context.Context, args json.RawMessage) (*mcptypes.ToolCallResult, error) {
-	// Default to worker role if not specified
-	cmd := command.NewSpawnProcessCommand(command.SourceMCPTool, repository.RoleWorker)
+	var parsed spawnWorkerArgs
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &parsed); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+	}
+
+	// Parse and validate agent_type
+	agentType := roles.AgentTypeGeneric // Default to generic
+	if parsed.AgentType != "" {
+		agentType = roles.AgentType(parsed.AgentType)
+		if !agentType.IsValid() {
+			return nil, ErrAgentTypeNotFound
+		}
+	}
+
+	// Build command options
+	opts := []command.SpawnProcessOption{command.WithAgentType(agentType)}
+
+	// Get workflow config if provider is configured
+	if a.workflowProvider != nil {
+		if wfConfig := a.workflowProvider.GetWorkflowConfig(agentType); wfConfig != nil {
+			opts = append(opts, command.WithWorkflowConfig(wfConfig))
+		} else {
+			log.Debug(log.CatOrch, "HandleSpawnProcess: workflowProvider returned nil config")
+		}
+	}
+
+	// Create command with options
+	cmd := command.NewSpawnProcessCommand(command.SourceMCPTool, repository.RoleWorker, opts...)
 
 	result, err := a.submitWithTimeout(ctx, cmd)
 	if err != nil {
@@ -276,6 +329,7 @@ type workerStateInfo struct {
 	WorkerID     string `json:"worker_id"`
 	Status       string `json:"status"`
 	Phase        string `json:"phase"`
+	AgentType    string `json:"agent_type,omitempty"`
 	TaskID       string `json:"task_id,omitempty"`
 	SessionID    string `json:"session_id,omitempty"`
 	QueueSize    int    `json:"queue_size,omitempty"`
@@ -393,6 +447,7 @@ func (a *V2Adapter) HandleQueryWorkerState(_ context.Context, args json.RawMessa
 			WorkerID:  p.ID,
 			Status:    processStatusToWorkerStatus(p.Status),
 			Phase:     phase,
+			AgentType: p.AgentType.String(),
 			TaskID:    p.TaskID,
 			SessionID: p.SessionID,
 			QueueSize: queueSize,

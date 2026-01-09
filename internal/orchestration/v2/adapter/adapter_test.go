@@ -17,6 +17,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/processor"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/pubsub"
 )
@@ -2413,4 +2414,347 @@ func TestAdapter_HandleStopProcess_ForceFlag(t *testing.T) {
 	assert.Equal(t, "worker-456", stopCmd.ProcessID)
 	assert.True(t, stopCmd.Force)
 	assert.Equal(t, "emergency stop", stopCmd.Reason)
+}
+
+// ===========================================================================
+// Agent Type Tests
+// ===========================================================================
+
+func TestHandleSpawnProcess_WithAgentType(t *testing.T) {
+	t.Run("agent_type_implementer_parsed_correctly", func(t *testing.T) {
+		adapter, handler, cleanup := testAdapter(t)
+		defer cleanup()
+
+		// Set handler to return worker ID
+		handler.returnResult = &command.CommandResult{
+			Success: true,
+			Data:    "worker-123",
+		}
+
+		args := toJSON(t, map[string]string{
+			"agent_type": "implementer",
+		})
+
+		result, err := adapter.HandleSpawnProcess(context.Background(), args)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.IsError)
+
+		// Verify command was created with correct AgentType
+		cmds := handler.getCommands()
+		require.Len(t, cmds, 1)
+		spawnCmd, ok := cmds[0].(*command.SpawnProcessCommand)
+		require.True(t, ok)
+		assert.Equal(t, "implementer", string(spawnCmd.AgentType))
+	})
+
+	t.Run("agent_type_reviewer_parsed_correctly", func(t *testing.T) {
+		adapter, handler, cleanup := testAdapter(t)
+		defer cleanup()
+
+		handler.returnResult = &command.CommandResult{
+			Success: true,
+			Data:    "worker-456",
+		}
+
+		args := toJSON(t, map[string]string{
+			"agent_type": "reviewer",
+		})
+
+		result, err := adapter.HandleSpawnProcess(context.Background(), args)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.IsError)
+
+		cmds := handler.getCommands()
+		require.Len(t, cmds, 1)
+		spawnCmd, ok := cmds[0].(*command.SpawnProcessCommand)
+		require.True(t, ok)
+		assert.Equal(t, "reviewer", string(spawnCmd.AgentType))
+	})
+
+	t.Run("agent_type_researcher_parsed_correctly", func(t *testing.T) {
+		adapter, handler, cleanup := testAdapter(t)
+		defer cleanup()
+
+		handler.returnResult = &command.CommandResult{
+			Success: true,
+			Data:    "worker-789",
+		}
+
+		args := toJSON(t, map[string]string{
+			"agent_type": "researcher",
+		})
+
+		result, err := adapter.HandleSpawnProcess(context.Background(), args)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.False(t, result.IsError)
+
+		cmds := handler.getCommands()
+		require.Len(t, cmds, 1)
+		spawnCmd, ok := cmds[0].(*command.SpawnProcessCommand)
+		require.True(t, ok)
+		assert.Equal(t, "researcher", string(spawnCmd.AgentType))
+	})
+}
+
+func TestHandleSpawnProcess_InvalidAgentType_ReturnsError(t *testing.T) {
+	adapter, handler, cleanup := testAdapter(t)
+	defer cleanup()
+
+	args := toJSON(t, map[string]string{
+		"agent_type": "invalid_type",
+	})
+
+	result, err := adapter.HandleSpawnProcess(context.Background(), args)
+
+	// Should return ErrAgentTypeNotFound
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrAgentTypeNotFound)
+	assert.Nil(t, result)
+
+	// Verify no command was sent
+	cmds := handler.getCommands()
+	assert.Len(t, cmds, 0)
+}
+
+func TestHandleSpawnProcess_NoAgentType_UsesGeneric(t *testing.T) {
+	adapter, handler, cleanup := testAdapter(t)
+	defer cleanup()
+
+	handler.returnResult = &command.CommandResult{
+		Success: true,
+		Data:    "worker-generic",
+	}
+
+	// No agent_type in args (nil args)
+	result, err := adapter.HandleSpawnProcess(context.Background(), nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+
+	// Verify command was created with generic (empty string) AgentType
+	cmds := handler.getCommands()
+	require.Len(t, cmds, 1)
+	spawnCmd, ok := cmds[0].(*command.SpawnProcessCommand)
+	require.True(t, ok)
+	assert.Equal(t, "", string(spawnCmd.AgentType)) // AgentTypeGeneric is empty string
+}
+
+func TestHandleSpawnProcess_EmptyAgentType_UsesGeneric(t *testing.T) {
+	adapter, handler, cleanup := testAdapter(t)
+	defer cleanup()
+
+	handler.returnResult = &command.CommandResult{
+		Success: true,
+		Data:    "worker-generic",
+	}
+
+	// Empty string agent_type
+	args := toJSON(t, map[string]string{
+		"agent_type": "",
+	})
+
+	result, err := adapter.HandleSpawnProcess(context.Background(), args)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+
+	// Verify command was created with generic AgentType
+	cmds := handler.getCommands()
+	require.Len(t, cmds, 1)
+	spawnCmd, ok := cmds[0].(*command.SpawnProcessCommand)
+	require.True(t, ok)
+	assert.Equal(t, "", string(spawnCmd.AgentType))
+}
+
+func TestHandleSpawnProcess_ValidatesEnumValues(t *testing.T) {
+	tests := []struct {
+		name       string
+		agentType  string
+		shouldFail bool
+	}{
+		{"implementer_valid", "implementer", false},
+		{"reviewer_valid", "reviewer", false},
+		{"researcher_valid", "researcher", false},
+		{"empty_valid", "", false},
+		{"unknown_invalid", "unknown", true},
+		{"uppercase_invalid", "IMPLEMENTER", true},
+		{"shell_injection_invalid", "implementer;rm -rf /", true},
+		{"path_traversal_invalid", "../../../etc/passwd", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, handler, cleanup := testAdapter(t)
+			defer cleanup()
+
+			handler.returnResult = &command.CommandResult{
+				Success: true,
+				Data:    "worker-test",
+			}
+
+			args := toJSON(t, map[string]string{
+				"agent_type": tc.agentType,
+			})
+
+			result, err := adapter.HandleSpawnProcess(context.Background(), args)
+
+			if tc.shouldFail {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, ErrAgentTypeNotFound)
+				assert.Nil(t, result)
+				// No command should be sent for invalid types
+				cmds := handler.getCommands()
+				assert.Len(t, cmds, 0)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				assert.False(t, result.IsError)
+			}
+		})
+	}
+}
+
+func TestHandleQueryWorkerState_IncludesAgentType(t *testing.T) {
+	t.Run("returns_agent_type_for_specialized_worker", func(t *testing.T) {
+		processRepo := repository.NewMemoryProcessRepository()
+
+		_ = processRepo.Save(&repository.Process{
+			ID:        "worker-1",
+			Role:      repository.RoleWorker,
+			Status:    repository.StatusReady,
+			Phase:     ptr(events.ProcessPhaseIdle),
+			AgentType: roles.AgentTypeImplementer,
+			CreatedAt: time.Now(),
+		})
+
+		adapter, _, cleanup := testAdapter(t,
+			WithProcessRepository(processRepo),
+		)
+		defer cleanup()
+
+		result, err := adapter.HandleQueryWorkerState(context.Background(), nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Parse response
+		var response struct {
+			Workers []map[string]any `json:"workers"`
+		}
+		err = json.Unmarshal([]byte(result.Content[0].Text), &response)
+		require.NoError(t, err)
+
+		require.Len(t, response.Workers, 1)
+		w := response.Workers[0]
+		assert.Equal(t, "implementer", w["agent_type"])
+	})
+
+	t.Run("returns_generic_for_unspecialized_worker", func(t *testing.T) {
+		processRepo := repository.NewMemoryProcessRepository()
+
+		// AgentType empty string (generic)
+		_ = processRepo.Save(&repository.Process{
+			ID:        "worker-1",
+			Role:      repository.RoleWorker,
+			Status:    repository.StatusReady,
+			Phase:     ptr(events.ProcessPhaseIdle),
+			AgentType: roles.AgentTypeGeneric, // Generic
+			CreatedAt: time.Now(),
+		})
+
+		adapter, _, cleanup := testAdapter(t,
+			WithProcessRepository(processRepo),
+		)
+		defer cleanup()
+
+		result, err := adapter.HandleQueryWorkerState(context.Background(), nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		var response struct {
+			Workers []map[string]any `json:"workers"`
+		}
+		err = json.Unmarshal([]byte(result.Content[0].Text), &response)
+		require.NoError(t, err)
+
+		require.Len(t, response.Workers, 1)
+		w := response.Workers[0]
+		// AgentType.String() returns "generic" for empty string
+		assert.Equal(t, "generic", w["agent_type"])
+	})
+
+	t.Run("returns_all_agent_types_correctly", func(t *testing.T) {
+		processRepo := repository.NewMemoryProcessRepository()
+
+		_ = processRepo.Save(&repository.Process{
+			ID:        "worker-1",
+			Role:      repository.RoleWorker,
+			Status:    repository.StatusReady,
+			Phase:     ptr(events.ProcessPhaseIdle),
+			AgentType: roles.AgentTypeImplementer,
+			CreatedAt: time.Now(),
+		})
+		_ = processRepo.Save(&repository.Process{
+			ID:        "worker-2",
+			Role:      repository.RoleWorker,
+			Status:    repository.StatusReady,
+			Phase:     ptr(events.ProcessPhaseIdle),
+			AgentType: roles.AgentTypeReviewer,
+			CreatedAt: time.Now(),
+		})
+		_ = processRepo.Save(&repository.Process{
+			ID:        "worker-3",
+			Role:      repository.RoleWorker,
+			Status:    repository.StatusReady,
+			Phase:     ptr(events.ProcessPhaseIdle),
+			AgentType: roles.AgentTypeResearcher,
+			CreatedAt: time.Now(),
+		})
+		_ = processRepo.Save(&repository.Process{
+			ID:        "worker-4",
+			Role:      repository.RoleWorker,
+			Status:    repository.StatusReady,
+			Phase:     ptr(events.ProcessPhaseIdle),
+			AgentType: roles.AgentTypeGeneric, // generic
+			CreatedAt: time.Now(),
+		})
+
+		adapter, _, cleanup := testAdapter(t,
+			WithProcessRepository(processRepo),
+		)
+		defer cleanup()
+
+		result, err := adapter.HandleQueryWorkerState(context.Background(), nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		var response struct {
+			Workers []map[string]any `json:"workers"`
+		}
+		err = json.Unmarshal([]byte(result.Content[0].Text), &response)
+		require.NoError(t, err)
+
+		require.Len(t, response.Workers, 4)
+
+		// Build map of worker_id -> agent_type for easier assertions
+		agentTypes := make(map[string]string)
+		for _, w := range response.Workers {
+			agentTypes[w["worker_id"].(string)] = w["agent_type"].(string)
+		}
+
+		assert.Equal(t, "implementer", agentTypes["worker-1"])
+		assert.Equal(t, "reviewer", agentTypes["worker-2"])
+		assert.Equal(t, "researcher", agentTypes["worker-3"])
+		assert.Equal(t, "generic", agentTypes["worker-4"])
+	})
 }

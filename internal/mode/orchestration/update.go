@@ -890,6 +890,9 @@ func (m Model) handleInitializerEvent(event pubsub.Event[InitializerEvent]) (Mod
 			if v2Infra := m.initializer.GetV2Infra(); v2Infra != nil {
 				m.v2Infra = v2Infra
 
+				// Wire up the workflow config provider so spawned workers get workflow-specific prompts
+				v2Infra.Core.Adapter.SetWorkflowConfigProvider(&m)
+
 				if msgRepo := m.initializer.GetMessageRepo(); msgRepo != nil {
 					m.messageRepo = msgRepo
 					m.messageListener = pubsub.NewContinuousListener(m.ctx, msgRepo.Broker())
@@ -965,6 +968,8 @@ func (m Model) handleInitializerEvent(event pubsub.Event[InitializerEvent]) (Mod
 		// Get v2Infra if not already set
 		if m.v2Infra == nil {
 			m.v2Infra = res.V2Infra
+			// Wire up the workflow config provider so spawned workers get workflow-specific prompts
+			m.v2Infra.Core.Adapter.SetWorkflowConfigProvider(&m)
 		}
 
 		// Store worktree info for cleanup on exit

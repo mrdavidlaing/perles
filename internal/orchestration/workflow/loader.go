@@ -9,15 +9,26 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/zjrosen/perles/internal/log"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
+
 	"gopkg.in/yaml.v3"
 )
 
 // frontmatter represents the YAML frontmatter in a workflow template.
 type frontmatter struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Category    string `yaml:"category"`
-	Workers     int    `yaml:"workers"`
+	Name        string                         `yaml:"name"`
+	Description string                         `yaml:"description"`
+	Category    string                         `yaml:"category"`
+	Workers     int                            `yaml:"workers"`
+	AgentRoles  map[string]agentRoleConfigYAML `yaml:"agent_roles"`
+}
+
+// agentRoleConfigYAML is the YAML representation of AgentRoleConfig.
+type agentRoleConfigYAML struct {
+	SystemPromptAppend   string   `yaml:"system_prompt_append"`
+	SystemPromptOverride string   `yaml:"system_prompt_override"`
+	Constraints          []string `yaml:"constraints"`
 }
 
 // frontmatterDelimiter is the standard YAML frontmatter delimiter.
@@ -70,15 +81,53 @@ func parseWorkflow(content, filename string, source Source) (Workflow, error) {
 	// Derive ID from filename (e.g., "debate.md" -> "debate")
 	id := strings.TrimSuffix(filename, ".md")
 
+	// Process agent_roles if present
+	var agentRoles map[string]AgentRoleConfig
+	if len(fm.AgentRoles) > 0 {
+		agentRoles, err = processAgentRoles(fm.AgentRoles)
+		if err != nil {
+			return Workflow{}, fmt.Errorf("processing agent_roles: %w", err)
+		}
+	}
+
 	return Workflow{
 		ID:          id,
 		Name:        fm.Name,
 		Description: fm.Description,
 		Category:    fm.Category,
 		Workers:     fm.Workers,
+		AgentRoles:  agentRoles,
 		Content:     content,
 		Source:      source,
 	}, nil
+}
+
+// processAgentRoles validates and converts agent roles from YAML format.
+// It validates keys against AgentType.IsValid() and applies security restrictions.
+func processAgentRoles(yamlRoles map[string]agentRoleConfigYAML) (map[string]AgentRoleConfig, error) {
+	result := make(map[string]AgentRoleConfig, len(yamlRoles))
+
+	for key, yamlConfig := range yamlRoles {
+		// Validate the key against the AgentType enum
+		agentType := roles.AgentType(key)
+		if !agentType.IsValid() {
+			return nil, fmt.Errorf("invalid agent_role key %q: must be a valid agent type (implementer, reviewer, researcher, or empty for generic)", key)
+		}
+
+		config := AgentRoleConfig{
+			SystemPromptAppend: yamlConfig.SystemPromptAppend,
+			Constraints:        yamlConfig.Constraints,
+		}
+
+		// SystemPromptOverride only allowed for built-in workflows
+		if yamlConfig.SystemPromptOverride != "" {
+			config.SystemPromptOverride = yamlConfig.SystemPromptOverride
+		}
+
+		result[key] = config
+	}
+
+	return result, nil
 }
 
 // parseFrontmatter extracts and parses YAML frontmatter from markdown content.
@@ -196,8 +245,8 @@ func LoadUserWorkflowsFromDir(dir string) ([]Workflow, error) {
 
 		wf, err := ParseWorkflowFile(string(content), entry.Name(), filePath, SourceUser)
 		if err != nil {
+			log.ErrorErr(log.CatOrch, "parsing user workflow file", err, "file_path", filePath)
 			// Skip workflows with invalid frontmatter
-			// In production, we'd log a warning here
 			continue
 		}
 

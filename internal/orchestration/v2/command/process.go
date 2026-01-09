@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
 
@@ -18,17 +19,44 @@ import (
 // For coordinator, the ProcessID is always "coordinator".
 type SpawnProcessCommand struct {
 	*BaseCommand
-	Role      repository.ProcessRole // Required: coordinator or worker
-	ProcessID string                 // Optional: specific ID (auto-generated for workers if empty)
+	Role           repository.ProcessRole // Required: coordinator or worker
+	ProcessID      string                 // Optional: specific ID (auto-generated for workers if empty)
+	AgentType      roles.AgentType        // Optional: agent specialization (default: generic)
+	WorkflowConfig *roles.WorkflowConfig  // Optional: workflow-specific prompt customizations
+}
+
+// SpawnProcessOption configures a SpawnProcessCommand.
+type SpawnProcessOption func(*SpawnProcessCommand)
+
+// WithAgentType sets the agent type for the spawn command.
+// This determines which specialized prompts are used for the worker.
+func WithAgentType(agentType roles.AgentType) SpawnProcessOption {
+	return func(cmd *SpawnProcessCommand) {
+		cmd.AgentType = agentType
+	}
+}
+
+// WithWorkflowConfig sets the workflow-specific prompt customizations.
+// This enables workflow templates to override or append to default system prompts.
+func WithWorkflowConfig(config *roles.WorkflowConfig) SpawnProcessOption {
+	return func(cmd *SpawnProcessCommand) {
+		cmd.WorkflowConfig = config
+	}
 }
 
 // NewSpawnProcessCommand creates a new SpawnProcessCommand.
-func NewSpawnProcessCommand(source CommandSource, role repository.ProcessRole) *SpawnProcessCommand {
+// Options can be provided to configure optional fields like AgentType.
+func NewSpawnProcessCommand(source CommandSource, role repository.ProcessRole, opts ...SpawnProcessOption) *SpawnProcessCommand {
 	base := NewBaseCommand(CmdSpawnProcess, source)
-	return &SpawnProcessCommand{
+	cmd := &SpawnProcessCommand{
 		BaseCommand: &base,
 		Role:        role,
+		AgentType:   roles.AgentTypeGeneric, // Default to generic
 	}
+	for _, opt := range opts {
+		opt(cmd)
+	}
+	return cmd
 }
 
 // Validate checks that Role is coordinator or worker.

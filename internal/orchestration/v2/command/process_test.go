@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
 
@@ -57,6 +58,43 @@ func TestSpawnProcessCommand_EmptyProcessID(t *testing.T) {
 
 func TestSpawnProcessCommand_ImplementsCommand(t *testing.T) {
 	var _ Command = &SpawnProcessCommand{}
+}
+
+func TestSpawnProcessCommand_WithAgentType(t *testing.T) {
+	cmd := NewSpawnProcessCommand(SourceMCPTool, repository.RoleWorker, WithAgentType(roles.AgentTypeImplementer))
+	require.Equal(t, roles.AgentTypeImplementer, cmd.AgentType)
+}
+
+func TestSpawnProcessCommand_DefaultAgentType(t *testing.T) {
+	cmd := NewSpawnProcessCommand(SourceMCPTool, repository.RoleWorker)
+	require.Equal(t, roles.AgentTypeGeneric, cmd.AgentType)
+}
+
+func TestSpawnProcessCommand_WithAgentType_AllTypes(t *testing.T) {
+	testCases := []struct {
+		name      string
+		agentType roles.AgentType
+	}{
+		{"generic", roles.AgentTypeGeneric},
+		{"implementer", roles.AgentTypeImplementer},
+		{"reviewer", roles.AgentTypeReviewer},
+		{"researcher", roles.AgentTypeResearcher},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := NewSpawnProcessCommand(SourceMCPTool, repository.RoleWorker, WithAgentType(tc.agentType))
+			require.Equal(t, tc.agentType, cmd.AgentType)
+			require.NoError(t, cmd.Validate())
+		})
+	}
+}
+
+func TestSpawnProcessCommand_WithAgentType_PreservesOtherFields(t *testing.T) {
+	cmd := NewSpawnProcessCommand(SourceUser, repository.RoleCoordinator, WithAgentType(roles.AgentTypeReviewer))
+	require.Equal(t, SourceUser, cmd.Source())
+	require.Equal(t, repository.RoleCoordinator, cmd.Role)
+	require.Equal(t, roles.AgentTypeReviewer, cmd.AgentType)
 }
 
 // ===========================================================================
