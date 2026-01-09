@@ -2,11 +2,14 @@ package orchestration
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/zjrosen/perles/internal/git"
 )
 
 // newTestInitializer creates an Initializer in a specific state for testing.
@@ -782,4 +785,29 @@ func TestGetPhaseIndicatorAndStyle_Worktree_Completed(t *testing.T) {
 	// Worktree phase should show ✓ when completed (moved past it)
 	indicator, _ := m.getPhaseIndicatorAndStyle(InitCreatingWorktree, InitCreatingWorkspace)
 	require.Contains(t, indicator, "✓")
+}
+
+// ===========================================================================
+// worktreeErrorMessage Tests for ErrInvalidBranchName (Task perles-s8xg.4)
+// ===========================================================================
+
+func TestWorktreeErrorMessage_InvalidBranchName_SentinelError(t *testing.T) {
+	// Test: ErrInvalidBranchName sentinel error is detected via errors.Is
+	err := git.ErrInvalidBranchName
+	msg := worktreeErrorMessage(err)
+	require.Equal(t, "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot.", msg)
+}
+
+func TestWorktreeErrorMessage_InvalidBranchName_WrappedSentinelError(t *testing.T) {
+	// Test: Wrapped ErrInvalidBranchName is still detected via errors.Is
+	err := fmt.Errorf("failed to create worktree: %w", git.ErrInvalidBranchName)
+	msg := worktreeErrorMessage(err)
+	require.Equal(t, "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot.", msg)
+}
+
+func TestWorktreeErrorMessage_InvalidBranchName_StringContains(t *testing.T) {
+	// Test: Git error message containing "is not a valid branch name" is detected
+	err := errors.New("fatal: 'my branch' is not a valid branch name")
+	msg := worktreeErrorMessage(err)
+	require.Equal(t, "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot.", msg)
 }

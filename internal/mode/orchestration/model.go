@@ -177,6 +177,7 @@ type Model struct {
 	worktreeDecisionMade    bool                              // True after user has made worktree decision
 	gitExecutor             git.GitExecutor                   // Git executor for worktree operations
 	worktreeBaseBranch      string                            // Branch to base worktree on (set by branch modal)
+	worktreeCustomBranch    string                            // Optional custom branch name from user input (set by branch modal)
 	worktreeBranch          string                            // Auto-generated branch name (set after worktree creation)
 	worktreePath            string                            // Path to the worktree directory (set after creation)
 	worktreeExecutorFactory func(path string) git.GitExecutor // Factory for creating worktree-scoped executor (injected via Config)

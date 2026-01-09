@@ -872,3 +872,130 @@ func TestWorktreeIntegration_ConcurrentAccess_WorktreeBranch(t *testing.T) {
 		<-done
 	}
 }
+
+// ===========================================================================
+// Custom Branch Name Tests (Task perles-s8xg.4)
+// ===========================================================================
+// These tests verify that createWorktree() uses a custom branch name when
+// provided via WorktreeBranchName config, and falls back to auto-generated
+// perles-session-<hash> format when empty.
+
+func TestWorktreeIntegration_CustomBranchName_UsesProvided(t *testing.T) {
+	// Test: When WorktreeBranchName is set, use that exact name
+	workDir := t.TempDir()
+	worktreePath := "/tmp/test-worktree"
+	sessionID := "test-session-12345678"
+	customBranch := "feature/my-custom-work"
+
+	mockGit := mocks.NewMockGitExecutor(t)
+	mockGit.EXPECT().IsGitRepo().Return(true)
+	mockGit.EXPECT().PruneWorktrees().Return(nil)
+	mockGit.EXPECT().DetermineWorktreePath(sessionID).Return(worktreePath, nil)
+	// The key assertion: branch should be the custom name, not auto-generated
+	mockGit.EXPECT().CreateWorktree(worktreePath, customBranch, "main").Return(nil)
+
+	init := NewInitializer(InitializerConfig{
+		WorkDir:            workDir,
+		WorktreeBaseBranch: "main",
+		WorktreeBranchName: customBranch,
+		GitExecutor:        mockGit,
+	})
+
+	init.mu.Lock()
+	init.sessionID = sessionID
+	init.mu.Unlock()
+
+	err := init.createWorktree()
+	require.NoError(t, err)
+	require.Equal(t, worktreePath, init.WorktreePath())
+	require.Equal(t, customBranch, init.WorktreeBranch())
+}
+
+func TestWorktreeIntegration_CustomBranchName_FallbackWhenEmpty(t *testing.T) {
+	// Test: When WorktreeBranchName is empty, fall back to auto-generated name
+	workDir := t.TempDir()
+	worktreePath := "/tmp/test-worktree"
+	sessionID := "test-session-12345678"
+	expectedBranch := "perles-session-test-ses" // First 8 chars of sessionID
+
+	mockGit := mocks.NewMockGitExecutor(t)
+	mockGit.EXPECT().IsGitRepo().Return(true)
+	mockGit.EXPECT().PruneWorktrees().Return(nil)
+	mockGit.EXPECT().DetermineWorktreePath(sessionID).Return(worktreePath, nil)
+	// The key assertion: branch should be auto-generated format
+	mockGit.EXPECT().CreateWorktree(worktreePath, expectedBranch, "main").Return(nil)
+
+	init := NewInitializer(InitializerConfig{
+		WorkDir:            workDir,
+		WorktreeBaseBranch: "main",
+		WorktreeBranchName: "", // Empty = use auto-generated
+		GitExecutor:        mockGit,
+	})
+
+	init.mu.Lock()
+	init.sessionID = sessionID
+	init.mu.Unlock()
+
+	err := init.createWorktree()
+	require.NoError(t, err)
+	require.Equal(t, worktreePath, init.WorktreePath())
+	require.Equal(t, expectedBranch, init.WorktreeBranch())
+}
+
+func TestWorktreeIntegration_CustomBranchName_ShortSessionID(t *testing.T) {
+	// Test: Session ID shorter than 8 chars is used as-is for auto-generated name
+	workDir := t.TempDir()
+	worktreePath := "/tmp/test-worktree"
+	sessionID := "abc123" // 6 chars, shorter than 8
+	expectedBranch := "perles-session-abc123"
+
+	mockGit := mocks.NewMockGitExecutor(t)
+	mockGit.EXPECT().IsGitRepo().Return(true)
+	mockGit.EXPECT().PruneWorktrees().Return(nil)
+	mockGit.EXPECT().DetermineWorktreePath(sessionID).Return(worktreePath, nil)
+	mockGit.EXPECT().CreateWorktree(worktreePath, expectedBranch, "main").Return(nil)
+
+	init := NewInitializer(InitializerConfig{
+		WorkDir:            workDir,
+		WorktreeBaseBranch: "main",
+		WorktreeBranchName: "", // Empty = use auto-generated
+		GitExecutor:        mockGit,
+	})
+
+	init.mu.Lock()
+	init.sessionID = sessionID
+	init.mu.Unlock()
+
+	err := init.createWorktree()
+	require.NoError(t, err)
+	require.Equal(t, expectedBranch, init.WorktreeBranch())
+}
+
+func TestWorktreeIntegration_CustomBranchName_WithSlashes(t *testing.T) {
+	// Test: Custom branch names with slashes (e.g., feature/...) work correctly
+	workDir := t.TempDir()
+	worktreePath := "/tmp/test-worktree"
+	sessionID := "test-session-12345678"
+	customBranch := "feature/add-custom-branch/support"
+
+	mockGit := mocks.NewMockGitExecutor(t)
+	mockGit.EXPECT().IsGitRepo().Return(true)
+	mockGit.EXPECT().PruneWorktrees().Return(nil)
+	mockGit.EXPECT().DetermineWorktreePath(sessionID).Return(worktreePath, nil)
+	mockGit.EXPECT().CreateWorktree(worktreePath, customBranch, "develop").Return(nil)
+
+	init := NewInitializer(InitializerConfig{
+		WorkDir:            workDir,
+		WorktreeBaseBranch: "develop",
+		WorktreeBranchName: customBranch,
+		GitExecutor:        mockGit,
+	})
+
+	init.mu.Lock()
+	init.sessionID = sessionID
+	init.mu.Unlock()
+
+	err := init.createWorktree()
+	require.NoError(t, err)
+	require.Equal(t, customBranch, init.WorktreeBranch())
+}

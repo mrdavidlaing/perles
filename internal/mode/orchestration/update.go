@@ -225,6 +225,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if branch, ok := msg.Values["branch"].(string); ok && branch != "" {
 				m.worktreeBaseBranch = branch
 			}
+			// Extract custom branch name if provided
+			if customBranch, ok := msg.Values["custom_branch"].(string); ok {
+				m.worktreeCustomBranch = strings.TrimSpace(customBranch)
+			}
 			return m.handleStartCoordinator()
 		}
 		return m, nil
@@ -1062,7 +1066,7 @@ func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 			ConfirmText: "Yes",
 			CancelText:  "No",
 			Required:    true, // User must explicitly choose Yes or No
-			MinWidth:    52,
+			MinWidth:    46,
 		})
 		mdl.SetSize(m.width, m.height)
 		m.worktreeModal = &mdl
@@ -1089,6 +1093,7 @@ func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 		AmpMode:            m.ampMode,
 		Timeout:            timeout,
 		WorktreeBaseBranch: m.worktreeBaseBranch,
+		WorktreeBranchName: m.worktreeCustomBranch,
 		GitExecutor:        m.gitExecutor,
 		TracingConfig:      m.tracingConfig,
 	})
@@ -1559,7 +1564,7 @@ func (m Model) showBranchSelectionModal() (Model, tea.Cmd) {
 	// Create branch selection modal with searchable select
 	mdl := formmodal.New(formmodal.FormConfig{
 		Title:       "Select Base Branch",
-		MinWidth:    52,
+		MinWidth:    47,
 		SubmitLabel: "Continue",
 		Fields: []formmodal.FieldConfig{
 			{
@@ -1570,6 +1575,14 @@ func (m Model) showBranchSelectionModal() (Model, tea.Cmd) {
 				SearchPlaceholder: "Search branches...",
 				MaxVisibleItems:   7,
 			},
+			{
+				Key:         "custom_branch",
+				Type:        formmodal.FieldTypeText,
+				Label:       "Custom Branch Name",
+				Hint:        "optional",
+				Placeholder: "e.g., feature/my-work",
+				MaxLength:   100,
+			},
 		},
 		Validate: func(values map[string]any) error {
 			branch, _ := values["branch"].(string)
@@ -1579,6 +1592,20 @@ func (m Model) showBranchSelectionModal() (Model, tea.Cmd) {
 			// Verify branch still exists
 			if m.gitExecutor != nil && !m.gitExecutor.BranchExists(branch) {
 				return fmt.Errorf("branch '%s' no longer exists", branch)
+			}
+			// Validate custom branch name if provided
+			if customBranch, ok := values["custom_branch"].(string); ok {
+				customBranch = strings.TrimSpace(customBranch)
+				if customBranch != "" {
+					if m.gitExecutor != nil {
+						if err := m.gitExecutor.ValidateBranchName(customBranch); err != nil {
+							return fmt.Errorf("invalid branch name: cannot contain spaces or special characters (~^:?*[)")
+						}
+						if m.gitExecutor.BranchExists(customBranch) {
+							return fmt.Errorf("branch '%s' already exists", customBranch)
+						}
+					}
+				}
 			}
 			return nil
 		},

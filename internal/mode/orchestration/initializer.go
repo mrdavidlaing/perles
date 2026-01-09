@@ -64,6 +64,7 @@ type InitializerConfig struct {
 	Timeout     time.Duration
 	// Worktree configuration
 	WorktreeBaseBranch string          // Branch to base worktree on. Empty = skip worktree creation
+	WorktreeBranchName string          // Optional custom branch name (empty = auto-generate)
 	GitExecutor        git.GitExecutor // Injected for testability
 	// Tracing configuration
 	TracingConfig config.TracingConfig // Distributed tracing settings
@@ -437,12 +438,17 @@ func (i *Initializer) createWorktree() error {
 		return fmt.Errorf("failed to determine worktree path: %w", err)
 	}
 
-	// Auto-generate branch name using first 8 chars of session ID
-	shortID := sessionID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
+	// Use custom branch name if provided, otherwise auto-generate
+	var newBranch string
+	if i.cfg.WorktreeBranchName != "" {
+		newBranch = i.cfg.WorktreeBranchName
+	} else {
+		shortID := sessionID
+		if len(shortID) > 8 {
+			shortID = shortID[:8]
+		}
+		newBranch = fmt.Sprintf("perles-session-%s", shortID)
 	}
-	newBranch := fmt.Sprintf("perles-session-%s", shortID)
 
 	// Base branch is what the user selected (main, current branch, etc.)
 	// Empty means use current HEAD

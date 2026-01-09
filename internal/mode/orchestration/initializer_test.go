@@ -1772,3 +1772,68 @@ func TestInitializer_WorktreeConfig_Fields(t *testing.T) {
 	require.Equal(t, "test-branch", config.WorktreeBaseBranch)
 	require.Nil(t, config.GitExecutor)
 }
+
+// ===========================================================================
+// WorktreeBranchName Field Tests (Task perles-s8xg.2)
+// ===========================================================================
+
+func TestInitializerConfig_WorktreeBranchName_FieldExists(t *testing.T) {
+	// Verify the WorktreeBranchName field exists and can be set
+	config := InitializerConfig{
+		WorkDir:            "/test/dir",
+		WorktreeBranchName: "feature/my-custom-branch",
+	}
+
+	// Verify it was set
+	require.Equal(t, "feature/my-custom-branch", config.WorktreeBranchName)
+}
+
+func TestInitializerConfig_WorktreeBranchName_DefaultsToEmpty(t *testing.T) {
+	// Verify WorktreeBranchName defaults to empty string (zero value)
+	config := InitializerConfig{
+		WorkDir: "/test/dir",
+		// WorktreeBranchName not set - should be empty
+	}
+
+	// Field should be empty by default
+	require.Empty(t, config.WorktreeBranchName, "WorktreeBranchName should be empty by default")
+}
+
+func TestInitializerConfig_WorktreeBranchName_EmptyIsZeroValue(t *testing.T) {
+	// Verify empty string is the zero value for WorktreeBranchName
+	config := InitializerConfig{
+		WorkDir:            "/test/dir",
+		WorktreeBranchName: "", // Explicitly empty
+	}
+
+	// Field should be empty
+	require.Empty(t, config.WorktreeBranchName, "empty string should be zero value for WorktreeBranchName")
+}
+
+func TestInitializerConfig_WorktreeBranchName_WithAllWorktreeFields(t *testing.T) {
+	// Verify WorktreeBranchName works together with other worktree fields
+	config := InitializerConfig{
+		WorkDir:            "/test/dir",
+		WorktreeBaseBranch: "main",
+		WorktreeBranchName: "feature/custom",
+	}
+
+	// Verify all worktree fields are correctly set
+	require.Equal(t, "/test/dir", config.WorkDir)
+	require.Equal(t, "main", config.WorktreeBaseBranch)
+	require.Equal(t, "feature/custom", config.WorktreeBranchName)
+}
+
+func TestNewInitializer_WorktreeBranchName_PassedViaConfig(t *testing.T) {
+	// Verify NewInitializer accepts WorktreeBranchName in config
+	cfg := InitializerConfig{
+		WorkDir:            t.TempDir(),
+		WorktreeBranchName: "custom-branch-name",
+	}
+
+	init := NewInitializer(cfg)
+	require.NotNil(t, init)
+
+	// Verify the config was stored (accessed via cfg field)
+	require.Equal(t, "custom-branch-name", init.cfg.WorktreeBranchName)
+}

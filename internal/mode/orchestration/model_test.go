@@ -1611,7 +1611,7 @@ func TestView_Golden_WithBranchSelectModal(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(120, 30)
 
-	// Create the branch selection modal with sample branches
+	// Create the branch selection modal with sample branches and custom branch name field
 	mdl := formmodal.New(formmodal.FormConfig{
 		Title:       "Select Base Branch",
 		MinWidth:    52,
@@ -1628,6 +1628,14 @@ func TestView_Golden_WithBranchSelectModal(t *testing.T) {
 				},
 				SearchPlaceholder: "Search branches...",
 				MaxVisibleItems:   7,
+			},
+			{
+				Key:         "custom_branch",
+				Type:        formmodal.FieldTypeText,
+				Label:       "Custom Branch Name",
+				Hint:        "optional",
+				Placeholder: "e.g., feature/my-work",
+				MaxLength:   100,
 			},
 		},
 		HeaderContent: func(width int) string {
@@ -1724,4 +1732,39 @@ func TestModel_ActiveTraceID_UpdatedFromEvent(t *testing.T) {
 	// Verify formatTraceIDDisplay uses it
 	display := m.formatTraceIDDisplay()
 	require.Contains(t, display, "trace:test-tra") // First 8 chars
+}
+
+// ============================================================================
+// worktreeCustomBranch Field Tests (Task perles-s8xg.2)
+// ============================================================================
+
+func TestModel_WorktreeCustomBranch_FieldExists(t *testing.T) {
+	// Verify the worktreeCustomBranch field exists and can be set
+	m := New(Config{})
+
+	// Set the field directly (internal access)
+	m.worktreeCustomBranch = "feature/my-custom-branch"
+
+	// Verify it was set
+	require.Equal(t, "feature/my-custom-branch", m.worktreeCustomBranch)
+}
+
+func TestModel_WorktreeCustomBranch_DefaultsToEmpty(t *testing.T) {
+	// Verify worktreeCustomBranch defaults to empty string
+	m := New(Config{})
+
+	// Field should be empty by default
+	require.Empty(t, m.worktreeCustomBranch, "worktreeCustomBranch should be empty by default")
+}
+
+func TestModel_WorktreeCustomBranch_EmptyIsZeroValue(t *testing.T) {
+	// Verify empty string is the zero value for worktreeCustomBranch
+	m := New(Config{})
+
+	// Set and then clear
+	m.worktreeCustomBranch = "test-branch"
+	require.Equal(t, "test-branch", m.worktreeCustomBranch)
+
+	m.worktreeCustomBranch = ""
+	require.Empty(t, m.worktreeCustomBranch, "empty string should clear worktreeCustomBranch")
 }

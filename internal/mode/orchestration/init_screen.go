@@ -1,12 +1,14 @@
 package orchestration
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/zjrosen/perles/internal/git"
 	"github.com/zjrosen/perles/internal/ui/shared/chainart"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )
@@ -326,6 +328,12 @@ func worktreeErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
+
+	// Check for sentinel errors first using errors.Is
+	if errors.Is(err, git.ErrInvalidBranchName) {
+		return "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot."
+	}
+
 	errStr := err.Error()
 	switch {
 	case strings.Contains(errStr, "already checked out"):
@@ -334,6 +342,8 @@ func worktreeErrorMessage(err error) string {
 		return "Worktree path already exists."
 	case strings.Contains(errStr, "not a git repository"):
 		return "Not a git repository. Worktree feature unavailable."
+	case strings.Contains(errStr, "is not a valid branch name"):
+		return "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot."
 	default:
 		return fmt.Sprintf("Worktree creation failed: %v", err)
 	}
