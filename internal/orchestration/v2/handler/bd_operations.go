@@ -9,6 +9,7 @@ import (
 
 	"github.com/zjrosen/perles/internal/beads"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
+	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
 
 // ===========================================================================
@@ -17,18 +18,22 @@ import (
 
 // MarkTaskCompleteHandler handles CmdMarkTaskComplete commands.
 // It marks a BD task as completed by updating its status to "closed" and adding a completion comment.
+// It also deletes the in-memory task assignment if taskRepo is provided.
 type MarkTaskCompleteHandler struct {
 	bdExecutor beads.BeadsExecutor
+	taskRepo   repository.TaskRepository
 }
 
 // NewMarkTaskCompleteHandler creates a new MarkTaskCompleteHandler.
 // Panics if bdExecutor is nil.
-func NewMarkTaskCompleteHandler(bdExecutor beads.BeadsExecutor) *MarkTaskCompleteHandler {
+// taskRepo can be nil for backward compatibility (graceful degradation).
+func NewMarkTaskCompleteHandler(bdExecutor beads.BeadsExecutor, taskRepo repository.TaskRepository) *MarkTaskCompleteHandler {
 	if bdExecutor == nil {
 		panic("bdExecutor is required for MarkTaskCompleteHandler")
 	}
 	return &MarkTaskCompleteHandler{
 		bdExecutor: bdExecutor,
+		taskRepo:   taskRepo,
 	}
 }
 
@@ -48,7 +53,13 @@ func (h *MarkTaskCompleteHandler) Handle(ctx context.Context, cmd command.Comman
 		return nil, fmt.Errorf("failed to add BD comment: %w", err)
 	}
 
-	// 3. Return success result
+	// 3. Remove task from in-memory tracking
+	// This is best-effort - task may not exist in memory if workflow was restarted
+	if h.taskRepo != nil {
+		_ = h.taskRepo.Delete(markCmd.TaskID)
+	}
+
+	// 4. Return success result
 	result := &MarkTaskCompleteResult{
 		TaskID: markCmd.TaskID,
 	}

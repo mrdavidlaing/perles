@@ -297,7 +297,7 @@ func registerHandlers(
 	// BD Task Status handlers (2)
 	// ============================================================
 	cmdProcessor.RegisterHandler(command.CmdMarkTaskComplete,
-		handler.NewMarkTaskCompleteHandler(beadsExec))
+		handler.NewMarkTaskCompleteHandler(beadsExec, taskRepo))
 	cmdProcessor.RegisterHandler(command.CmdMarkTaskFailed,
 		handler.NewMarkTaskFailedHandler(beadsExec))
 

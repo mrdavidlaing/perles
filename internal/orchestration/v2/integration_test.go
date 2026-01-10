@@ -172,7 +172,7 @@ func (s *testV2Stack) registerHandlers(
 
 	// BD Task Status handlers (2)
 	cmdProcessor.RegisterHandler(command.CmdMarkTaskComplete,
-		handler.NewMarkTaskCompleteHandler(bdExecutor))
+		handler.NewMarkTaskCompleteHandler(bdExecutor, taskRepo))
 	cmdProcessor.RegisterHandler(command.CmdMarkTaskFailed,
 		handler.NewMarkTaskFailedHandler(bdExecutor))
 }
@@ -1063,9 +1063,9 @@ func registerHandlersWithWiring(
 	cmdProcessor.RegisterHandler(command.CmdProcessTurnComplete,
 		handler.NewProcessTurnCompleteHandler(processRepo, queueRepo))
 
-	// BD Task Status handlers (2) - wired with BDExecutor
+	// BD Task Status handlers (2) - wired with BDExecutor and TaskRepo
 	cmdProcessor.RegisterHandler(command.CmdMarkTaskComplete,
-		handler.NewMarkTaskCompleteHandler(bdExec))
+		handler.NewMarkTaskCompleteHandler(bdExec, taskRepo))
 	cmdProcessor.RegisterHandler(command.CmdMarkTaskFailed,
 		handler.NewMarkTaskFailedHandler(bdExec))
 }
@@ -1846,4 +1846,121 @@ func TestIntegration_StopWorker_PhaseWarning(t *testing.T) {
 	assert.Equal(t, repository.StatusStopped, worker.Status, "worker should be stopped after force stop")
 
 	t.Logf("Stop worker phase warning test passed: warning issued, force override worked")
+}
+
+// ===========================================================================
+// Integration Test: MarkTaskComplete Removes Task from QueryWorkerState
+// ===========================================================================
+
+// TestIntegration_MarkTaskComplete_RemovesFromQueryWorkerState verifies that after
+// mark_task_complete is called, the task is deleted from the in-memory TaskRepository
+// and no longer appears in query_worker_state response.
+//
+// This test validates the fix for the bug where task status remained stuck in "in_review"
+// after the full implement/review/approve/commit cycle completed.
+func TestIntegration_MarkTaskComplete_RemovesFromQueryWorkerState(t *testing.T) {
+	stack := newTestV2StackWithWiring(t)
+	defer stack.cleanup()
+
+	// Step 1: Spawn a worker
+	workerID := stack.spawnWorkerAndWaitReady(t)
+	require.NotEmpty(t, workerID)
+
+	// Step 2: Assign task to worker
+	taskID := "complete-tk001"
+	assignArgs, _ := json.Marshal(map[string]string{
+		"worker_id": workerID,
+		"task_id":   taskID,
+		"summary":   "Test task for completion tracking",
+	})
+
+	result, err := stack.adapter.HandleAssignTask(stack.ctx, assignArgs)
+	require.NoError(t, err)
+	require.False(t, result.IsError, "assign should succeed: %s", result.Content)
+
+	// Wait for BD update to complete
+	require.Eventually(t, func() bool {
+		updates := getStatusUpdates(stack.mockBDExecutor)
+		return len(updates) > 0 && updates[0].TaskID == taskID
+	}, time.Second, 10*time.Millisecond, "BD should be updated on task assignment")
+
+	// Step 3: Verify task appears in query_worker_state response
+	stateResult, err := stack.adapter.HandleQueryWorkerState(stack.ctx, nil)
+	require.NoError(t, err)
+	require.False(t, stateResult.IsError)
+
+	var stateResp struct {
+		Workers []map[string]interface{}          `json:"workers"`
+		Tasks   map[string]map[string]interface{} `json:"tasks"`
+	}
+	err = json.Unmarshal([]byte(stateResult.Content[0].Text), &stateResp)
+	require.NoError(t, err)
+
+	// Task should be present in the tasks map
+	require.Contains(t, stateResp.Tasks, taskID, "task should appear in query_worker_state before completion")
+	taskInfo := stateResp.Tasks[taskID]
+	assert.Equal(t, "implementing", taskInfo["status"], "task status should be implementing")
+	assert.Equal(t, workerID, taskInfo["implementer"], "task implementer should match")
+
+	// Step 4: Verify task exists in in-memory TaskRepository
+	task, err := stack.taskRepo.Get(taskID)
+	require.NoError(t, err)
+	assert.Equal(t, workerID, task.Implementer)
+	assert.Equal(t, repository.TaskImplementing, task.Status)
+
+	// Step 5: Call mark_task_complete
+	completeArgs, _ := json.Marshal(map[string]string{
+		"task_id": taskID,
+	})
+
+	result, err = stack.adapter.HandleMarkTaskComplete(stack.ctx, completeArgs)
+	require.NoError(t, err)
+	require.False(t, result.IsError, "mark_task_complete should succeed: %s", result.Content)
+
+	// Verify BD was updated to closed
+	require.Eventually(t, func() bool {
+		updates := getStatusUpdates(stack.mockBDExecutor)
+		for _, u := range updates {
+			if u.TaskID == taskID && u.Status == "closed" {
+				return true
+			}
+		}
+		return false
+	}, time.Second, 10*time.Millisecond, "BD task status should be updated to closed")
+
+	// Step 6: Verify task is removed from in-memory TaskRepository
+	// Wait for async command to complete
+	require.Eventually(t, func() bool {
+		_, err := stack.taskRepo.Get(taskID)
+		return err == repository.ErrTaskNotFound
+	}, time.Second, 10*time.Millisecond, "task should be deleted from in-memory repo after mark_task_complete")
+
+	// Step 7: Verify task no longer appears in query_worker_state response
+	// Use a fresh struct to avoid json.Unmarshal merging with existing map
+	stateResult, err = stack.adapter.HandleQueryWorkerState(stack.ctx, nil)
+	require.NoError(t, err)
+	require.False(t, stateResult.IsError)
+
+	var finalStateResp struct {
+		Workers []map[string]interface{}          `json:"workers"`
+		Tasks   map[string]map[string]interface{} `json:"tasks"`
+	}
+	err = json.Unmarshal([]byte(stateResult.Content[0].Text), &finalStateResp)
+	require.NoError(t, err)
+
+	// Task should NOT be present in the tasks map after completion
+	assert.NotContains(t, finalStateResp.Tasks, taskID, "task should NOT appear in query_worker_state after mark_task_complete")
+
+	// Step 8: Verify BD comment was added for completion
+	comments := getComments(stack.mockBDExecutor)
+	var foundCompletionComment bool
+	for _, c := range comments {
+		if c.TaskID == taskID && strings.Contains(c.Comment, "Task completed") {
+			foundCompletionComment = true
+			break
+		}
+	}
+	assert.True(t, foundCompletionComment, "BD should have completion comment")
+
+	t.Logf("MarkTaskComplete removes task from QueryWorkerState: task %s removed successfully after completion", taskID)
 }
