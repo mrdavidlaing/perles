@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestShouldUseOSC52(t *testing.T) {
+func TestClipboardDetection(t *testing.T) {
 	// Helper to clear all relevant env vars
 	clearEnv := func() {
 		os.Unsetenv("SSH_TTY")
@@ -18,60 +18,113 @@ func TestShouldUseOSC52(t *testing.T) {
 		os.Unsetenv("STY")
 	}
 
-	tests := []struct {
-		name     string
-		envVars  map[string]string
-		expected bool
-	}{
-		{
-			name:     "no env vars set",
-			envVars:  map[string]string{},
-			expected: false,
-		},
-		{
-			name:     "SSH_TTY set",
-			envVars:  map[string]string{"SSH_TTY": "/dev/pts/0"},
-			expected: true,
-		},
-		{
-			name:     "SSH_CLIENT set",
-			envVars:  map[string]string{"SSH_CLIENT": "192.168.1.1 12345 22"},
-			expected: true,
-		},
-		{
-			name:     "SSH_CONNECTION set",
-			envVars:  map[string]string{"SSH_CONNECTION": "192.168.1.1 12345 192.168.1.2 22"},
-			expected: true,
-		},
-		{
-			name:     "TMUX set",
-			envVars:  map[string]string{"TMUX": "/tmp/tmux-1000/default,12345,0"},
-			expected: true,
-		},
-		{
-			name:     "STY set (GNU screen)",
-			envVars:  map[string]string{"STY": "12345.pts-0.hostname"},
-			expected: true,
-		},
-		{
-			name:     "SSH and TMUX both set",
-			envVars:  map[string]string{"SSH_TTY": "/dev/pts/0", "TMUX": "/tmp/tmux"},
-			expected: true,
-		},
-	}
+	t.Run("isRemoteSession", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			envVars  map[string]string
+			expected bool
+		}{
+			{
+				name:     "no env vars",
+				envVars:  map[string]string{},
+				expected: false,
+			},
+			{
+				name:     "SSH_TTY set",
+				envVars:  map[string]string{"SSH_TTY": "/dev/pts/0"},
+				expected: true,
+			},
+			{
+				name:     "SSH_CLIENT set",
+				envVars:  map[string]string{"SSH_CLIENT": "192.168.1.1 12345 22"},
+				expected: true,
+			},
+			{
+				name:     "SSH_CONNECTION set",
+				envVars:  map[string]string{"SSH_CONNECTION": "192.168.1.1 12345 192.168.1.2 22"},
+				expected: true,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clearEnv()
-			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-			}
-			t.Cleanup(clearEnv)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				clearEnv()
+				for k, v := range tt.envVars {
+					os.Setenv(k, v)
+				}
+				t.Cleanup(clearEnv)
 
-			result := shouldUseOSC52()
-			require.Equal(t, tt.expected, result)
-		})
-	}
+				require.Equal(t, tt.expected, isRemoteSession())
+			})
+		}
+	})
+
+	t.Run("isLocalTmux", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			envVars  map[string]string
+			expected bool
+		}{
+			{
+				name:     "no env vars",
+				envVars:  map[string]string{},
+				expected: false,
+			},
+			{
+				name:     "TMUX only (local)",
+				envVars:  map[string]string{"TMUX": "/tmp/tmux-1000/default,12345,0"},
+				expected: true,
+			},
+			{
+				name:     "TMUX with SSH (remote)",
+				envVars:  map[string]string{"TMUX": "/tmp/tmux", "SSH_TTY": "/dev/pts/0"},
+				expected: false,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				clearEnv()
+				for k, v := range tt.envVars {
+					os.Setenv(k, v)
+				}
+				t.Cleanup(clearEnv)
+
+				require.Equal(t, tt.expected, isLocalTmux())
+			})
+		}
+	})
+
+	t.Run("isGNUScreen", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			envVars  map[string]string
+			expected bool
+		}{
+			{
+				name:     "no env vars",
+				envVars:  map[string]string{},
+				expected: false,
+			},
+			{
+				name:     "STY set",
+				envVars:  map[string]string{"STY": "12345.pts-0.hostname"},
+				expected: true,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				clearEnv()
+				for k, v := range tt.envVars {
+					os.Setenv(k, v)
+				}
+				t.Cleanup(clearEnv)
+
+				require.Equal(t, tt.expected, isGNUScreen())
+			})
+		}
+	})
 }
 
 func TestOSC52SequenceFormat(t *testing.T) {

@@ -21,35 +21,37 @@ type Clipboard interface {
 type SystemClipboard struct{}
 
 // Copy copies text to the system clipboard.
-// In remote sessions (SSH) or terminal multiplexers (tmux, screen),
-// it uses OSC 52 escape sequences. Otherwise, it uses native tools
-// like pbcopy (macOS) or xclip (Linux).
+// Priority:
+// 1. Local tmux session → use native tools (pbcopy/xclip) directly
+// 2. Remote SSH session → use OSC 52 escape sequences
+// 3. GNU screen → use OSC 52 escape sequences
 func (SystemClipboard) Copy(text string) error {
-	if shouldUseOSC52() {
+	if isLocalTmux() {
+		return copyViaNative(text)
+	}
+
+	if isRemoteSession() || isGNUScreen() {
 		return copyViaOSC52(text)
 	}
+
 	return copyViaNative(text)
 }
 
-// shouldUseOSC52 returns true if we should use OSC 52 escape sequences
-// instead of native clipboard tools. This is the case when running in
-// a remote session (SSH) or terminal multiplexer (tmux, screen).
-func shouldUseOSC52() bool {
-	// Check for SSH session
-	if os.Getenv("SSH_TTY") != "" ||
+// isLocalTmux returns true if running in tmux without SSH.
+func isLocalTmux() bool {
+	return os.Getenv("TMUX") != "" && !isRemoteSession()
+}
+
+// isRemoteSession returns true if running over SSH.
+func isRemoteSession() bool {
+	return os.Getenv("SSH_TTY") != "" ||
 		os.Getenv("SSH_CLIENT") != "" ||
-		os.Getenv("SSH_CONNECTION") != "" {
-		return true
-	}
-	// Check for tmux
-	if os.Getenv("TMUX") != "" {
-		return true
-	}
-	// Check for GNU screen
-	if os.Getenv("STY") != "" {
-		return true
-	}
-	return false
+		os.Getenv("SSH_CONNECTION") != ""
+}
+
+// isGNUScreen returns true if running in GNU screen.
+func isGNUScreen() bool {
+	return os.Getenv("STY") != ""
 }
 
 // copyViaOSC52 copies text using OSC 52 escape sequences.
