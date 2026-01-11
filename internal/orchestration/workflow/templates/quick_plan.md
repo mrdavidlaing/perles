@@ -3,6 +3,7 @@ name: "Quick Plan"
 description: "Streamlined research and planning cycle with review gates - research, review, task breakdown, and approval"
 category: "Planning"
 workers: 4
+target_mode: "orchestration"
 ---
 
 # Quick Plan Workflow

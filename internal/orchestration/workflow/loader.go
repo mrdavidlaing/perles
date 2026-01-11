@@ -21,6 +21,7 @@ type frontmatter struct {
 	Description string                         `yaml:"description"`
 	Category    string                         `yaml:"category"`
 	Workers     int                            `yaml:"workers"`
+	TargetMode  string                         `yaml:"target_mode"`
 	AgentRoles  map[string]agentRoleConfigYAML `yaml:"agent_roles"`
 }
 
@@ -96,6 +97,7 @@ func parseWorkflow(content, filename string, source Source) (Workflow, error) {
 		Description: fm.Description,
 		Category:    fm.Category,
 		Workers:     fm.Workers,
+		TargetMode:  TargetMode(fm.TargetMode),
 		AgentRoles:  agentRoles,
 		Content:     content,
 		Source:      source,
@@ -159,6 +161,11 @@ func parseFrontmatter(content string) (frontmatter, error) {
 	// Validate required fields
 	if fm.Name == "" {
 		return fm, fmt.Errorf("frontmatter missing required field: name")
+	}
+
+	// Validate target_mode if present
+	if fm.TargetMode != "" && fm.TargetMode != "orchestration" && fm.TargetMode != "chat" {
+		return fm, fmt.Errorf("invalid target_mode %q: must be \"orchestration\", \"chat\", or omitted", fm.TargetMode)
 	}
 
 	return fm, nil

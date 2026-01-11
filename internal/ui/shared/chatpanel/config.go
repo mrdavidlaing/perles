@@ -1,6 +1,10 @@
 package chatpanel
 
-import "time"
+import (
+	"time"
+
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
+)
 
 // Config holds configuration for the chat panel.
 type Config struct {
@@ -13,6 +17,10 @@ type Config struct {
 	// SessionTimeout is the duration after which a session expires
 	// and a fresh conversation is started. Default is 30 minutes.
 	SessionTimeout time.Duration
+
+	// WorkflowRegistry provides access to workflow templates for the chat panel.
+	// When nil, the workflow picker feature is disabled.
+	WorkflowRegistry *workflow.Registry
 }
 
 // DefaultConfig returns a Config with sensible defaults.

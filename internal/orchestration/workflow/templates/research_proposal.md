@@ -3,6 +3,7 @@ name: "Research Proposal"
 description: "Collaborative research with parallel exploration and structured synthesis for implementation plans"
 category: "Planning"
 workers: 4
+target_mode: "orchestration"
 ---
 
 # Multi-Agent Research & Proposal Format

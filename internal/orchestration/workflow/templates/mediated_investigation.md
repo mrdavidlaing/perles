@@ -3,6 +3,7 @@ name: "Mediated Investigation"
 description: "High-quality investigation with devil's advocate, counter-investigation, parallel review, and external validation"
 category: "Analysis"
 workers: 6
+target_mode: "orchestration"
 ---
 
 # Mediated Investigation Workflow

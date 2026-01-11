@@ -17,9 +17,12 @@ import (
 	v2 "github.com/zjrosen/perles/internal/orchestration/v2"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
+	"github.com/zjrosen/perles/internal/ui/commandpalette"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
+	"github.com/zjrosen/perles/internal/ui/styles"
 )
 
 // ErrNoInfrastructure is returned when attempting to use infrastructure before it's set.
@@ -107,6 +110,13 @@ type Model struct {
 	// Spinner animation
 	spinnerFrame int // Current spinner frame index
 
+	// Workflow picker state
+	workflowRegistry       *workflow.Registry    // Workflow template registry (from config)
+	workflowPicker         *commandpalette.Model // Command palette for workflow selection
+	showWorkflowPicker     bool                  // Whether the workflow picker is visible
+	activeWorkflow         *workflow.Workflow    // Currently active workflow (if any)
+	pendingWorkflowContent string                // Workflow content waiting to be sent when session ready
+
 	// Clock is the time source for testing. If nil, uses time.Now().
 	Clock func() time.Time
 }
@@ -155,6 +165,9 @@ func New(cfg Config) Model {
 		sessionOrder:     []string{DefaultSessionID},
 		activeSessionID:  DefaultSessionID,
 		processToSession: map[string]string{ChatPanelProcessID: DefaultSessionID},
+		// Initialize workflow state from config
+		workflowRegistry:   cfg.WorkflowRegistry,
+		showWorkflowPicker: false, // Initially hidden
 	}
 }
 
@@ -266,10 +279,34 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case pubsub.Event[any]:
 		return m.handlePubSubEvent(msg)
 
+	// Handle workflow picker selection
+	case commandpalette.SelectMsg:
+		if m.showWorkflowPicker {
+			return m.handleWorkflowSelected(msg.Item)
+		}
+		return m, nil
+
+	// Handle workflow picker cancel
+	case commandpalette.CancelMsg:
+		if m.showWorkflowPicker {
+			m.showWorkflowPicker = false
+			m.workflowPicker = nil
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		// Only process key input if visible and focused
 		if !m.visible || !m.focused {
 			return m, nil
+		}
+
+		// When workflow picker is visible, route all key events to it
+		if m.showWorkflowPicker && m.workflowPicker != nil {
+			var pickerCmd tea.Cmd
+			picker := *m.workflowPicker
+			picker, pickerCmd = picker.Update(msg)
+			m.workflowPicker = &picker
+			return m, pickerCmd
 		}
 
 		// Handle tab switching with Ctrl+] (cycles through tabs)
@@ -302,6 +339,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		if msg.Type == tea.KeyCtrlP {
 			m = m.PrevSession()
+			return m, nil
+		}
+
+		// Handle Ctrl+T for workflow picker
+		if msg.Type == tea.KeyCtrlT {
+			if m.workflowRegistry != nil {
+				m = m.openWorkflowPicker()
+			}
 			return m, nil
 		}
 
@@ -511,6 +556,17 @@ func (m Model) handlePubSubEvent(event pubsub.Event[any]) (Model, tea.Cmd) {
 		m.assistantWorking = false
 		if m.sessionRef == "" {
 			m = m.captureSessionRef()
+		}
+
+		// Flush pending workflow content if session is now ready
+		// This handles the race condition where workflow was selected before session ready
+		if m.pendingWorkflowContent != "" {
+			// Send the pending content
+			sendCmd := m.SendMessage(m.pendingWorkflowContent)
+			// Clear pending content to prevent duplicate sends
+			m.pendingWorkflowContent = ""
+			// Return with both listener continuation and send command
+			return m, tea.Batch(m.v2Listener.Listen(), sendCmd)
 		}
 
 	case events.ProcessWorking:
@@ -1069,6 +1125,93 @@ func (m Model) appendToSession(session *SessionData, event events.ProcessEvent) 
 
 	// Update last activity timestamp for all event types
 	session.LastActivity = m.now()
+
+	return m
+}
+
+// handleWorkflowSelected handles selection of a workflow from the picker.
+// Closes the picker, formats the workflow content, and either sends it immediately
+// (if session is ready) or queues it for later (if session is still initializing).
+func (m Model) handleWorkflowSelected(item commandpalette.Item) (Model, tea.Cmd) {
+	// Close the picker
+	m.showWorkflowPicker = false
+	m.workflowPicker = nil
+
+	// Guard: return early if no workflow registry (shouldn't happen if picker was open)
+	if m.workflowRegistry == nil {
+		return m, nil
+	}
+
+	// Get workflow from registry by ID
+	wf, found := m.workflowRegistry.Get(item.ID)
+	if !found {
+		// Workflow not found - shouldn't happen, but handle gracefully
+		return m, nil
+	}
+
+	// Store as active workflow
+	m.activeWorkflow = &wf
+
+	// Format content with workflow header
+	content := fmt.Sprintf("[WORKFLOW: %s]\n\n%s", wf.Name, wf.Content)
+
+	// Check if session is ready to receive messages
+	session := m.ActiveSession()
+	if session != nil && session.Status == events.ProcessStatusReady {
+		// Session is ready - send immediately
+		return m, m.SendMessage(content)
+	}
+
+	// Session not ready - queue for later
+	m.pendingWorkflowContent = content
+	return m, nil
+}
+
+// openWorkflowPicker opens the workflow picker modal with chat-targeted workflows.
+// Returns early if workflowRegistry is nil or no chat workflows are available.
+func (m Model) openWorkflowPicker() Model {
+	// Guard: return early if no workflow registry
+	if m.workflowRegistry == nil {
+		return m
+	}
+
+	// Get workflows filtered to chat mode (includes TargetBoth)
+	workflows := m.workflowRegistry.ListByTargetMode(workflow.TargetChat)
+
+	// Handle empty list gracefully - return early without opening picker
+	if len(workflows) == 0 {
+		return m
+	}
+
+	// Build command palette items from workflows
+	items := make([]commandpalette.Item, len(workflows))
+	for i, wf := range workflows {
+		// Color: green for user workflows, blue for built-in
+		var color = styles.StatusInProgressColor // blue for built-in
+		if wf.Source == workflow.SourceUser {
+			color = styles.StatusSuccessColor // green for user
+		}
+
+		items[i] = commandpalette.Item{
+			ID:          wf.ID,
+			Name:        wf.Name,
+			Description: wf.Description,
+			Color:       color,
+		}
+	}
+
+	// Create command palette with chat workflow config
+	picker := commandpalette.New(commandpalette.Config{
+		Title:       "Chat Workflows",
+		Placeholder: "Search workflows...",
+		Items:       items,
+	})
+
+	// Set size with current dimensions
+	picker = picker.SetSize(m.width, m.height)
+
+	m.workflowPicker = &picker
+	m.showWorkflowPicker = true
 
 	return m
 }

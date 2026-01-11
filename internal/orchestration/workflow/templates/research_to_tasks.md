@@ -2,6 +2,7 @@
 name: "Research to Tasks"
 description: "Translate research documents into well-planned beads epics and tasks with multi-perspective review"
 category: "Planning"
+target_mode: "orchestration"
 ---
 
 # Research Document to Beads Tasks Workflow

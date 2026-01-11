@@ -79,6 +79,9 @@ type Model struct {
 
 	// Quit confirmation modal (for chat panel Ctrl+C)
 	quitModal quitmodal.Model
+
+	// Workflow registry (shared between chat panel and orchestration mode)
+	workflowRegistry *workflow.Registry
 }
 
 // NewWithConfig creates a new application model with the provided configuration.
@@ -157,31 +160,42 @@ func NewWithConfig(
 		workDir,
 	).SetClipboard(services.Clipboard)
 
+	// Ensure user workflow directory exists and load workflow registry
+	// Registry is shared between chat panel and orchestration mode
+	_, _ = workflow.EnsureUserWorkflowDir() // Ignore errors, directory creation is best-effort
+	workflowRegistry, err := workflow.NewRegistryWithConfig(cfg.Orchestration)
+	if err != nil {
+		log.Warn(log.CatMode, "Failed to load workflow registry", "error", err)
+		// Continue without workflows - not a fatal error
+	}
+
 	// Create chat panel with config from services
 	// Panel defaults to hidden (visible = false)
 	chatPanelCfg := chatpanel.Config{
-		ClientType:     cfg.Orchestration.Client,
-		WorkDir:        workDir,
-		SessionTimeout: chatpanel.DefaultConfig().SessionTimeout,
+		ClientType:       cfg.Orchestration.Client,
+		WorkDir:          workDir,
+		SessionTimeout:   chatpanel.DefaultConfig().SessionTimeout,
+		WorkflowRegistry: workflowRegistry,
 	}
 	cp := chatpanel.New(chatPanelCfg)
 
 	return Model{
-		currentMode:     mode.ModeKanban,
-		kanban:          kanban.New(services),
-		search:          search.New(services),
-		services:        services,
-		bqlCache:        bqlCache,
-		depGraphCache:   depGraphCache,
-		logOverlay:      overlay,
-		debugMode:       debugMode,
-		logListenCmd:    logListenCmd,
-		diffViewer:      dv,
-		chatPanel:       cp,
-		watcherHandle:   watcherHandle,
-		watcherCtx:      watcherCtx,
-		watcherCancel:   watcherCancel,
-		watcherListener: watcherListener,
+		currentMode:      mode.ModeKanban,
+		kanban:           kanban.New(services),
+		search:           search.New(services),
+		services:         services,
+		bqlCache:         bqlCache,
+		depGraphCache:    depGraphCache,
+		logOverlay:       overlay,
+		debugMode:        debugMode,
+		logListenCmd:     logListenCmd,
+		diffViewer:       dv,
+		chatPanel:        cp,
+		watcherHandle:    watcherHandle,
+		watcherCtx:       watcherCtx,
+		watcherCancel:    watcherCancel,
+		watcherListener:  watcherListener,
+		workflowRegistry: workflowRegistry,
 		quitModal: quitmodal.New(quitmodal.Config{
 			Title:   "Exit Application?",
 			Message: "Are you sure you want to quit?",
@@ -393,14 +407,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Get orchestration config from services.Config
 		orchConfig := m.services.Config.Orchestration
 
-		// Ensure user workflow directory exists and load workflow registry
-		_, _ = workflow.EnsureUserWorkflowDir() // Ignore errors, directory creation is best-effort
-		workflowRegistry, err := workflow.NewRegistryWithConfig(orchConfig)
-		if err != nil {
-			log.Warn(log.CatMode, "Failed to load workflow registry", "error", err)
-			// Continue without workflows - not a fatal error
-		}
-
+		// Use shared workflow registry (created at app startup)
 		m.orchestration = orchestration.New(orchestration.Config{
 			Services:         m.services,
 			WorkDir:          m.services.WorkDir,
@@ -409,7 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			CodexModel:       orchConfig.Codex.Model,
 			AmpModel:         orchConfig.Amp.Model,
 			AmpMode:          orchConfig.Amp.Mode,
-			WorkflowRegistry: workflowRegistry,
+			WorkflowRegistry: m.workflowRegistry,
 			VimMode:          m.services.Config.UI.VimMode,
 			DebugMode:        m.debugMode,
 			DisableWorktrees: orchConfig.DisableWorktrees,

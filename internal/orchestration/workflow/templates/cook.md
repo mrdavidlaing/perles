@@ -3,6 +3,7 @@ name: "Cook"
 description: "Sequential task execution with code review and worker cycling"
 category: "Work"
 workers: 2
+target_mode: "orchestration"
 ---
 
 # Multi-Worker Orchestration Workflow

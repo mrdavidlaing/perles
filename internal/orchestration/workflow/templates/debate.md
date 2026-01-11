@@ -3,6 +3,7 @@ name: "Technical Debate"
 description: "Structured multi-perspective debate with moderator, affirmative, negative, and neutral analyst roles"
 category: "Analysis"
 workers: 4
+target_mode: "orchestration"
 ---
 
 # Multi-Agent Technical Debate Format

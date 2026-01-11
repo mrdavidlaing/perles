@@ -733,3 +733,181 @@ agent_roles:
 	assert.Empty(t, res.SystemPromptOverride)
 	assert.Nil(t, res.Constraints)
 }
+
+// --- Tests for TargetMode type and constants ---
+
+func TestTargetMode_Constants(t *testing.T) {
+	t.Run("TargetOrchestration has correct value", func(t *testing.T) {
+		assert.Equal(t, TargetMode("orchestration"), TargetOrchestration)
+	})
+
+	t.Run("TargetChat has correct value", func(t *testing.T) {
+		assert.Equal(t, TargetMode("chat"), TargetChat)
+	})
+
+	t.Run("TargetBoth is empty string for backwards compatibility", func(t *testing.T) {
+		assert.Equal(t, TargetMode(""), TargetBoth)
+	})
+}
+
+func TestWorkflow_TargetMode_Field(t *testing.T) {
+	t.Run("Workflow struct includes TargetMode field", func(t *testing.T) {
+		wf := Workflow{
+			ID:         "test",
+			Name:       "Test Workflow",
+			TargetMode: TargetOrchestration,
+		}
+		assert.Equal(t, TargetOrchestration, wf.TargetMode)
+	})
+
+	t.Run("TargetMode can be set to each constant value", func(t *testing.T) {
+		wfOrch := Workflow{TargetMode: TargetOrchestration}
+		assert.Equal(t, TargetOrchestration, wfOrch.TargetMode)
+
+		wfChat := Workflow{TargetMode: TargetChat}
+		assert.Equal(t, TargetChat, wfChat.TargetMode)
+
+		wfBoth := Workflow{TargetMode: TargetBoth}
+		assert.Equal(t, TargetBoth, wfBoth.TargetMode)
+	})
+
+	t.Run("empty string default works for TargetBoth", func(t *testing.T) {
+		// When TargetMode is not set, it defaults to empty string (TargetBoth)
+		wf := Workflow{
+			ID:   "test",
+			Name: "Test Workflow",
+		}
+		assert.Equal(t, TargetBoth, wf.TargetMode)
+		assert.Equal(t, TargetMode(""), wf.TargetMode)
+	})
+}
+
+// --- Tests for target_mode parsing in loader ---
+
+func TestLoader_ParsesTargetMode_Chat(t *testing.T) {
+	content := `---
+name: "Chat Workflow"
+description: "A chat-only workflow"
+target_mode: "chat"
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "chat_workflow.md", SourceBuiltIn)
+	require.NoError(t, err)
+	assert.Equal(t, TargetChat, wf.TargetMode)
+}
+
+func TestLoader_ParsesTargetMode_Orchestration(t *testing.T) {
+	content := `---
+name: "Orchestration Workflow"
+description: "An orchestration-only workflow"
+target_mode: "orchestration"
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "orchestration_workflow.md", SourceBuiltIn)
+	require.NoError(t, err)
+	assert.Equal(t, TargetOrchestration, wf.TargetMode)
+}
+
+func TestLoader_ParsesTargetMode_DefaultsToEmpty(t *testing.T) {
+	content := `---
+name: "Both Modes Workflow"
+description: "A workflow without target_mode specified"
+---
+
+# Content
+`
+	wf, err := parseWorkflow(content, "both_workflow.md", SourceBuiltIn)
+	require.NoError(t, err)
+	assert.Equal(t, TargetBoth, wf.TargetMode)
+	assert.Equal(t, TargetMode(""), wf.TargetMode)
+}
+
+func TestLoader_ParsesTargetMode_RejectsInvalid(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		errContains string
+	}{
+		{
+			name: "invalid value 'invalid'",
+			content: `---
+name: "Invalid Workflow"
+target_mode: "invalid"
+---
+
+# Content
+`,
+			errContains: "invalid target_mode",
+		},
+		{
+			name: "invalid value 'CHAT' (wrong case)",
+			content: `---
+name: "Invalid Workflow"
+target_mode: "CHAT"
+---
+
+# Content
+`,
+			errContains: "invalid target_mode",
+		},
+		{
+			name: "invalid value 'ORCHESTRATION' (wrong case)",
+			content: `---
+name: "Invalid Workflow"
+target_mode: "ORCHESTRATION"
+---
+
+# Content
+`,
+			errContains: "invalid target_mode",
+		},
+		{
+			name: "invalid value 'both' (not allowed)",
+			content: `---
+name: "Invalid Workflow"
+target_mode: "both"
+---
+
+# Content
+`,
+			errContains: "invalid target_mode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseWorkflow(tt.content, "invalid.md", SourceBuiltIn)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errContains)
+		})
+	}
+}
+
+// --- Tests for chat_research_to_tasks.md built-in template ---
+
+func TestLoadBuiltinWorkflows_IncludesChatResearchToTasks(t *testing.T) {
+	workflows, err := LoadBuiltinWorkflows()
+	require.NoError(t, err)
+
+	var found bool
+	var chatWorkflow Workflow
+	for _, wf := range workflows {
+		if wf.ID == "chat_research_to_tasks" {
+			found = true
+			chatWorkflow = wf
+			break
+		}
+	}
+
+	require.True(t, found, "expected to find chat_research_to_tasks workflow in built-in workflows")
+	assert.Equal(t, "Research to Tasks", chatWorkflow.Name)
+	assert.Equal(t, TargetChat, chatWorkflow.TargetMode, "chat_research_to_tasks should have target_mode: chat")
+	assert.Equal(t, SourceBuiltIn, chatWorkflow.Source)
+	assert.NotEmpty(t, chatWorkflow.Description)
+	assert.NotEmpty(t, chatWorkflow.Content)
+	assert.Equal(t, "Planning", chatWorkflow.Category)
+}

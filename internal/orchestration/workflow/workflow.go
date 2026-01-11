@@ -40,6 +40,18 @@ func (s Source) String() string {
 	}
 }
 
+// TargetMode indicates which application mode(s) a workflow template is designed for.
+type TargetMode string
+
+const (
+	// TargetOrchestration indicates a workflow designed for multi-agent orchestration mode.
+	TargetOrchestration TargetMode = "orchestration"
+	// TargetChat indicates a workflow designed for single-agent chat mode.
+	TargetChat TargetMode = "chat"
+	// TargetBoth indicates a workflow usable in both modes (empty string for backwards compatibility).
+	TargetBoth TargetMode = ""
+)
+
 // Workflow represents a workflow template that can be used in orchestration mode.
 type Workflow struct {
 	// ID is derived from the filename (e.g., "debate" from "debate.md").
@@ -58,6 +70,10 @@ type Workflow struct {
 	// A value of 0 (or omitted in frontmatter) indicates lazy spawn mode,
 	// where workers are spawned on-demand as needed by the workflow.
 	Workers int
+
+	// TargetMode indicates which application mode(s) this workflow is designed for.
+	// Empty string (TargetBoth) means the workflow works in both orchestration and chat modes.
+	TargetMode TargetMode `yaml:"target_mode"`
 
 	// AgentRoles contains per-agent-type customizations for this workflow.
 	// Keys are agent type strings (e.g., "implementer", "reviewer", "researcher").

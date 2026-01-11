@@ -163,10 +163,17 @@ func (m Model) View() string {
 	})
 
 	// Stack message pane and input pane vertically
-	return lipgloss.JoinVertical(lipgloss.Left,
+	mainView := lipgloss.JoinVertical(lipgloss.Left,
 		tabbedPane,
 		inputPane,
 	)
+
+	// Render workflow picker overlay if visible
+	if m.showWorkflowPicker && m.workflowPicker != nil {
+		return m.workflowPicker.Overlay(mainView)
+	}
+
+	return mainView
 }
 
 // splitLines splits a string into lines.

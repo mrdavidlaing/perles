@@ -180,6 +180,24 @@ func (r *Registry) ListByCategory(category string) []Workflow {
 	return workflows
 }
 
+// ListByTargetMode returns workflows filtered by target mode, sorted by name.
+// Workflows with TargetBoth (empty string) are included in results for any mode.
+// Returns an empty slice (not nil) when no workflows match.
+func (r *Registry) ListByTargetMode(mode TargetMode) []Workflow {
+	workflows := make([]Workflow, 0)
+	for _, wf := range r.workflows {
+		if wf.TargetMode == mode || wf.TargetMode == TargetBoth {
+			workflows = append(workflows, wf)
+		}
+	}
+
+	sort.Slice(workflows, func(i, j int) bool {
+		return workflows[i].Name < workflows[j].Name
+	})
+
+	return workflows
+}
+
 // Search returns workflows matching the query in name or description.
 // Search is case-insensitive and matches substrings.
 func (r *Registry) Search(query string) []Workflow {
