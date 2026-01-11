@@ -387,6 +387,16 @@ func (m Model) handleEnter() (Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Select field: toggle selection (same as Space)
+		if fs.config.Type == FieldTypeSelect {
+			if fs.listCursor >= 0 && fs.listCursor < len(fs.listItems) {
+				for i := range fs.listItems {
+					fs.listItems[i].selected = (i == fs.listCursor)
+				}
+			}
+			return m, nil
+		}
+
 		// Other fields: advance to next field
 		m = m.nextField()
 		return m, m.blinkCmd()

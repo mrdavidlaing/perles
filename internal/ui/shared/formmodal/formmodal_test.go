@@ -887,6 +887,44 @@ func TestSelectField_SpaceChangesSelection(t *testing.T) {
 	require.True(t, m.fields[0].listItems[1].selected, "in_progress should be selected")
 }
 
+func TestSelectField_EnterChangesSelection(t *testing.T) {
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{
+				Key:   "status",
+				Type:  FieldTypeSelect,
+				Label: "Status",
+				Options: []ListOption{
+					{Label: "Open", Value: "open", Selected: true},
+					{Label: "In Progress", Value: "in_progress"},
+					{Label: "Closed", Value: "closed"},
+				},
+			},
+		},
+	}
+	m := New(cfg)
+
+	// Initial value is "open"
+	values := getValues(m)
+	require.Equal(t, "open", values["status"])
+
+	// Navigate to "In Progress" and press Enter to select
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Value should now be "in_progress"
+	values = getValues(m)
+	require.Equal(t, "in_progress", values["status"], "value should change after Enter")
+
+	// Verify selection state
+	require.False(t, m.fields[0].listItems[0].selected, "open should be deselected")
+	require.True(t, m.fields[0].listItems[1].selected, "in_progress should be selected")
+
+	// Verify we stayed on the same field (didn't advance)
+	require.Equal(t, 0, m.focusedIndex, "should stay on select field after Enter")
+}
+
 func TestSelectField_ValuePersistsAfterTabbing(t *testing.T) {
 	// This is the exact bug scenario: tabbing to another field and back
 	// should not change the selected value.
