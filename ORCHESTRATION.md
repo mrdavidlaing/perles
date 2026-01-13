@@ -3,9 +3,9 @@
 > **WARNING** Orchestration mode is not cheap it spawns multiple headless AI agents to plan, investigate, and execute tasks.
 > If you care about money do not use orchestration mode.
 
-Orchestration mode give you access to a single coordinator agent that handles spawning, replacing and retiring other headless agents through
-its own built-in MCP tools. The coordinator delegates sub-tasks to multiple worker agents instead of you having to manually stop and start 
-sessions on your own. This allows for structured workflows giving you access to utilize multiple AI agents from workflow instructions.
+Orchestration mode is a multi-agent workspace where a single coordinator agent handles spawning, replacing and retiring other headless agents through
+built-in MCP tools. The coordinator agent delegates sub-tasks to multiple worker agents so you don't have to manually stop and start sessions on your own. 
+This allows for structured workflow instructions that can manage and orchestration multiple headless multiple AI agents.
 
 - **Coordinator** A single headless agent that receives workflow instructions and manages the session.
 - **Workers** Multiple headless agents who execute specific sub-tasks (coding, testing, reviewing, documenting)
@@ -20,7 +20,8 @@ sessions on your own. This allows for structured workflows giving you access to 
 
 ### Configuration
 
-The default orchestration settings use Claude Code and Opus and by far work the best. You can customize these settings in your `~/.config/perles/config.yaml` but they are all optional:
+The default orchestration settings use Claude Code with Opus 4.5 and currently works the best. 
+You can customize these settings in your `~/.config/perles/config.yaml` but they are optional:
 
 ```yaml
 orchestration:
@@ -41,10 +42,11 @@ orchestration:
 
 1. Open Perles in your project directory.
 2. Press `ctrl+o` to enter orchestration mode.
-3. Choose whether to use a git worktree.
-4. Press `ctrl+p` to open the workflow picker.
-5. Select a template (e.g., "Research Proposal" for creating a proposal doc, "Cook" for executing an epic).
-6. The coordinator will follow the instructions and ask you for confirmation.
+3. Choose if you want to use a git worktree for the session.
+4. Press `ctrl+p` to open the workflow picker once orchestration mode is loaded.
+5. Select a workflow template 
+   - A typical workflow is done over multiple sessions. You would start with the  **Research Proposal** to generate a proposal document. You would then exist and start a new session using the **Research to Tasks** to break down the proposal document into beads epics and tasks. Then you would quite and start a new session using the **Cook** workflow to work through the entire epic's tasks.
+6. The coordinator will follow the workflow instructions and ask you for confirmation before starting.
 
 ---
 
@@ -271,15 +273,9 @@ Every orchestration session data is stored centrally in your home directory `~/.
             └── messages.jsonl
 ```
 
-### Git Worktree Isolation
-
-By default, orchestration mode offers to create a git worktree for isolated work everytime you enter orchestration mode.:
-
-**To disable:** Set `disable_worktrees: true` in your config, or decline when prompted.
-
 ### Exiting Safely
 
 When you press `ctrl+c` or `esc`:
 
-1. **Confirmation modal** appears
-2. If worktree has uncommitted changes, you'll be warned, quitting while uncommitted changes exist will discard them. The worktree is removed when exiting.
+1. A **confirmation modal** will appear before quitting.
+2. If a worktree was used and has uncommitted changes, you'll be warned, quitting while having uncommitted changes will discard them. The worktree is always removed when exiting orchestration mode.
