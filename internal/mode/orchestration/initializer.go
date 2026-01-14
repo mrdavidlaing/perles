@@ -20,6 +20,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	_ "github.com/zjrosen/perles/internal/orchestration/codex" // Register codex client
 	"github.com/zjrosen/perles/internal/orchestration/events"
+	_ "github.com/zjrosen/perles/internal/orchestration/gemini" // Register gemini client
 	"github.com/zjrosen/perles/internal/orchestration/mcp"
 	"github.com/zjrosen/perles/internal/orchestration/session"
 	"github.com/zjrosen/perles/internal/orchestration/tracing"
@@ -61,6 +62,7 @@ type InitializerConfig struct {
 	ClaudeModel string
 	AmpModel    string
 	AmpMode     string
+	GeminiModel string
 	Timeout     time.Duration
 	// Worktree configuration
 	WorktreeBaseBranch string          // Branch to base worktree on. Empty = skip worktree creation
@@ -641,6 +643,10 @@ func (i *Initializer) createAIClient() (*AIClientResult, error) {
 		}
 		if i.cfg.AmpMode != "" {
 			extensions[amp.ExtAmpMode] = i.cfg.AmpMode
+		}
+	case client.ClientGemini:
+		if i.cfg.GeminiModel != "" {
+			extensions[client.ExtGeminiModel] = i.cfg.GeminiModel
 		}
 	}
 

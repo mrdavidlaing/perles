@@ -1087,6 +1087,19 @@ func (m Model) appendToSession(session *SessionData, event events.ProcessEvent) 
 		if event.Output != "" {
 			// Detect tool calls by 🔧 prefix (same as orchestration mode)
 			isToolCall := strings.HasPrefix(event.Output, "🔧")
+
+			// If delta mode and last message is from assistant (not a tool call), accumulate
+			if event.Delta && len(session.Messages) > 0 {
+				lastIdx := len(session.Messages) - 1
+				lastMsg := session.Messages[lastIdx]
+				if lastMsg.Role == RoleAssistant && !lastMsg.IsToolCall {
+					session.Messages[lastIdx].Content += event.Output
+					session.ContentDirty = true
+					return m
+				}
+			}
+
+			// Otherwise, add as new message
 			session.Messages = append(session.Messages, chatrender.Message{
 				Role:       RoleAssistant,
 				Content:    event.Output,
@@ -1141,7 +1154,7 @@ func (m Model) appendToSession(session *SessionData, event events.ProcessEvent) 
 	case events.ProcessError:
 		// Mark session as failed on error
 		if event.Error != nil {
-			session.Status = events.ProcessStatusFailed
+			session.Status = event.Status
 			session.ContentDirty = true
 		}
 	}

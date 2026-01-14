@@ -429,6 +429,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			CodexModel:           orchConfig.Codex.Model,
 			AmpModel:             orchConfig.Amp.Model,
 			AmpMode:              orchConfig.Amp.Mode,
+			GeminiModel:          orchConfig.Gemini.Model,
 			WorkflowRegistry:     m.workflowRegistry,
 			VimMode:              m.services.Config.UI.VimMode,
 			DebugMode:            m.debugMode,

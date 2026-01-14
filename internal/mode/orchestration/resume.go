@@ -82,7 +82,7 @@ func (m Model) handleResumeSession(msg ResumeSessionMsg) (Model, tea.Cmd) {
 
 	// Add separator message to coordinator pane
 	separatorContent := formatResumedSeparator(m.resumedAt)
-	m = m.AddChatMessage("system", separatorContent)
+	m = m.AddChatMessage("system", separatorContent, false)
 
 	log.Debug(log.CatOrch, "Resume indicator state set",
 		"subsystem", "resume",

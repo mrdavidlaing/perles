@@ -34,6 +34,10 @@ type OutputEvent struct {
 	SubType   string    `json:"subtype,omitempty"`
 	Timestamp time.Time `json:"-"`
 
+	// Delta indicates this is a streaming chunk that should be accumulated
+	// with the previous message rather than displayed as a new message.
+	Delta bool `json:"delta,omitempty"`
+
 	// Session information (from init events)
 	// SessionID is the session identifier from init events.
 	// Note: The HeadlessProcess interface uses SessionRef() method for this value.

@@ -268,7 +268,7 @@ func (p *Process) handleOutputEvent(event *client.OutputEvent) {
 		text := event.Message.GetText()
 		if text != "" {
 			p.output.Append(text)
-			p.publishOutputEvent(text, event.Raw)
+			p.publishOutputEvent(text, event.Raw, event.Delta)
 		}
 
 		// Also emit tool calls for visibility
@@ -277,7 +277,7 @@ func (p *Process) handleOutputEvent(event *client.OutputEvent) {
 			if block.Type == "tool_use" && block.Name != "" {
 				toolMsg := claude.FormatToolDisplay(block)
 				p.output.Append(toolMsg)
-				p.publishOutputEvent(toolMsg, nil)
+				p.publishOutputEvent(toolMsg, nil, false)
 			}
 		}
 	}
@@ -289,7 +289,7 @@ func (p *Process) handleOutputEvent(event *client.OutputEvent) {
 			if block.Type == "tool_use" && block.Name != "" {
 				toolMsg := claude.FormatToolDisplay(block)
 				p.output.Append(toolMsg)
-				p.publishOutputEvent(toolMsg, nil)
+				p.publishOutputEvent(toolMsg, nil, false)
 			}
 		}
 	}
@@ -377,7 +377,8 @@ func (p *Process) handleProcessComplete() {
 }
 
 // publishOutputEvent publishes an output event to the event bus.
-func (p *Process) publishOutputEvent(text string, rawJSON []byte) {
+// delta indicates this is a streaming chunk that should be accumulated with previous output.
+func (p *Process) publishOutputEvent(text string, rawJSON []byte, delta bool) {
 	if p.eventBus == nil {
 		return
 	}
@@ -389,6 +390,7 @@ func (p *Process) publishOutputEvent(text string, rawJSON []byte) {
 		ProcessID: p.ID,
 		Role:      p.Role,
 		Output:    text,
+		Delta:     delta,
 		TaskID:    p.GetTaskID(),
 		RawJSON:   rawJSON,
 	})

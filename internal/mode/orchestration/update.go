@@ -549,7 +549,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case UserMessageQueuedMsg:
 		// Add a system message to the worker pane showing the message was queued
 		queuedFeedback := fmt.Sprintf("Message queued (position %d) - worker is busy", msg.QueuePosition)
-		m = m.AddWorkerMessageWithRole(msg.WorkerID, "system", queuedFeedback)
+		m = m.AddWorkerMessage(msg.WorkerID, "system", queuedFeedback, false)
 		log.Debug(log.CatOrch, "User message queued feedback shown", "subsystem", "update", "workerID", msg.WorkerID, "position", msg.QueuePosition)
 		return m, nil
 
@@ -557,7 +557,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case CoordinatorMessageQueuedMsg:
 		// Add a system message to the coordinator pane showing the message was queued
 		queuedFeedback := fmt.Sprintf("Message queued (position %d) - coordinator is busy", msg.QueuePosition)
-		m = m.AddChatMessage("system", queuedFeedback)
+		m = m.AddChatMessage("system", queuedFeedback, false)
 		log.Debug(log.CatOrch, "Coordinator message queued feedback shown", "subsystem", "update", "position", msg.QueuePosition)
 		return m, nil
 
@@ -750,7 +750,7 @@ func (m Model) handleCoordinatorProcessEvent(evt events.ProcessEvent) Model {
 
 	case events.ProcessOutput:
 		if evt.Output != "" {
-			m = m.AddChatMessage("coordinator", evt.Output)
+			m = m.AddChatMessage("coordinator", evt.Output, evt.Delta)
 		}
 
 	case events.ProcessReady:
@@ -763,7 +763,7 @@ func (m Model) handleCoordinatorProcessEvent(evt events.ProcessEvent) Model {
 
 	case events.ProcessIncoming:
 		if evt.Message != "" {
-			m = m.AddChatMessage("user", evt.Message)
+			m = m.AddChatMessage("user", evt.Message, false)
 		}
 
 	case events.ProcessTokenUsage:
@@ -809,7 +809,7 @@ func (m Model) handleWorkerProcessEvent(evt events.ProcessEvent) Model {
 
 	case events.ProcessOutput:
 		if evt.Output != "" {
-			m = m.AddWorkerMessage(workerID, evt.Output)
+			m = m.AddWorkerMessage(workerID, "worker", evt.Output, evt.Delta)
 		}
 
 	case events.ProcessReady:
@@ -822,7 +822,7 @@ func (m Model) handleWorkerProcessEvent(evt events.ProcessEvent) Model {
 		// ProcessIncoming indicates a message was delivered to the worker.
 		// Display messages from both user and coordinator.
 		if evt.Message != "" {
-			m = m.AddWorkerMessageWithRole(workerID, evt.Sender, evt.Message)
+			m = m.AddWorkerMessage(workerID, evt.Sender, evt.Message, false)
 		}
 
 	case events.ProcessTokenUsage:
@@ -1075,6 +1075,7 @@ func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 		CodexModel:         m.codexModel,
 		AmpModel:           m.ampModel,
 		AmpMode:            m.ampMode,
+		GeminiModel:        m.geminiModel,
 		Timeout:            timeout,
 		WorktreeBaseBranch: m.worktreeBaseBranch,
 		WorktreeBranchName: m.worktreeCustomBranch,

@@ -15,6 +15,8 @@ const (
 	ClientAmp ClientType = "amp"
 	// ClientCodex is the OpenAI Codex CLI client.
 	ClientCodex ClientType = "codex"
+	// ClientGemini is the Gemini CLI client.
+	ClientGemini ClientType = "gemini"
 	// ClientMock is a mock client for testing.
 	ClientMock ClientType = "mock"
 )

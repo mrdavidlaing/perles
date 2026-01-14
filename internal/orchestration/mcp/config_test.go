@@ -116,6 +116,34 @@ func TestGenerateCoordinatorConfigHTTP(t *testing.T) {
 	require.Equal(t, expectedURL, server.URL, "URL mismatch")
 }
 
+func TestGenerateCoordinatorConfigGemini(t *testing.T) {
+	configJSON, err := GenerateCoordinatorConfigGemini(9000)
+	require.NoError(t, err, "GenerateCoordinatorConfigGemini failed")
+
+	var cfg MCPConfig
+	require.NoError(t, json.Unmarshal([]byte(configJSON), &cfg), "Failed to parse config")
+
+	server := cfg.MCPServers["perles-orchestrator"]
+	// Gemini uses httpUrl, not url or type
+	require.Empty(t, server.Type, "Type should be empty for Gemini")
+	require.Empty(t, server.URL, "URL should be empty for Gemini")
+	require.Equal(t, "http://localhost:9000/mcp", server.HTTPUrl, "HTTPUrl mismatch")
+}
+
+func TestGenerateWorkerConfigGemini(t *testing.T) {
+	configJSON, err := GenerateWorkerConfigGemini(9000, "WORKER.1")
+	require.NoError(t, err, "GenerateWorkerConfigGemini failed")
+
+	var cfg MCPConfig
+	require.NoError(t, json.Unmarshal([]byte(configJSON), &cfg), "Failed to parse config")
+
+	server := cfg.MCPServers["perles-worker"]
+	// Gemini uses httpUrl, not url or type
+	require.Empty(t, server.Type, "Type should be empty for Gemini")
+	require.Empty(t, server.URL, "URL should be empty for Gemini")
+	require.Equal(t, "http://localhost:9000/worker/WORKER.1", server.HTTPUrl, "HTTPUrl mismatch")
+}
+
 func TestGenerateWorkerConfigCodex(t *testing.T) {
 	t.Run("returns correct TOML syntax", func(t *testing.T) {
 		result := GenerateWorkerConfigCodex(8765, "WORKER.1")

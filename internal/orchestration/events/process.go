@@ -81,6 +81,9 @@ type ProcessEvent struct {
 	Role ProcessRole
 	// Output contains the message text for output events.
 	Output string
+	// Delta indicates this is a streaming chunk that should be accumulated
+	// with the previous message rather than displayed as a new message.
+	Delta bool
 	// Status contains the process's status for status change events.
 	Status ProcessStatus
 	// Phase contains the worker's workflow phase (nil for coordinator).

@@ -11,8 +11,9 @@ type MCPServerConfig struct {
 	Command string            `json:"command,omitempty"` // For stdio transport
 	Args    []string          `json:"args,omitempty"`    // For stdio transport
 	Env     map[string]string `json:"env,omitempty"`     // For stdio transport
-	Type    string            `json:"type,omitempty"`    // "http" for HTTP transport
-	URL     string            `json:"url,omitempty"`     // URL for HTTP transport
+	Type    string            `json:"type,omitempty"`    // "http" for HTTP transport (Claude)
+	URL     string            `json:"url,omitempty"`     // URL for HTTP transport (Claude) or SSE (Gemini)
+	HTTPUrl string            `json:"httpUrl,omitempty"` // URL for streamable HTTP transport (Gemini)
 	Headers map[string]string `json:"headers,omitempty"` // HTTP headers (optional)
 }
 
@@ -28,12 +29,32 @@ type AmpMCPConfig map[string]MCPServerConfig
 
 // GenerateCoordinatorConfigHTTP creates an MCP config that connects to an HTTP server.
 // The server should be running on localhost at the specified port.
+// This format is used by Claude CLI which expects {"type": "http", "url": "..."}.
 func GenerateCoordinatorConfigHTTP(port int) (string, error) {
 	config := MCPConfig{
 		MCPServers: map[string]MCPServerConfig{
 			"perles-orchestrator": {
 				Type: "http",
 				URL:  fmt.Sprintf("http://localhost:%d/mcp", port),
+			},
+		},
+	}
+
+	data, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// GenerateCoordinatorConfigGemini creates an MCP config for Gemini CLI.
+// Gemini CLI uses "httpUrl" for streamable HTTP transport (not "url" which is SSE).
+func GenerateCoordinatorConfigGemini(port int) (string, error) {
+	config := MCPConfig{
+		MCPServers: map[string]MCPServerConfig{
+			"perles-orchestrator": {
+				HTTPUrl: fmt.Sprintf("http://localhost:%d/mcp", port),
 			},
 		},
 	}
@@ -72,12 +93,32 @@ func GenerateCoordinatorConfigCodex(port int) string {
 // GenerateWorkerConfigHTTP creates an MCP config for a worker that connects to the
 // shared HTTP MCP server. This allows workers to share the same message store as
 // the coordinator, solving the in-memory cache isolation problem in prompt mode.
+// This format is used by Claude CLI which expects {"type": "http", "url": "..."}.
 func GenerateWorkerConfigHTTP(port int, workerID string) (string, error) {
 	config := MCPConfig{
 		MCPServers: map[string]MCPServerConfig{
 			"perles-worker": {
 				Type: "http",
 				URL:  fmt.Sprintf("http://localhost:%d/worker/%s", port, workerID),
+			},
+		},
+	}
+
+	data, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// GenerateWorkerConfigGemini creates an MCP config for a worker using Gemini CLI format.
+// Gemini CLI uses "httpUrl" for streamable HTTP transport.
+func GenerateWorkerConfigGemini(port int, workerID string) (string, error) {
+	config := MCPConfig{
+		MCPServers: map[string]MCPServerConfig{
+			"perles-worker": {
+				HTTPUrl: fmt.Sprintf("http://localhost:%d/worker/%s", port, workerID),
 			},
 		},
 	}

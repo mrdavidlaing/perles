@@ -965,6 +965,78 @@ func TestPublishOutputEvent_PublishesProcessEvent(t *testing.T) {
 	<-p.eventDone
 }
 
+func TestPublishOutputEvent_PropagatesDeltaFlag(t *testing.T) {
+	proc := newMockHeadlessProcess()
+	eventBus := pubsub.NewBroker[any]()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := eventBus.Subscribe(ctx)
+
+	p := New("worker-1", repository.RoleWorker, proc, nil, eventBus)
+	p.Start()
+
+	// Send streaming delta event
+	proc.events <- client.OutputEvent{
+		Type:  client.EventAssistant,
+		Delta: true,
+		Message: &client.MessageContent{
+			Content: []client.ContentBlock{
+				{Type: "text", Text: "Streaming chunk"},
+			},
+		},
+	}
+
+	// Should receive event with Delta=true
+	select {
+	case evt := <-sub:
+		pe, ok := evt.Payload.(events.ProcessEvent)
+		require.True(t, ok, "expected ProcessEvent")
+		assert.Equal(t, events.ProcessOutput, pe.Type)
+		assert.True(t, pe.Delta, "Delta flag should be propagated to ProcessEvent")
+		assert.Contains(t, pe.Output, "Streaming chunk")
+	case <-time.After(500 * time.Millisecond):
+		require.FailNow(t, "did not receive event on bus")
+	}
+
+	proc.Complete()
+	<-p.eventDone
+}
+
+func TestPublishOutputEvent_DeltaFalseByDefault(t *testing.T) {
+	proc := newMockHeadlessProcess()
+	eventBus := pubsub.NewBroker[any]()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sub := eventBus.Subscribe(ctx)
+
+	p := New("worker-1", repository.RoleWorker, proc, nil, eventBus)
+	p.Start()
+
+	// Send non-delta event (default)
+	proc.events <- client.OutputEvent{
+		Type: client.EventAssistant,
+		// Delta not set (defaults to false)
+		Message: &client.MessageContent{
+			Content: []client.ContentBlock{
+				{Type: "text", Text: "Complete message"},
+			},
+		},
+	}
+
+	// Should receive event with Delta=false
+	select {
+	case evt := <-sub:
+		pe, ok := evt.Payload.(events.ProcessEvent)
+		require.True(t, ok, "expected ProcessEvent")
+		assert.False(t, pe.Delta, "Delta should be false when not set on input event")
+	case <-time.After(500 * time.Millisecond):
+		require.FailNow(t, "did not receive event on bus")
+	}
+
+	proc.Complete()
+	<-p.eventDone
+}
+
 func TestHandleError_StoresErrorForCommand(t *testing.T) {
 	// Tests that errors from the errors channel are stored (not published immediately).
 	// These errors are passed to ProcessTurnCompleteCommand for the handler to emit.

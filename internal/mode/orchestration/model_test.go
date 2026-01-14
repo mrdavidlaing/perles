@@ -99,7 +99,7 @@ func TestSetSize_PreservesScrollPosition(t *testing.T) {
 
 	// Add enough content to make it scrollable
 	for i := 0; i < 50; i++ {
-		m = m.AddChatMessage("coordinator", "This is a long message to ensure we have plenty of scrollable content")
+		m = m.AddChatMessage("coordinator", "This is a long message to ensure we have plenty of scrollable content", false)
 	}
 
 	// The viewport content needs to be set explicitly since View() uses a local copy.
@@ -143,7 +143,7 @@ func TestSetSize_AtBottomStaysAtBottom(t *testing.T) {
 
 	// Add content
 	for i := 0; i < 20; i++ {
-		m = m.AddChatMessage("coordinator", "Message content")
+		m = m.AddChatMessage("coordinator", "Message content", false)
 	}
 
 	// Render to populate viewport
@@ -169,9 +169,9 @@ func TestSetSize_UpdatesWorkerViewports(t *testing.T) {
 
 	// Add workers with viewports
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
-	m = m.AddWorkerMessage("worker-1", "Processing task...")
+	m = m.AddWorkerMessage("worker-1", "worker", "Processing task...", false)
 	m = m.UpdateWorker("worker-2", events.ProcessStatusWorking)
-	m = m.AddWorkerMessage("worker-2", "Also processing...")
+	m = m.AddWorkerMessage("worker-2", "worker", "Also processing...", false)
 
 	// Render to create viewports
 	_ = m.View()
@@ -193,8 +193,8 @@ func TestSetSize_UpdatesWorkerViewports(t *testing.T) {
 func TestAddChatMessage(t *testing.T) {
 	m := newReadyModel(120, 30)
 
-	m = m.AddChatMessage("user", "Hello, coordinator!")
-	m = m.AddChatMessage("coordinator", "I'll help you orchestrate this epic.")
+	m = m.AddChatMessage("user", "Hello, coordinator!", false)
+	m = m.AddChatMessage("coordinator", "I'll help you orchestrate this epic.", false)
 
 	// Verify messages appear in the rendered view (word wrap may split text)
 	view := m.View()
@@ -202,6 +202,94 @@ func TestAddChatMessage(t *testing.T) {
 	require.Contains(t, view, "Hello, coordinator!")
 	require.Contains(t, view, "Coordinator")
 	require.Contains(t, view, "orchestrate") // Check for key word regardless of wrapping
+}
+
+func TestAddChatMessage_AccumulatesWhenDeltaTrue(t *testing.T) {
+	m := newReadyModel(120, 30)
+
+	// First chunk (delta=false or first message)
+	m = m.AddChatMessage("coordinator", "Hello", false)
+	require.Len(t, m.coordinatorPane.messages, 1)
+	require.Equal(t, "Hello", m.coordinatorPane.messages[0].Content)
+
+	// Second chunk (delta=true) - should accumulate with same role
+	m = m.AddChatMessage("coordinator", " world", true)
+	require.Len(t, m.coordinatorPane.messages, 1, "Should still be 1 message after delta accumulation")
+	require.Equal(t, "Hello world", m.coordinatorPane.messages[0].Content)
+
+	// Third chunk (delta=true) - should continue accumulating
+	m = m.AddChatMessage("coordinator", "!", true)
+	require.Len(t, m.coordinatorPane.messages, 1)
+	require.Equal(t, "Hello world!", m.coordinatorPane.messages[0].Content)
+}
+
+func TestAddChatMessage_CreatesNewMessageWhenDeltaFalse(t *testing.T) {
+	m := newReadyModel(120, 30)
+
+	// First message
+	m = m.AddChatMessage("coordinator", "First message", false)
+	require.Len(t, m.coordinatorPane.messages, 1)
+
+	// Second message with delta=false - should create new message
+	m = m.AddChatMessage("coordinator", "Second message", false)
+	require.Len(t, m.coordinatorPane.messages, 2)
+	require.Equal(t, "First message", m.coordinatorPane.messages[0].Content)
+	require.Equal(t, "Second message", m.coordinatorPane.messages[1].Content)
+}
+
+func TestAddChatMessage_CreatesNewMessageWhenRoleChanges(t *testing.T) {
+	m := newReadyModel(120, 30)
+
+	// First message from coordinator
+	m = m.AddChatMessage("coordinator", "Hello", false)
+	require.Len(t, m.coordinatorPane.messages, 1)
+
+	// Delta=true but different role - should create new message
+	m = m.AddChatMessage("user", "Hi there", true)
+	require.Len(t, m.coordinatorPane.messages, 2, "Different role should create new message even with delta=true")
+	require.Equal(t, "user", m.coordinatorPane.messages[1].Role)
+	require.Equal(t, "Hi there", m.coordinatorPane.messages[1].Content)
+}
+
+func TestAddChatMessage_DoesNotAccumulateOntoToolCall(t *testing.T) {
+	// Regression test: delta messages should NOT accumulate onto tool call messages.
+	m := newReadyModel(120, 30)
+
+	// First: a tool call message (detected by 🔧 prefix)
+	m = m.AddChatMessage("coordinator", "🔧 run_shell_command", false)
+	require.Len(t, m.coordinatorPane.messages, 1)
+	require.Equal(t, "🔧 run_shell_command", m.coordinatorPane.messages[0].Content)
+	require.True(t, m.coordinatorPane.messages[0].IsToolCall, "Should be marked as tool call")
+
+	// Second: a delta message that should NOT accumulate onto the tool call
+	m = m.AddChatMessage("coordinator", "Hello! I'm here to help.", true)
+
+	// Should create a NEW message, not concatenate
+	require.Len(t, m.coordinatorPane.messages, 2, "Delta should create new message after tool call")
+	require.Equal(t, "🔧 run_shell_command", m.coordinatorPane.messages[0].Content)
+	require.Equal(t, "Hello! I'm here to help.", m.coordinatorPane.messages[1].Content)
+	require.False(t, m.coordinatorPane.messages[1].IsToolCall)
+}
+
+func TestAddWorkerMessage_DoesNotAccumulateOntoToolCall(t *testing.T) {
+	// Regression test: delta messages should NOT accumulate onto tool call messages.
+	m := newReadyModel(120, 30)
+	workerID := "worker-1"
+	m = m.UpdateWorker(workerID, events.ProcessStatusWorking)
+
+	// First: a tool call message
+	m = m.AddWorkerMessage(workerID, "worker", "🔧 Read: file.go", false)
+	messages := m.workerPane.workerMessages[workerID]
+	require.Len(t, messages, 1)
+	require.True(t, messages[0].IsToolCall)
+
+	// Second: a delta message that should NOT accumulate
+	m = m.AddWorkerMessage(workerID, "worker", "Processing complete.", true)
+
+	messages = m.workerPane.workerMessages[workerID]
+	require.Len(t, messages, 2, "Delta should create new message after tool call")
+	require.Equal(t, "🔧 Read: file.go", messages[0].Content)
+	require.Equal(t, "Processing complete.", messages[1].Content)
 }
 
 func TestSetMessageEntries(t *testing.T) {
@@ -236,12 +324,56 @@ func TestSetMessageEntries(t *testing.T) {
 	require.Contains(t, view, "WORKER.1")
 }
 
+func TestAddWorkerMessage_AccumulatesWhenDeltaTrue(t *testing.T) {
+	m := New(Config{})
+	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
+
+	// First chunk
+	m = m.AddWorkerMessage("worker-1", "worker", "Hello", false)
+	require.Len(t, m.workerPane.workerMessages["worker-1"], 1)
+	require.Equal(t, "Hello", m.workerPane.workerMessages["worker-1"][0].Content)
+
+	// Second chunk (delta=true) - should accumulate
+	m = m.AddWorkerMessage("worker-1", "worker", " world", true)
+	require.Len(t, m.workerPane.workerMessages["worker-1"], 1, "Should still be 1 message after delta")
+	require.Equal(t, "Hello world", m.workerPane.workerMessages["worker-1"][0].Content)
+}
+
+func TestAddWorkerMessage_CreatesNewMessageWhenDeltaFalse(t *testing.T) {
+	m := New(Config{})
+	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
+
+	// First message
+	m = m.AddWorkerMessage("worker-1", "worker", "First", false)
+	require.Len(t, m.workerPane.workerMessages["worker-1"], 1)
+
+	// Second message with delta=false
+	m = m.AddWorkerMessage("worker-1", "worker", "Second", false)
+	require.Len(t, m.workerPane.workerMessages["worker-1"], 2)
+	require.Equal(t, "First", m.workerPane.workerMessages["worker-1"][0].Content)
+	require.Equal(t, "Second", m.workerPane.workerMessages["worker-1"][1].Content)
+}
+
+func TestAddWorkerMessage_CreatesNewMessageWhenRoleChanges(t *testing.T) {
+	m := New(Config{})
+	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
+
+	// First message from worker
+	m = m.AddWorkerMessage("worker-1", "worker", "Task started", false)
+	require.Len(t, m.workerPane.workerMessages["worker-1"], 1)
+
+	// Delta=true but different role - should create new message
+	m = m.AddWorkerMessage("worker-1", "coordinator", "Good progress", true)
+	require.Len(t, m.workerPane.workerMessages["worker-1"], 2)
+	require.Equal(t, "coordinator", m.workerPane.workerMessages["worker-1"][1].Role)
+}
+
 func TestUpdateWorker(t *testing.T) {
 	m := New(Config{})
 
 	// Add first worker
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
-	m = m.AddWorkerMessage("worker-1", "Processing task...")
+	m = m.AddWorkerMessage("worker-1", "worker", "Processing task...", false)
 
 	total, active := m.WorkerCount()
 	require.Equal(t, 1, total)
@@ -249,7 +381,7 @@ func TestUpdateWorker(t *testing.T) {
 
 	// Add second worker
 	m = m.UpdateWorker("worker-2", events.ProcessStatusWorking)
-	m = m.AddWorkerMessage("worker-2", "Also processing...")
+	m = m.AddWorkerMessage("worker-2", "worker", "Also processing...", false)
 
 	total, active = m.WorkerCount()
 	require.Equal(t, 2, total)
@@ -316,7 +448,7 @@ func TestCleanupRetiredWorkerViewports(t *testing.T) {
 	for i := 1; i <= 8; i++ {
 		workerID := "worker-" + string(rune('0'+i))
 		m = m.UpdateWorker(workerID, events.ProcessStatusWorking)
-		m = m.AddWorkerMessage(workerID, "Processing...")
+		m = m.AddWorkerMessage(workerID, "worker", "Processing...", false)
 		// Manually create viewport to simulate what rendering would do
 		m.workerPane.viewports[workerID] = viewport.New(10, 10)
 	}
@@ -378,7 +510,7 @@ func TestCleanupRetiredWorkerViewports_ActiveWorkersNeverCleaned(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		workerID := "worker-" + string(rune('0'+i))
 		m = m.UpdateWorker(workerID, events.ProcessStatusWorking)
-		m = m.AddWorkerMessage(workerID, "Processing...")
+		m = m.AddWorkerMessage(workerID, "worker", "Processing...", false)
 	}
 
 	// Retire workers 1-8 (8 retired total, triggers cleanup)
@@ -408,7 +540,7 @@ func TestCleanupRetiredWorkerViewports_UnderLimit(t *testing.T) {
 	for i := 1; i <= 3; i++ {
 		workerID := "worker-" + string(rune('0'+i))
 		m = m.UpdateWorker(workerID, events.ProcessStatusWorking)
-		m = m.AddWorkerMessage(workerID, "Processing...")
+		m = m.AddWorkerMessage(workerID, "worker", "Processing...", false)
 		m = m.UpdateWorker(workerID, events.ProcessStatusRetired)
 	}
 
@@ -462,8 +594,8 @@ func TestView_Golden_Empty(t *testing.T) {
 func TestView_Golden_WithChat(t *testing.T) {
 	m := newReadyModel(120, 30)
 
-	m = m.AddChatMessage("user", "Start working on the auth epic")
-	m = m.AddChatMessage("coordinator", "I'll analyze the epic and plan the execution. I see 4 tasks with dependencies.")
+	m = m.AddChatMessage("user", "Start working on the auth epic", false)
+	m = m.AddChatMessage("coordinator", "I'll analyze the epic and plan the execution. I see 4 tasks with dependencies.", false)
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
@@ -503,10 +635,10 @@ func TestView_Golden_WithWorkers(t *testing.T) {
 	// Add workers with task IDs and phases
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
 	m = m.SetWorkerTask("worker-1", "perles-auth.1", events.ProcessPhaseImplementing)
-	m = m.AddWorkerMessage("worker-1", "Reading auth/oauth.go\nFound existing setup\nAdding Google provider")
+	m = m.AddWorkerMessage("worker-1", "worker", "Reading auth/oauth.go\nFound existing setup\nAdding Google provider", false)
 	m = m.UpdateWorker("worker-2", events.ProcessStatusReady)
 	m = m.SetWorkerTask("worker-2", "", events.ProcessPhaseIdle) // Idle worker, no task
-	m = m.AddWorkerMessage("worker-2", "Task complete")
+	m = m.AddWorkerMessage("worker-2", "worker", "Task complete", false)
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
@@ -517,8 +649,8 @@ func TestView_Golden_FullState(t *testing.T) {
 	m.mcpPort = 8467
 
 	// Add chat messages
-	m = m.AddChatMessage("user", "Start working on the auth epic")
-	m = m.AddChatMessage("coordinator", "I'll start tasks .1 and .2 in parallel since they have no dependencies.")
+	m = m.AddChatMessage("user", "Start working on the auth epic", false)
+	m = m.AddChatMessage("coordinator", "I'll start tasks .1 and .2 in parallel since they have no dependencies.", false)
 
 	// Add message log
 	entries := []message.Entry{
@@ -552,10 +684,10 @@ func TestView_Golden_FullState(t *testing.T) {
 	// Add workers with task context
 	m = m.UpdateWorker("worker-1", events.ProcessStatusReady)
 	m = m.SetWorkerTask("worker-1", "perles-auth.1", events.ProcessPhaseIdle)
-	m = m.AddWorkerMessage("worker-1", "OAuth setup complete")
+	m = m.AddWorkerMessage("worker-1", "worker", "OAuth setup complete", false)
 	m = m.UpdateWorker("worker-2", events.ProcessStatusWorking)
 	m = m.SetWorkerTask("worker-2", "perles-auth.2", events.ProcessPhaseReviewing)
-	m = m.AddWorkerMessage("worker-2", "Adding JWT validation\nProcessing...")
+	m = m.AddWorkerMessage("worker-2", "worker", "Adding JWT validation\nProcessing...", false)
 
 	// Focus on workers pane by pressing Tab twice (Coordinator -> Message -> Worker)
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -568,7 +700,7 @@ func TestView_Golden_FullState(t *testing.T) {
 func TestView_Golden_Narrow(t *testing.T) {
 	m := newReadyModel(80, 24)
 
-	m = m.AddChatMessage("user", "Hello")
+	m = m.AddChatMessage("user", "Hello", false)
 	m = m.UpdateWorker("worker-1", events.ProcessStatusReady)
 
 	view := m.View()
@@ -578,7 +710,7 @@ func TestView_Golden_Narrow(t *testing.T) {
 func TestView_Golden_Wide(t *testing.T) {
 	m := newReadyModel(200, 40)
 
-	m = m.AddChatMessage("coordinator", "I see this epic has many tasks. Let me analyze the dependency graph to determine optimal execution order.")
+	m = m.AddChatMessage("coordinator", "I see this epic has many tasks. Let me analyze the dependency graph to determine optimal execution order.", false)
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
@@ -591,8 +723,8 @@ func TestView_Golden_CoordinatorStopped(t *testing.T) {
 	// Set coordinator to stopped status
 	m.coordinatorStatus = events.ProcessStatusStopped
 
-	m = m.AddChatMessage("user", "Please pause operations")
-	m = m.AddChatMessage("coordinator", "Understood, pausing now.")
+	m = m.AddChatMessage("user", "Please pause operations", false)
+	m = m.AddChatMessage("coordinator", "Understood, pausing now.", false)
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
@@ -605,10 +737,10 @@ func TestView_Golden_WorkerStopped(t *testing.T) {
 	// Add a working worker and a stopped worker
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
 	m = m.SetWorkerTask("worker-1", "perles-auth.1", events.ProcessPhaseImplementing)
-	m = m.AddWorkerMessage("worker-1", "Working on OAuth provider integration...")
+	m = m.AddWorkerMessage("worker-1", "worker", "Working on OAuth provider integration...", false)
 
 	m = m.UpdateWorker("worker-2", events.ProcessStatusStopped)
-	m = m.AddWorkerMessage("worker-2", "Stopped by user request")
+	m = m.AddWorkerMessage("worker-2", "worker", "Stopped by user request", false)
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
@@ -618,32 +750,32 @@ func TestView_Golden_WithToolCalls(t *testing.T) {
 	m := newReadyModel(120, 30)
 
 	// User asks coordinator to start
-	m = m.AddChatMessage("user", "Start working on the epic")
+	m = m.AddChatMessage("user", "Start working on the epic", false)
 
 	// Coordinator responds and makes multiple tool calls (first group)
-	m = m.AddChatMessage("coordinator", "I'll load the necessary tools first")
-	m = m.AddChatMessage("coordinator", "🔧 MCPSearch")
-	m = m.AddChatMessage("coordinator", "🔧 MCPSearch")
-	m = m.AddChatMessage("coordinator", "🔧 MCPSearch")
+	m = m.AddChatMessage("coordinator", "I'll load the necessary tools first", false)
+	m = m.AddChatMessage("coordinator", "🔧 MCPSearch", false)
+	m = m.AddChatMessage("coordinator", "🔧 MCPSearch", false)
+	m = m.AddChatMessage("coordinator", "🔧 MCPSearch", false)
 
 	// Coordinator text response
-	m = m.AddChatMessage("coordinator", "Perfect! Now I'll spawn workers for the ready tasks.")
+	m = m.AddChatMessage("coordinator", "Perfect! Now I'll spawn workers for the ready tasks.", false)
 
 	// Another group of tool calls
-	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__post_message")
-	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker")
-	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker")
-	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__list_workers")
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__post_message", false)
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker", false)
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker", false)
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__list_workers", false)
 
 	// Final response
-	m = m.AddChatMessage("coordinator", "I've spawned 2 workers. Monitoring their progress.")
+	m = m.AddChatMessage("coordinator", "I've spawned 2 workers. Monitoring their progress.", false)
 
 	// Add a worker with formatted output showing tool calls
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
-	m = m.AddWorkerMessage("worker-1", "I'll start by checking for messages")
-	m = m.AddWorkerMessage("worker-1", "🔧 mcp__perles-worker__check_messages")
-	m = m.AddWorkerMessage("worker-1", "🔧 mcp__perles-worker__post_message")
-	m = m.AddWorkerMessage("worker-1", "Task completed successfully!")
+	m = m.AddWorkerMessage("worker-1", "worker", "I'll start by checking for messages", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "🔧 mcp__perles-worker__check_messages", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "🔧 mcp__perles-worker__post_message", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "Task completed successfully!", false)
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
@@ -669,13 +801,13 @@ func TestView_Golden_FullscreenCoordinator(t *testing.T) {
 	m := newReadyModel(120, 30)
 
 	// Add chat messages to the coordinator pane
-	m = m.AddChatMessage("user", "Start working on the auth epic")
-	m = m.AddChatMessage("coordinator", "I'll analyze the epic and plan the execution. I see 4 tasks with dependencies.")
-	m = m.AddChatMessage("coordinator", "🔧 MCPSearch")
-	m = m.AddChatMessage("coordinator", "🔧 MCPSearch")
-	m = m.AddChatMessage("coordinator", "Now I'll spawn workers for the ready tasks.")
-	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker")
-	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker")
+	m = m.AddChatMessage("user", "Start working on the auth epic", false)
+	m = m.AddChatMessage("coordinator", "I'll analyze the epic and plan the execution. I see 4 tasks with dependencies.", false)
+	m = m.AddChatMessage("coordinator", "🔧 MCPSearch", false)
+	m = m.AddChatMessage("coordinator", "🔧 MCPSearch", false)
+	m = m.AddChatMessage("coordinator", "Now I'll spawn workers for the ready tasks.", false)
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker", false)
+	m = m.AddChatMessage("coordinator", "🔧 mcp__perles-orchestrator__spawn_worker", false)
 
 	// Enter navigation mode and fullscreen coordinator pane
 	m.navigationMode = true
@@ -741,18 +873,18 @@ func TestView_Golden_FullscreenWorker(t *testing.T) {
 	// Add workers with messages, task IDs and phases
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
 	m = m.SetWorkerTask("worker-1", "perles-auth.1", events.ProcessPhaseImplementing)
-	m = m.AddWorkerMessage("worker-1", "Reading auth/oauth.go")
-	m = m.AddWorkerMessage("worker-1", "Found existing OAuth setup")
-	m = m.AddWorkerMessage("worker-1", "🔧 Read")
-	m = m.AddWorkerMessage("worker-1", "🔧 Grep")
-	m = m.AddWorkerMessage("worker-1", "Adding Google provider configuration")
-	m = m.AddWorkerMessage("worker-1", "🔧 Edit")
-	m = m.AddWorkerMessage("worker-1", "Running tests to verify changes")
-	m = m.AddWorkerMessage("worker-1", "🔧 Bash")
+	m = m.AddWorkerMessage("worker-1", "worker", "Reading auth/oauth.go", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "Found existing OAuth setup", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "🔧 Read", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "🔧 Grep", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "Adding Google provider configuration", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "🔧 Edit", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "Running tests to verify changes", false)
+	m = m.AddWorkerMessage("worker-1", "worker", "🔧 Bash", false)
 
 	m = m.UpdateWorker("worker-2", events.ProcessStatusReady)
 	m = m.SetWorkerTask("worker-2", "perles-auth.2", events.ProcessPhaseAwaitingReview)
-	m = m.AddWorkerMessage("worker-2", "Task complete")
+	m = m.AddWorkerMessage("worker-2", "worker", "Task complete", false)
 
 	// Enter navigation mode and fullscreen worker-1 (index 0)
 	m.navigationMode = true
@@ -1603,8 +1735,8 @@ func TestView_Golden_WithUncommittedModal(t *testing.T) {
 	m := newReadyModel(120, 30)
 
 	// Add some content to the coordinator pane
-	m = m.AddChatMessage("user", "Start working on the auth epic")
-	m = m.AddChatMessage("coordinator", "I'll analyze the epic and plan the execution.")
+	m = m.AddChatMessage("user", "Start working on the auth epic", false)
+	m = m.AddChatMessage("coordinator", "I'll analyze the epic and plan the execution.", false)
 
 	// Show the uncommittedModal (simulating dirty worktree detection)
 	m.uncommittedModal.Show()
@@ -1979,7 +2111,7 @@ func TestRestoreFromSession_EmptyState(t *testing.T) {
 	m = m.SetSize(120, 30)
 
 	// Add some initial state to verify it gets replaced
-	m = m.AddChatMessage("user", "existing message")
+	m = m.AddChatMessage("user", "existing message", false)
 	m = m.UpdateWorker("existing-worker", events.ProcessStatusReady)
 
 	state := &session.RestoredUIState{
@@ -2041,7 +2173,7 @@ func TestRestoreFromSession_NilState(t *testing.T) {
 	m = m.SetSize(120, 30)
 
 	// Add initial state
-	m = m.AddChatMessage("user", "should persist")
+	m = m.AddChatMessage("user", "should persist", false)
 
 	// Call with nil state
 	m = m.RestoreFromSession(nil)

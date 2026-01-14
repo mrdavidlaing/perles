@@ -375,6 +375,16 @@ func TestValidateOrchestration_InvalidClient(t *testing.T) {
 	err := ValidateOrchestration(cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "orchestration.client must be")
+	require.Contains(t, err.Error(), "gemini") // Verify gemini is mentioned as valid option
+}
+
+func TestValidateOrchestration_ValidGemini(t *testing.T) {
+	cfg := OrchestrationConfig{
+		Client: "gemini",
+		Gemini: GeminiClientConfig{Model: "gemini-2.5-pro"},
+	}
+	err := ValidateOrchestration(cfg)
+	require.NoError(t, err)
 }
 
 func TestValidateOrchestration_ValidClaudeModels(t *testing.T) {
@@ -420,6 +430,44 @@ func TestValidateOrchestration_ValidAmpModes(t *testing.T) {
 		}
 		err := ValidateOrchestration(cfg)
 		require.NoError(t, err, "mode %q should be valid", mode)
+	}
+}
+
+// Tests for GeminiClientConfig
+
+func TestGeminiClientConfig_ZeroValue(t *testing.T) {
+	// Test that zero value GeminiClientConfig has expected defaults
+	cfg := GeminiClientConfig{}
+	require.Empty(t, cfg.Model, "Model zero value should be empty")
+}
+
+func TestGeminiClientConfig_WithModel(t *testing.T) {
+	cfg := GeminiClientConfig{
+		Model: "gemini-2.5-flash",
+	}
+	require.Equal(t, "gemini-2.5-flash", cfg.Model)
+}
+
+func TestOrchestrationConfig_GeminiField(t *testing.T) {
+	// Verify OrchestrationConfig includes Gemini field
+	cfg := OrchestrationConfig{
+		Client: "gemini",
+		Gemini: GeminiClientConfig{
+			Model: "gemini-2.5-pro",
+		},
+	}
+	require.Equal(t, "gemini-2.5-pro", cfg.Gemini.Model)
+}
+
+func TestValidateOrchestration_ValidGeminiModels(t *testing.T) {
+	models := []string{"gemini-2.5-pro", "gemini-2.5-flash"}
+	for _, model := range models {
+		cfg := OrchestrationConfig{
+			Client: "gemini",
+			Gemini: GeminiClientConfig{Model: model},
+		}
+		err := ValidateOrchestration(cfg)
+		require.NoError(t, err, "model %q should be valid", model)
 	}
 }
 

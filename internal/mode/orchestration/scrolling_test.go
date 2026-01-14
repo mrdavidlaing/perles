@@ -57,7 +57,7 @@ func TestShortContent_CoordinatorNoScrollIndicator(t *testing.T) {
 	m = m.SetSize(120, 30)
 
 	// Add just one short message (fits in viewport)
-	m = m.AddChatMessage("coordinator", "Hello")
+	m = m.AddChatMessage("coordinator", "Hello", false)
 	_ = m.View() // Render to populate viewport
 
 	// Scroll indicator should not appear
@@ -92,7 +92,7 @@ func TestShortContent_WorkerNoScrollIndicator(t *testing.T) {
 	m = m.SetSize(120, 30)
 
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
-	m = m.AddWorkerMessage("worker-1", "Short message")
+	m = m.AddWorkerMessage("worker-1", "worker", "Short message", false)
 	_ = m.View()
 
 	if vp, ok := m.workerPane.viewports["worker-1"]; ok {
@@ -114,8 +114,8 @@ func TestMultipleWorkers_ScrollAffectsCurrentWorkerOnly(t *testing.T) {
 
 	// Add lots of content to both workers
 	for i := 0; i < 50; i++ {
-		m = m.AddWorkerMessage("worker-1", "Worker 1 message line")
-		m = m.AddWorkerMessage("worker-2", "Worker 2 message line")
+		m = m.AddWorkerMessage("worker-1", "worker", "Worker 1 message line", false)
+		m = m.AddWorkerMessage("worker-2", "worker", "Worker 2 message line", false)
 	}
 
 	// Render to create viewports
@@ -163,7 +163,7 @@ func TestScrollBoundary_ScrollUpAtTopIsNoOp(t *testing.T) {
 
 	// Add scrollable content
 	for i := 0; i < 50; i++ {
-		m = m.AddChatMessage("coordinator", "Message line")
+		m = m.AddChatMessage("coordinator", "Message line", false)
 	}
 	_ = m.View()
 
@@ -192,7 +192,7 @@ func TestScrollBoundary_ScrollDownAtBottomIsNoOp(t *testing.T) {
 
 	// Add scrollable content
 	for i := 0; i < 50; i++ {
-		m = m.AddChatMessage("coordinator", "Message line")
+		m = m.AddChatMessage("coordinator", "Message line", false)
 	}
 	_ = m.View()
 
@@ -226,7 +226,7 @@ func TestInputBarArea_MouseWheelIgnored(t *testing.T) {
 
 	// Add scrollable content
 	for i := 0; i < 50; i++ {
-		m = m.AddChatMessage("coordinator", "Message line")
+		m = m.AddChatMessage("coordinator", "Message line", false)
 	}
 	_ = m.View()
 
@@ -258,7 +258,7 @@ func TestRapidUpdates_ContentDirtyFlag(t *testing.T) {
 	m = m.SetSize(120, 30)
 
 	// Add first message - should set dirty
-	m = m.AddChatMessage("coordinator", "First message")
+	m = m.AddChatMessage("coordinator", "First message", false)
 	require.True(t, m.coordinatorPane.contentDirty, "content should be dirty after first message")
 
 	// Render (clears dirty via Update cycle)
@@ -266,9 +266,9 @@ func TestRapidUpdates_ContentDirtyFlag(t *testing.T) {
 	require.False(t, m.coordinatorPane.contentDirty, "content should not be dirty after Update")
 
 	// Add more messages rapidly
-	m = m.AddChatMessage("coordinator", "Second message")
-	m = m.AddChatMessage("coordinator", "Third message")
-	m = m.AddChatMessage("coordinator", "Fourth message")
+	m = m.AddChatMessage("coordinator", "Second message", false)
+	m = m.AddChatMessage("coordinator", "Third message", false)
+	m = m.AddChatMessage("coordinator", "Fourth message", false)
 
 	// Should be dirty (needs re-render)
 	require.True(t, m.coordinatorPane.contentDirty, "content should be dirty after rapid messages")
@@ -290,7 +290,7 @@ func TestRapidUpdates_WorkerContentDirtyPerWorker(t *testing.T) {
 	m = m.UpdateWorker("worker-2", events.ProcessStatusWorking)
 
 	// Add message to worker-1 only
-	m = m.AddWorkerMessage("worker-1", "Message")
+	m = m.AddWorkerMessage("worker-1", "worker", "Message", false)
 
 	// Worker-1 should be dirty, worker-2 should not
 	require.True(t, m.workerPane.contentDirty["worker-1"], "worker-1 should be dirty")
@@ -307,7 +307,7 @@ func TestNewContentIndicator_AppearsWhenScrolledUp(t *testing.T) {
 
 	// Add initial content
 	for i := 0; i < 30; i++ {
-		m = m.AddChatMessage("coordinator", "Initial message")
+		m = m.AddChatMessage("coordinator", "Initial message", false)
 	}
 
 	// Render to populate viewport with content
@@ -330,7 +330,7 @@ func TestNewContentIndicator_AppearsWhenScrolledUp(t *testing.T) {
 	m.coordinatorPane.hasNewContent = false
 
 	// Add new content while scrolled up
-	m = m.AddChatMessage("coordinator", "New message!")
+	m = m.AddChatMessage("coordinator", "New message!", false)
 
 	// hasNewContent should be set
 	require.True(t, m.coordinatorPane.hasNewContent,
@@ -343,7 +343,7 @@ func TestNewContentIndicator_ClearsWhenScrollToBottom(t *testing.T) {
 
 	// Set up state: scrolled up with new content flag
 	for i := 0; i < 30; i++ {
-		m = m.AddChatMessage("coordinator", "Message")
+		m = m.AddChatMessage("coordinator", "Message", false)
 	}
 	_ = m.View()
 
@@ -377,7 +377,7 @@ func TestNewContentIndicator_NotSetWhenAtBottom(t *testing.T) {
 	m = m.SetSize(120, 30)
 
 	// Small amount of content (stays at bottom)
-	m = m.AddChatMessage("coordinator", "First message")
+	m = m.AddChatMessage("coordinator", "First message", false)
 	_ = m.View()
 
 	// Verify at bottom
@@ -391,7 +391,7 @@ func TestNewContentIndicator_NotSetWhenAtBottom(t *testing.T) {
 		"hasNewContent should not be set when already at bottom")
 
 	// Add more content (while at bottom)
-	m = m.AddChatMessage("coordinator", "Second message")
+	m = m.AddChatMessage("coordinator", "Second message", false)
 
 	// hasNewContent should still be false (auto-scrolling will follow)
 	// Note: In the actual implementation, AtBottom() might be false after SetContent
@@ -418,7 +418,7 @@ func TestViewportDimensions_VeryWide(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(300, 50)
 
-	m = m.AddChatMessage("coordinator", "Test message in wide terminal")
+	m = m.AddChatMessage("coordinator", "Test message in wide terminal", false)
 	view := m.View()
 	require.NotEmpty(t, view)
 }
@@ -487,7 +487,7 @@ func TestWorkerRetirement_ViewportCleanedUp(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		workerID := "worker-" + string(rune('0'+i))
 		m = m.UpdateWorker(workerID, events.ProcessStatusWorking)
-		m = m.AddWorkerMessage(workerID, "Processing...")
+		m = m.AddWorkerMessage(workerID, "worker", "Processing...", false)
 
 		// Render to create viewport
 		_ = m.View()
@@ -831,7 +831,7 @@ func TestWorkflowPicker_MouseScrollDoesNotReachPanes(t *testing.T) {
 
 	// Add content to coordinator pane so it can scroll
 	for i := 0; i < 50; i++ {
-		m = m.AddChatMessage("coordinator", "Message line")
+		m = m.AddChatMessage("coordinator", "Message line", false)
 	}
 	_ = m.View() // Render to populate viewport
 

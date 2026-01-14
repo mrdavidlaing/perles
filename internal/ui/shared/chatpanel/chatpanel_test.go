@@ -1039,6 +1039,157 @@ func TestModel_HandleProcessEvent_Output(t *testing.T) {
 	require.NotNil(t, cmd)
 }
 
+func TestModel_HandleProcessEvent_OutputDelta(t *testing.T) {
+	cfg := Config{
+		ClientType: "claude",
+		WorkDir:    "/tmp/test",
+	}
+	m := New(cfg)
+
+	// Create infrastructure
+	infra := newTestInfrastructure(t)
+	infra.Start()
+	defer infra.Shutdown()
+
+	m = m.SetInfrastructure(infra)
+
+	// First message (delta=false)
+	event1 := pubsub.Event[any]{
+		Type: pubsub.UpdatedEvent,
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: ChatPanelProcessID,
+			Output:    "Hello",
+			Delta:     false,
+		},
+	}
+	m, _ = m.Update(event1)
+	require.Len(t, m.Messages(), 1)
+	require.Equal(t, "Hello", m.Messages()[0].Content)
+
+	// Second chunk (delta=true) - should accumulate
+	event2 := pubsub.Event[any]{
+		Type: pubsub.UpdatedEvent,
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: ChatPanelProcessID,
+			Output:    " world",
+			Delta:     true,
+		},
+	}
+	m, _ = m.Update(event2)
+	require.Len(t, m.Messages(), 1, "Should still be 1 message after delta")
+	require.Equal(t, "Hello world", m.Messages()[0].Content)
+
+	// Third chunk (delta=true) - should continue accumulating
+	event3 := pubsub.Event[any]{
+		Type: pubsub.UpdatedEvent,
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: ChatPanelProcessID,
+			Output:    "!",
+			Delta:     true,
+		},
+	}
+	m, _ = m.Update(event3)
+	require.Len(t, m.Messages(), 1)
+	require.Equal(t, "Hello world!", m.Messages()[0].Content)
+}
+
+func TestModel_HandleProcessEvent_OutputDeltaNewMessageOnFalse(t *testing.T) {
+	cfg := Config{
+		ClientType: "claude",
+		WorkDir:    "/tmp/test",
+	}
+	m := New(cfg)
+
+	// Create infrastructure
+	infra := newTestInfrastructure(t)
+	infra.Start()
+	defer infra.Shutdown()
+
+	m = m.SetInfrastructure(infra)
+
+	// First message
+	event1 := pubsub.Event[any]{
+		Type: pubsub.UpdatedEvent,
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: ChatPanelProcessID,
+			Output:    "First message",
+			Delta:     false,
+		},
+	}
+	m, _ = m.Update(event1)
+	require.Len(t, m.Messages(), 1)
+
+	// Second message (delta=false) - should create new message
+	event2 := pubsub.Event[any]{
+		Type: pubsub.UpdatedEvent,
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: ChatPanelProcessID,
+			Output:    "Second message",
+			Delta:     false,
+		},
+	}
+	m, _ = m.Update(event2)
+	require.Len(t, m.Messages(), 2)
+	require.Equal(t, "First message", m.Messages()[0].Content)
+	require.Equal(t, "Second message", m.Messages()[1].Content)
+}
+
+func TestModel_HandleProcessEvent_OutputDeltaDoesNotAccumulateOntoToolCall(t *testing.T) {
+	// Regression test: delta messages should NOT accumulate onto tool call messages.
+	// Before the fix, a tool call like "🔧 run_shell_command" followed by a delta "Hello"
+	// would result in "🔧 run_shell_commandHello" instead of creating a new message.
+	cfg := Config{
+		ClientType: "claude",
+		WorkDir:    "/tmp/test",
+	}
+	m := New(cfg)
+
+	// Create infrastructure
+	infra := newTestInfrastructure(t)
+	infra.Start()
+	defer infra.Shutdown()
+
+	m = m.SetInfrastructure(infra)
+
+	// First: a tool call message (detected by 🔧 prefix)
+	toolCallEvent := pubsub.Event[any]{
+		Type: pubsub.UpdatedEvent,
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: ChatPanelProcessID,
+			Output:    "🔧 run_shell_command",
+			Delta:     false,
+		},
+	}
+	m, _ = m.Update(toolCallEvent)
+	require.Len(t, m.Messages(), 1)
+	require.Equal(t, "🔧 run_shell_command", m.Messages()[0].Content)
+	require.True(t, m.Messages()[0].IsToolCall, "Should be marked as tool call")
+
+	// Second: a delta message that should NOT accumulate onto the tool call
+	deltaEvent := pubsub.Event[any]{
+		Type: pubsub.UpdatedEvent,
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: ChatPanelProcessID,
+			Output:    "Hello! I'm here to help.",
+			Delta:     true,
+		},
+	}
+	m, _ = m.Update(deltaEvent)
+
+	// Should create a NEW message, not concatenate
+	require.Len(t, m.Messages(), 2, "Delta should create new message after tool call, not accumulate")
+	require.Equal(t, "🔧 run_shell_command", m.Messages()[0].Content, "Tool call should be unchanged")
+	require.Equal(t, "Hello! I'm here to help.", m.Messages()[1].Content, "New message should be separate")
+	require.False(t, m.Messages()[1].IsToolCall, "New message should not be a tool call")
+}
+
 func TestModel_HandleProcessEvent_Error(t *testing.T) {
 	cfg := Config{
 		ClientType: "claude",
@@ -1535,6 +1686,7 @@ func TestModel_HandleProcessEvent_ProcessError_UpdatesSessionStatus(t *testing.T
 		Payload: events.ProcessEvent{
 			Type:      events.ProcessError,
 			ProcessID: ChatPanelProcessID,
+			Status:    events.ProcessStatusFailed,
 			Error:     testErr,
 		},
 	}
@@ -2529,6 +2681,7 @@ func TestSessionSwitchToFailedSession(t *testing.T) {
 		Payload: events.ProcessEvent{
 			Type:      events.ProcessError,
 			ProcessID: ChatPanelProcessID,
+			Status:    events.ProcessStatusFailed,
 			Error:     errors.New("process crashed"),
 		},
 	}

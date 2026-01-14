@@ -66,3 +66,50 @@ func TestConfig_ClaudeModel_CustomModel(t *testing.T) {
 	}}
 	require.Equal(t, "sonnet", cfg.ClaudeModel())
 }
+
+func TestExtensionKeys_GeminiConstants(t *testing.T) {
+	// Verify all Gemini extension key constants are defined
+	require.Equal(t, "gemini.model", ExtGeminiModel)
+}
+
+func TestConfig_GeminiModel_Default(t *testing.T) {
+	cfg := Config{}
+	require.Equal(t, "gemini-2.5-pro", cfg.GeminiModel())
+}
+
+func TestConfig_GeminiModel_NilExtensions(t *testing.T) {
+	cfg := Config{Extensions: nil}
+	require.Equal(t, "gemini-2.5-pro", cfg.GeminiModel())
+}
+
+func TestConfig_GeminiModel_EmptyExtensions(t *testing.T) {
+	cfg := Config{Extensions: map[string]any{}}
+	require.Equal(t, "gemini-2.5-pro", cfg.GeminiModel())
+}
+
+func TestConfig_GeminiModel_EmptyString(t *testing.T) {
+	cfg := Config{Extensions: map[string]any{
+		ExtGeminiModel: "",
+	}}
+	require.Equal(t, "gemini-2.5-pro", cfg.GeminiModel())
+}
+
+func TestConfig_GeminiModel_CustomModel(t *testing.T) {
+	cfg := Config{Extensions: map[string]any{
+		ExtGeminiModel: "gemini-2.5-flash",
+	}}
+	require.Equal(t, "gemini-2.5-flash", cfg.GeminiModel())
+}
+
+func TestConfig_GeminiModel_WrongType(t *testing.T) {
+	cfg := Config{Extensions: map[string]any{
+		ExtGeminiModel: 123, // Not a string
+	}}
+	require.Equal(t, "gemini-2.5-pro", cfg.GeminiModel())
+}
+
+func TestConfig_GeminiModel_ViaSetExtension(t *testing.T) {
+	cfg := Config{}
+	cfg.SetExtension(ExtGeminiModel, "gemini-2.5-flash")
+	require.Equal(t, "gemini-2.5-flash", cfg.GeminiModel())
+}

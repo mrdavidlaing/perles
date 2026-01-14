@@ -612,8 +612,50 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 	// End of session ref capture
 	// ===========================================================================
 
+	// ===========================================================================
+	// Handle failed turns after first successful turn
+	// ===========================================================================
+	// When a turn fails after the process has already completed at least one turn,
+	// we mark it as failed and emit an error. This catches resume failures, context
+	// exceeded errors, and other runtime errors that occur after the initial spawn.
+	if !turnCmd.Succeeded && proc.HasCompletedTurn {
+		proc.Status = repository.StatusFailed
+		proc.LastActivityAt = time.Now()
+
+		if err := h.processRepo.Save(proc); err != nil {
+			return nil, fmt.Errorf("failed to save process: %w", err)
+		}
+
+		// Build error event for consumers
+		evErr := turnCmd.Error
+		if evErr == nil {
+			evErr = fmt.Errorf("process %s turn failed after initial success", proc.ID)
+		}
+
+		errorEvent := events.ProcessEvent{
+			Type:      events.ProcessError,
+			ProcessID: proc.ID,
+			Role:      proc.Role,
+			// We change the status to Ready since this is not the first turn failure
+			// During the first turn if an error occurred there would be no session id
+			// to continue the conversation from
+			Status: events.ProcessStatusReady,
+			Error:  evErr,
+		}
+
+		result := &ProcessTurnCompleteResult{
+			ProcessID: proc.ID,
+			NewStatus: repository.StatusFailed,
+			WasNoOp:   false,
+		}
+
+		return SuccessWithEvents(result, errorEvent), nil
+	}
+	// ===========================================================================
+	// End of failed turn handling
+	// ===========================================================================
+
 	// Update process state - same for coordinator and workers
-	// Always transition to Ready (even if succeeded=false after first success, we don't auto-retire)
 	proc.Status = repository.StatusReady
 	proc.LastActivityAt = time.Now()
 

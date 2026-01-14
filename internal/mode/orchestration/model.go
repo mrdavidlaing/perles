@@ -155,6 +155,7 @@ type Model struct {
 	codexModel  string // Codex model: gpt-5.2-codex, o4-mini
 	ampModel    string // Amp model: opus, sonnet
 	ampMode     string // Amp mode: free, rush, smart
+	geminiModel string // Gemini model: gemini-2.5-pro, gemini-2.5-flash, gemini-3-pro-preview
 
 	// Pub/sub subscriptions (initialized when coordinator starts)
 	// Note: Worker events flow through v2EventBus, not a separate workerListener
@@ -254,6 +255,8 @@ type Config struct {
 	// Amp-specific settings
 	AmpModel string // opus (default), sonnet
 	AmpMode  string // free, rush, smart (default)
+	// Gemini-specific settings
+	GeminiModel string // gemini-2.5-pro (default), gemini-2.5-flash, gemini-3-pro-preview
 	// Workflow templates
 	WorkflowRegistry *workflow.Registry // Pre-loaded workflow registry (optional)
 	// UI settings
@@ -300,6 +303,7 @@ func New(cfg Config) Model {
 		codexModel:            cfg.CodexModel,
 		ampModel:              cfg.AmpModel,
 		ampMode:               cfg.AmpMode,
+		geminiModel:           cfg.GeminiModel,
 		workflowRegistry:      cfg.WorkflowRegistry,
 		activeWorkflowRef:     &activeWorkflowHolder{},
 		tracingConfig:         cfg.TracingConfig,
@@ -406,11 +410,25 @@ func (m Model) SetSize(width, height int) Model {
 	return m
 }
 
-// AddChatMessage appends a message to the coordinator chat history.
-func (m Model) AddChatMessage(role, content string) Model {
+// AddChatMessage appends or accumulates a message to the coordinator chat history.
+// When delta is true, the content is appended to the last message if it has the same role.
+// This supports streaming output where multiple chunks form a single logical message.
+func (m Model) AddChatMessage(role, content string, delta bool) Model {
 	// Detect tool calls by the 🔧 prefix
 	isToolCall := strings.HasPrefix(content, "🔧")
 
+	// If delta mode and last message has the same role (and is not a tool call), accumulate
+	if delta && len(m.coordinatorPane.messages) > 0 {
+		lastIdx := len(m.coordinatorPane.messages) - 1
+		lastMsg := &m.coordinatorPane.messages[lastIdx]
+		if lastMsg.Role == role && !lastMsg.IsToolCall {
+			lastMsg.Content += content
+			m.coordinatorPane.contentDirty = true
+			return m
+		}
+	}
+
+	// Otherwise, add as new message
 	m.coordinatorPane.messages = append(m.coordinatorPane.messages, ChatMessage{
 		Role:       role,
 		Content:    content,
@@ -507,18 +525,27 @@ func (m Model) UpdateWorker(workerID string, status events.ProcessStatus) Model 
 	return m
 }
 
-// AddWorkerMessage appends a message to a worker's chat history.
-func (m Model) AddWorkerMessage(workerID, content string) Model {
-	return m.AddWorkerMessageWithRole(workerID, "worker", content)
-}
-
-// AddWorkerMessageWithRole appends a message to a worker's chat history with a specific role.
-// Role can be "worker" or "coordinator" to indicate who sent the message.
-func (m Model) AddWorkerMessageWithRole(workerID, role, content string) Model {
+// AddWorkerMessage appends or accumulates a message to a worker's chat history.
+// When delta is true, the content is appended to the last message if it has the same role.
+func (m Model) AddWorkerMessage(workerID, role, content string, delta bool) Model {
 	// Detect tool calls by prefix
 	isToolCall := strings.HasPrefix(content, "🔧")
 
 	messages := m.workerPane.workerMessages[workerID]
+
+	// If delta mode and last message has the same role (and is not a tool call), accumulate
+	if delta && len(messages) > 0 {
+		lastIdx := len(messages) - 1
+		lastMsg := messages[lastIdx]
+		if lastMsg.Role == role && !lastMsg.IsToolCall {
+			messages[lastIdx].Content += content
+			m.workerPane.workerMessages[workerID] = messages
+			m.workerPane.contentDirty[workerID] = true
+			return m
+		}
+	}
+
+	// Otherwise, add as new message
 	messages = append(messages, ChatMessage{
 		Role:       role,
 		Content:    content,

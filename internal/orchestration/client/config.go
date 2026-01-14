@@ -57,6 +57,9 @@ const (
 	ExtCodexSandbox = "codex.sandbox"
 	// ExtCodexSkipGitCheck allows running outside git repos (bool).
 	ExtCodexSkipGitCheck = "codex.skip_git_check"
+
+	// ExtGeminiModel specifies the Gemini model (string: "gemini-2.5-pro", "gemini-2.5-flash").
+	ExtGeminiModel = "gemini.model"
 )
 
 // ClaudeModel returns the Claude model from Extensions, or "opus" as default.
@@ -79,6 +82,17 @@ func (c *Config) CodexModel() string {
 		return v
 	}
 	return "gpt-5.2-codex"
+}
+
+// GeminiModel returns the Gemini model from Extensions, or "gemini-2.5-pro" as default.
+func (c *Config) GeminiModel() string {
+	if c.Extensions == nil {
+		return "gemini-2.5-pro"
+	}
+	if v, ok := c.Extensions[ExtGeminiModel].(string); ok && v != "" {
+		return v
+	}
+	return "gemini-2.5-pro"
 }
 
 // SetExtension sets a provider-specific extension value.

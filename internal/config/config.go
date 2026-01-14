@@ -115,11 +115,12 @@ type SessionStorageConfig struct {
 
 // OrchestrationConfig holds orchestration mode configuration.
 type OrchestrationConfig struct {
-	Client           string               `mapstructure:"client"`            // "claude" (default) or "amp"
+	Client           string               `mapstructure:"client"`            // "claude" (default), "amp", "codex", or "gemini"
 	DisableWorktrees bool                 `mapstructure:"disable_worktrees"` // Skip worktree prompt (default: false)
 	Claude           ClaudeClientConfig   `mapstructure:"claude"`
 	Codex            CodexClientConfig    `mapstructure:"codex"`
 	Amp              AmpClientConfig      `mapstructure:"amp"`
+	Gemini           GeminiClientConfig   `mapstructure:"gemini"`
 	Workflows        []WorkflowConfig     `mapstructure:"workflows"`       // Workflow template configurations
 	Tracing          TracingConfig        `mapstructure:"tracing"`         // Distributed tracing configuration
 	SessionStorage   SessionStorageConfig `mapstructure:"session_storage"` // Session storage location configuration
@@ -139,6 +140,11 @@ type CodexClientConfig struct {
 type AmpClientConfig struct {
 	Model string `mapstructure:"model"` // opus (default), sonnet
 	Mode  string `mapstructure:"mode"`  // free, rush, smart (default)
+}
+
+// GeminiClientConfig holds Gemini-specific settings.
+type GeminiClientConfig struct {
+	Model string `mapstructure:"model"` // gemini-3-pro-preview (default), gemini-2.5-flash
 }
 
 // WorkflowConfig defines configuration for a workflow template.
@@ -297,8 +303,8 @@ func ValidateViews(views []ViewConfig) error {
 // Returns nil if the configuration is valid (empty values use defaults).
 func ValidateOrchestration(orch OrchestrationConfig) error {
 	// Validate client type
-	if orch.Client != "" && orch.Client != "claude" && orch.Client != "amp" && orch.Client != "codex" {
-		return fmt.Errorf("orchestration.client must be \"claude\", \"amp\", or \"codex\", got %q", orch.Client)
+	if orch.Client != "" && orch.Client != "claude" && orch.Client != "amp" && orch.Client != "codex" && orch.Client != "gemini" {
+		return fmt.Errorf("orchestration.client must be \"claude\", \"amp\", \"codex\", or \"gemini\", got %q", orch.Client)
 	}
 
 	// Validate Amp mode
@@ -448,6 +454,12 @@ func Defaults() Config {
 			Amp: AmpClientConfig{
 				Model: "opus",
 				Mode:  "smart",
+			},
+			Codex: CodexClientConfig{
+				Model: "gpt-5.2-codex",
+			},
+			Gemini: GeminiClientConfig{
+				Model: "gemini-3-pro-preview",
 			},
 			Tracing: TracingConfig{
 				Enabled:      false,
