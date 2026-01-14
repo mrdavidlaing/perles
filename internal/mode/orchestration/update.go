@@ -1082,6 +1082,7 @@ func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 		TracingConfig:      m.tracingConfig,
 		SessionStorage:     m.sessionStorageConfig,
 		RestoredSession:    m.resumedSession, // Set for session restoration (nil for normal start)
+		SoundService:       m.services.Sounds,
 	})
 
 	// Create context for subscriptions

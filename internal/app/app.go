@@ -27,6 +27,7 @@ import (
 	v2 "github.com/zjrosen/perles/internal/orchestration/v2"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
+	"github.com/zjrosen/perles/internal/sound"
 
 	"github.com/zjrosen/perles/internal/ui/shared/chatpanel"
 	"github.com/zjrosen/perles/internal/ui/shared/diffviewer"
@@ -130,6 +131,8 @@ func NewWithConfig(
 	}
 	_ = styles.ApplyTheme(themeCfg)
 
+	flagService := flags.New(cfg.Flags)
+
 	// Create shared services
 	services := mode.Services{
 		Client:     client,
@@ -140,7 +143,8 @@ func NewWithConfig(
 		Executor:   bql.NewExecutor(client.DB(), bqlCache, depGraphCache),
 		Clipboard:  shared.SystemClipboard{},
 		Clock:      shared.RealClock{},
-		Flags:      flags.New(cfg.Flags),
+		Flags:      flagService,
+		Sounds:     sound.NewSystemSoundService(flagService, cfg.Sound.EnabledSounds),
 		GitExecutorFactory: func(path string) git.GitExecutor {
 			return git.NewRealExecutor(path)
 		},
@@ -871,6 +875,8 @@ func (m Model) handleToggleChatPanel() (tea.Model, tea.Cmd) {
 
 		// Lazily create infrastructure on first open
 		if m.chatInfra == nil {
+			m.services.Sounds.Play("greeting", "chat_welcome")
+
 			// Create AI client based on chat panel config
 			aiClient, err := client.NewClient(client.ClientType(m.chatPanel.Config().ClientType))
 			if err != nil {

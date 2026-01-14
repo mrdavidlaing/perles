@@ -23,3 +23,6 @@ packages:
   github.com/zjrosen/perles/internal/git:
     interfaces:
       GitExecutor:
+  github.com/zjrosen/perles/internal/sound:
+    interfaces:
+      SoundService:

@@ -17,6 +17,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/orchestration/v2/types"
+	"github.com/zjrosen/perles/internal/sound"
 )
 
 // ===========================================================================
@@ -1778,6 +1779,205 @@ func TestReportVerdictHandler_PanicsIfBDExecutorNil(t *testing.T) {
 	require.Panics(t, func() {
 		NewReportVerdictHandler(processRepo, taskRepo, queueRepo)
 	}, "expected panic when bdExecutor is nil")
+}
+
+func TestReportVerdictHandler_PlaysApproveSound(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	soundService := mocks.NewMockSoundService(t)
+
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", mock.Anything, "Review APPROVED by worker-2").Return(nil)
+	soundService.EXPECT().Play("approve", "review_verdict_approve").Once()
+
+	// Add implementer
+	implementer := &repository.Process{
+		ID:        "worker-1",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusWorking,
+		Phase:     phasePtr(events.ProcessPhaseAwaitingReview),
+		TaskID:    "perles-abc1.2",
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(implementer)
+
+	// Add reviewer
+	reviewer := &repository.Process{
+		ID:        "worker-2",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusWorking,
+		Phase:     phasePtr(events.ProcessPhaseReviewing),
+		TaskID:    "perles-abc1.2",
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(reviewer)
+
+	// Add task in review
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Reviewer:    "worker-2",
+		Status:      repository.TaskInReview,
+		StartedAt:   time.Now(),
+	}
+	_ = taskRepo.Save(task)
+
+	handler := NewReportVerdictHandler(
+		processRepo, taskRepo, queueRepo,
+		WithReportVerdictBDExecutor(bdExecutor),
+		WithReportVerdictSoundService(soundService),
+	)
+
+	cmd := command.NewReportVerdictCommand(command.SourceMCPTool, "worker-2", command.VerdictApproved, "LGTM!")
+	_, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	// Sound service mock expectations are automatically verified on cleanup
+}
+
+func TestReportVerdictHandler_PlaysDenySound(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	soundService := mocks.NewMockSoundService(t)
+
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", mock.Anything, "Review DENIED by worker-2: Needs error handling").Return(nil)
+	soundService.EXPECT().Play("deny", "review_verdict_deny").Once()
+
+	// Add implementer
+	implementer := &repository.Process{
+		ID:        "worker-1",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusWorking,
+		Phase:     phasePtr(events.ProcessPhaseAwaitingReview),
+		TaskID:    "perles-abc1.2",
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(implementer)
+
+	// Add reviewer
+	reviewer := &repository.Process{
+		ID:        "worker-2",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusWorking,
+		Phase:     phasePtr(events.ProcessPhaseReviewing),
+		TaskID:    "perles-abc1.2",
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(reviewer)
+
+	// Add task in review
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Reviewer:    "worker-2",
+		Status:      repository.TaskInReview,
+		StartedAt:   time.Now(),
+	}
+	_ = taskRepo.Save(task)
+
+	handler := NewReportVerdictHandler(
+		processRepo, taskRepo, queueRepo,
+		WithReportVerdictBDExecutor(bdExecutor),
+		WithReportVerdictSoundService(soundService),
+	)
+
+	cmd := command.NewReportVerdictCommand(command.SourceMCPTool, "worker-2", command.VerdictDenied, "Needs error handling")
+	_, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	// Sound service mock expectations are automatically verified on cleanup
+}
+
+func TestReportVerdictHandler_NilSoundService(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	bdExecutor := mocks.NewMockBeadsExecutor(t)
+
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", mock.Anything, "Review APPROVED by worker-2").Return(nil)
+
+	// Add implementer
+	implementer := &repository.Process{
+		ID:        "worker-1",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusWorking,
+		Phase:     phasePtr(events.ProcessPhaseAwaitingReview),
+		TaskID:    "perles-abc1.2",
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(implementer)
+
+	// Add reviewer
+	reviewer := &repository.Process{
+		ID:        "worker-2",
+		Role:      repository.RoleWorker,
+		Status:    repository.StatusWorking,
+		Phase:     phasePtr(events.ProcessPhaseReviewing),
+		TaskID:    "perles-abc1.2",
+		CreatedAt: time.Now(),
+	}
+	processRepo.AddProcess(reviewer)
+
+	// Add task in review
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Reviewer:    "worker-2",
+		Status:      repository.TaskInReview,
+		StartedAt:   time.Now(),
+	}
+	_ = taskRepo.Save(task)
+
+	// Create handler WITHOUT sound service option - should use NoopSoundService
+	handler := NewReportVerdictHandler(
+		processRepo, taskRepo, queueRepo,
+		WithReportVerdictBDExecutor(bdExecutor),
+	)
+
+	cmd := command.NewReportVerdictCommand(command.SourceMCPTool, "worker-2", command.VerdictApproved, "LGTM!")
+	result, err := handler.Handle(context.Background(), cmd)
+
+	// Should succeed without panic - NoopSoundService handles the Play call
+	require.NoError(t, err)
+	require.True(t, result.Success)
+}
+
+func TestWithReportVerdictSoundService_SetsService(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	soundService := mocks.NewMockSoundService(t)
+
+	handler := NewReportVerdictHandler(
+		processRepo, taskRepo, queueRepo,
+		WithReportVerdictBDExecutor(bdExecutor),
+		WithReportVerdictSoundService(soundService),
+	)
+
+	// Verify the handler was created and the option was applied
+	require.NotNil(t, handler)
+	require.Equal(t, soundService, handler.soundService)
+}
+
+func TestWithReportVerdictSoundService_NilIgnored(t *testing.T) {
+	processRepo := repository.NewMemoryProcessRepository()
+	taskRepo := repository.NewMemoryTaskRepository()
+	queueRepo := repository.NewMemoryQueueRepository(0)
+	bdExecutor := mocks.NewMockBeadsExecutor(t)
+
+	handler := NewReportVerdictHandler(
+		processRepo, taskRepo, queueRepo,
+		WithReportVerdictBDExecutor(bdExecutor),
+		WithReportVerdictSoundService(nil), // nil should be ignored
+	)
+
+	// Should still have NoopSoundService as the default
+	require.NotNil(t, handler)
+	require.IsType(t, sound.NoopSoundService{}, handler.soundService)
 }
 
 // ===========================================================================

@@ -21,6 +21,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/processor"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/pubsub"
+	"github.com/zjrosen/perles/internal/sound"
 )
 
 // eventBusAdapter adapts pubsub.Broker to the processor.EventPublisher interface.
@@ -59,6 +60,9 @@ type InfrastructureConfig struct {
 	// Used to persist session refs for crash-resilient session resumption.
 	// Optional - if nil, session ref capture is skipped.
 	SessionRefNotifier handler.SessionRefNotifier
+	// SoundService provides audio feedback for orchestration events.
+	// Optional - if nil, uses NoopSoundService (no audio).
+	SoundService sound.SoundService
 }
 
 // Validate checks that all required configuration is provided.
@@ -176,7 +180,7 @@ func NewInfrastructure(cfg InfrastructureConfig) (*Infrastructure, error) {
 	// Register all command handlers
 	registerHandlers(cmdProcessor, processRepo, taskRepo, queueRepo, processRegistry, turnEnforcer,
 		cfg.AIClient, cfg.Extensions, beadsExec, cfg.Port, eventBus, cfg.WorkDir, cfg.Tracer,
-		cfg.SessionRefNotifier)
+		cfg.SessionRefNotifier, cfg.SoundService)
 
 	// Create command submitter adapter
 	cmdSubmitter := handler.NewProcessorSubmitterAdapter(cmdProcessor)
@@ -267,9 +271,15 @@ func registerHandlers(
 	workDir string,
 	tracer trace.Tracer,
 	sessionRefNotifier handler.SessionRefNotifier,
+	soundService sound.SoundService,
 ) {
 	// Create shared infrastructure components
 	cmdSubmitter := handler.NewProcessorSubmitterAdapter(cmdProcessor)
+
+	// Use NoopSoundService if none provided
+	if soundService == nil {
+		soundService = sound.NoopSoundService{}
+	}
 
 	// ============================================================
 	// Task Assignment handlers (4)
@@ -292,10 +302,12 @@ func registerHandlers(
 	cmdProcessor.RegisterHandler(command.CmdReportComplete,
 		handler.NewReportCompleteHandler(processRepo, taskRepo, queueRepo,
 			handler.WithReportCompleteBDExecutor(beadsExec)))
+
 	cmdProcessor.RegisterHandler(command.CmdReportVerdict,
 		handler.NewReportVerdictHandler(processRepo, taskRepo, queueRepo,
 			handler.WithReportVerdictBDExecutor(beadsExec),
-			handler.WithReportVerdictTracer(tracer)))
+			handler.WithReportVerdictTracer(tracer),
+			handler.WithReportVerdictSoundService(soundService)))
 	cmdProcessor.RegisterHandler(command.CmdTransitionPhase,
 		handler.NewTransitionPhaseHandler(processRepo, queueRepo))
 	cmdProcessor.RegisterHandler(command.CmdProcessTurnComplete,

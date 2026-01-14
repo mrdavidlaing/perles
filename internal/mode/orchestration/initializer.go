@@ -29,6 +29,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/process"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/pubsub"
+	"github.com/zjrosen/perles/internal/sound"
 )
 
 // InitializerEventType represents the type of event emitted by the Initializer.
@@ -71,6 +72,8 @@ type InitializerConfig struct {
 	SessionStorage config.SessionStorageConfig // Centralized session storage settings
 	// Session restoration configuration
 	RestoredSession *session.ResumableSession // Set to restore from a previous session
+	// Sound service (pre-configured with flags and enabled sounds)
+	SoundService sound.SoundService
 }
 
 // InitializerResources holds the resources created during initialization.
@@ -855,6 +858,7 @@ func (i *Initializer) createWorkspace() error {
 		SessionDir:         sessionDir, // Centralized session storage path
 		Tracer:             tracer,     // nil when tracing disabled - middleware handles this gracefully
 		SessionRefNotifier: sess,       // Session implements SessionRefNotifier for crash-resilient resumption
+		SoundService:       i.cfg.SoundService,
 	})
 	if err != nil {
 		_ = listenerResult.Listener.Close()

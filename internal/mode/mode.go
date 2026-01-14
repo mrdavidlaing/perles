@@ -10,6 +10,7 @@ import (
 	"github.com/zjrosen/perles/internal/flags"
 	"github.com/zjrosen/perles/internal/git"
 	"github.com/zjrosen/perles/internal/mode/shared"
+	"github.com/zjrosen/perles/internal/sound"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 )
 
@@ -56,6 +57,7 @@ type Services struct {
 	Clipboard  shared.Clipboard
 	Clock      shared.Clock
 	Flags      *flags.Registry
+	Sounds     sound.SoundService
 	// GitExecutorFactory creates git executors for a given path.
 	// Used by orchestration mode to check uncommitted changes in worktrees.
 	GitExecutorFactory func(path string) git.GitExecutor

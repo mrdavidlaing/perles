@@ -982,3 +982,74 @@ func TestSessionStorageConfig_ApplicationNameOverridePreserved(t *testing.T) {
 	}
 	require.Equal(t, "my-custom-app-name", cfg.ApplicationName)
 }
+
+// Tests for SoundConfig
+
+func TestConfig_SoundDefaults(t *testing.T) {
+	cfg := Defaults()
+
+	// Verify Sound field exists and has EnabledSounds map
+	require.NotNil(t, cfg.Sound.EnabledSounds, "EnabledSounds map should not be nil")
+
+	// Verify both review_verdict sounds are disabled by default
+	require.False(t, cfg.Sound.EnabledSounds["review_verdict_approve"], "review_verdict_approve should be disabled by default")
+	require.False(t, cfg.Sound.EnabledSounds["review_verdict_deny"], "review_verdict_deny should be disabled by default")
+}
+
+func TestConfig_LoadSoundConfig(t *testing.T) {
+	// Test that SoundConfig can be created with explicit values
+	cfg := SoundConfig{
+		EnabledSounds: map[string]bool{
+			"review_verdict_approve": true,
+			"review_verdict_deny":    false,
+			"custom_sound":           true,
+		},
+	}
+
+	require.True(t, cfg.EnabledSounds["review_verdict_approve"])
+	require.False(t, cfg.EnabledSounds["review_verdict_deny"])
+	require.True(t, cfg.EnabledSounds["custom_sound"])
+}
+
+func TestConfig_EnableSpecificSound(t *testing.T) {
+	// Start with defaults (sounds disabled)
+	cfg := Defaults()
+
+	// Verify initial state - all sounds disabled by default
+	require.False(t, cfg.Sound.EnabledSounds["review_verdict_approve"])
+	require.False(t, cfg.Sound.EnabledSounds["review_verdict_deny"])
+
+	// Enable one specific sound
+	cfg.Sound.EnabledSounds["review_verdict_approve"] = true
+
+	// Verify only the specific sound is enabled
+	require.True(t, cfg.Sound.EnabledSounds["review_verdict_approve"], "review_verdict_approve should be enabled")
+	require.False(t, cfg.Sound.EnabledSounds["review_verdict_deny"], "review_verdict_deny should remain disabled")
+}
+
+func TestSoundConfig_ZeroValue(t *testing.T) {
+	// Test that zero value SoundConfig has nil EnabledSounds
+	cfg := SoundConfig{}
+	require.Nil(t, cfg.EnabledSounds, "EnabledSounds zero value should be nil")
+}
+
+func TestSoundConfig_EmptyMap(t *testing.T) {
+	// Test that SoundConfig can have an empty map (all sounds disabled)
+	cfg := SoundConfig{
+		EnabledSounds: map[string]bool{},
+	}
+	require.NotNil(t, cfg.EnabledSounds)
+	require.Empty(t, cfg.EnabledSounds)
+}
+
+func TestConfig_SoundField(t *testing.T) {
+	// Verify Config includes Sound field
+	cfg := Config{
+		Sound: SoundConfig{
+			EnabledSounds: map[string]bool{
+				"test_sound": true,
+			},
+		},
+	}
+	require.True(t, cfg.Sound.EnabledSounds["test_sound"])
+}

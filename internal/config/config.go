@@ -33,6 +33,7 @@ type Config struct {
 	Theme         ThemeConfig         `mapstructure:"theme"`
 	Views         []ViewConfig        `mapstructure:"views"`
 	Orchestration OrchestrationConfig `mapstructure:"orchestration"`
+	Sound         SoundConfig         `mapstructure:"sound"`
 	Flags         map[string]bool     `mapstructure:"flags"`
 }
 
@@ -175,6 +176,14 @@ type TracingConfig struct {
 // IsEnabled returns whether the workflow is enabled (defaults to true if nil).
 func (w WorkflowConfig) IsEnabled() bool {
 	return w.Enabled == nil || *w.Enabled
+}
+
+// SoundConfig holds audio feedback configuration for orchestration.
+type SoundConfig struct {
+	// EnabledSounds controls which sounds are enabled.
+	// Keys are sound identifiers using underscores (e.g., "review_verdict_approve", "chat_welcome").
+	// Values are booleans where true enables the sound.
+	EnabledSounds map[string]bool `mapstructure:"enabled_sounds"`
 }
 
 // DefaultTracesFilePath returns the default path for trace file export.
@@ -450,6 +459,13 @@ func Defaults() Config {
 			SessionStorage: SessionStorageConfig{
 				BaseDir:         DefaultSessionStorageBaseDir(),
 				ApplicationName: "", // Derived from git remote or directory name
+			},
+		},
+		Sound: SoundConfig{
+			EnabledSounds: map[string]bool{
+				"review_verdict_approve": false,
+				"review_verdict_deny":    false,
+				"chat_welcome":           false,
 			},
 		},
 	}

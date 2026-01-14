@@ -22,6 +22,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/orchestration/v2/types"
+	"github.com/zjrosen/perles/internal/sound"
 )
 
 // ===========================================================================
@@ -216,11 +217,12 @@ type ReportCompleteResult struct {
 // It processes a reviewer's approval or denial verdict and updates both
 // reviewer and implementer states accordingly.
 type ReportVerdictHandler struct {
-	processRepo repository.ProcessRepository
-	taskRepo    repository.TaskRepository
-	queueRepo   repository.QueueRepository
-	bdExecutor  beads.BeadsExecutor
-	tracer      trace.Tracer
+	processRepo  repository.ProcessRepository
+	taskRepo     repository.TaskRepository
+	queueRepo    repository.QueueRepository
+	bdExecutor   beads.BeadsExecutor
+	tracer       trace.Tracer
+	soundService sound.SoundService
 }
 
 // ReportVerdictHandlerOption configures ReportVerdictHandler.
@@ -244,6 +246,16 @@ func WithReportVerdictTracer(tracer trace.Tracer) ReportVerdictHandlerOption {
 	}
 }
 
+// WithReportVerdictSoundService sets the sound service for audio feedback.
+// If svc is nil, the handler keeps its default NoopSoundService.
+func WithReportVerdictSoundService(svc sound.SoundService) ReportVerdictHandlerOption {
+	return func(h *ReportVerdictHandler) {
+		if svc != nil {
+			h.soundService = svc
+		}
+	}
+}
+
 // NewReportVerdictHandler creates a new ReportVerdictHandler.
 // Panics if bdExecutor is not provided via WithReportVerdictBDExecutor option.
 func NewReportVerdictHandler(
@@ -253,10 +265,11 @@ func NewReportVerdictHandler(
 	opts ...ReportVerdictHandlerOption,
 ) *ReportVerdictHandler {
 	h := &ReportVerdictHandler{
-		processRepo: processRepo,
-		taskRepo:    taskRepo,
-		queueRepo:   queueRepo,
-		tracer:      noop.NewTracerProvider().Tracer("noop"),
+		processRepo:  processRepo,
+		taskRepo:     taskRepo,
+		queueRepo:    queueRepo,
+		tracer:       noop.NewTracerProvider().Tracer("noop"),
+		soundService: sound.NoopSoundService{},
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -362,12 +375,14 @@ func (h *ReportVerdictHandler) handleVerdict(_ context.Context, verdictCmd *comm
 	if verdictCmd.Verdict == command.VerdictApproved {
 		// APPROVED: task -> Approved, reviewer -> Idle/Ready
 		task.Status = repository.TaskApproved
+		h.soundService.Play("approve", "review_verdict_approve")
 		reviewer.Phase = &idle
 		reviewer.Status = repository.StatusReady
 		reviewer.TaskID = ""
 	} else {
 		// DENIED: task -> Denied, reviewer -> Idle/Ready, implementer -> AddressingFeedback
 		task.Status = repository.TaskDenied
+		h.soundService.Play("deny", "review_verdict_deny")
 		task.Reviewer = "" // Clear reviewer so a new one can be assigned for re-review
 		reviewer.Phase = &idle
 		reviewer.Status = repository.StatusReady
