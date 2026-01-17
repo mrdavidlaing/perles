@@ -1,6 +1,7 @@
 package vimtextarea
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -579,6 +580,136 @@ func TestVisualYankCommand_SingleCharSelection(t *testing.T) {
 	assert.Equal(t, "l", m.lastYankedText, "single char 'l' should be yanked")
 	assert.Equal(t, "hello", m.content[0], "content unchanged")
 	assert.Equal(t, 2, m.cursorCol)
+}
+
+// ============================================================================
+// VisualYankCommand Clipboard Integration Tests
+// ============================================================================
+
+// TestVisualYankCommand_Clipboard_CallsCopyWithSelectedText tests clipboard.Copy is called
+func TestVisualYankCommand_Clipboard_CallsCopyWithSelectedText(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.mode = ModeVisual
+	m.visualAnchor = Position{Row: 0, Col: 0}
+	m.cursorRow = 0
+	m.cursorCol = 4
+
+	cmd := &VisualYankCommand{mode: ModeVisual}
+	result := cmd.Execute(m)
+
+	assert.Equal(t, Executed, result)
+	assert.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	assert.Equal(t, "hello", clipboard.copiedText, "clipboard should contain selected text")
+	assert.Equal(t, "hello", m.lastYankedText, "internal register should also be set")
+}
+
+// TestVisualYankCommand_Clipboard_LinewiseMode tests clipboard integration with V mode
+func TestVisualYankCommand_Clipboard_LinewiseMode(t *testing.T) {
+	m := newTestModelWithContent("line1", "line2", "line3")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.mode = ModeVisualLine
+	m.visualAnchor = Position{Row: 0, Col: 0}
+	m.cursorRow = 1
+	m.cursorCol = 3
+
+	cmd := &VisualYankCommand{mode: ModeVisualLine}
+	result := cmd.Execute(m)
+
+	assert.Equal(t, Executed, result)
+	assert.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	assert.Equal(t, "line1\nline2", clipboard.copiedText, "clipboard should contain selected lines")
+	assert.Equal(t, "line1\nline2", m.lastYankedText, "internal register should also be set")
+}
+
+// TestVisualYankCommand_Clipboard_InternalRegisterStillWorksForPaste tests p/P paste
+func TestVisualYankCommand_Clipboard_InternalRegisterStillWorksForPaste(t *testing.T) {
+	m := newTestModelWithContent("hello world", "second line")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.mode = ModeVisual
+	m.visualAnchor = Position{Row: 0, Col: 0}
+	m.cursorRow = 0
+	m.cursorCol = 4
+
+	// Yank in visual mode
+	cmdY := &VisualYankCommand{mode: ModeVisual}
+	cmdY.Execute(m)
+
+	assert.Equal(t, "hello", m.lastYankedText)
+	assert.False(t, m.lastYankWasLinewise)
+
+	// Move cursor and paste with p
+	m.cursorRow = 1
+	m.cursorCol = 0
+	cmdP := &PasteAfterCommand{}
+	cmdP.Execute(m)
+
+	// Verify paste worked using internal register
+	assert.Contains(t, m.content[1], "hello", "pasted text should appear in content")
+}
+
+// TestVisualYankCommand_Clipboard_NilClipboardDoesNotPanic tests nil clipboard safety
+func TestVisualYankCommand_Clipboard_NilClipboardDoesNotPanic(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	// clipboard is nil by default
+	m.mode = ModeVisual
+	m.visualAnchor = Position{Row: 0, Col: 0}
+	m.cursorRow = 0
+	m.cursorCol = 4
+
+	cmd := &VisualYankCommand{mode: ModeVisual}
+
+	// Should not panic
+	assert.NotPanics(t, func() {
+		cmd.Execute(m)
+	})
+
+	// Internal register should still work
+	assert.Equal(t, "hello", m.lastYankedText)
+}
+
+// TestVisualYankCommand_Clipboard_ErrorDoesNotPreventInternalRegister tests error handling
+func TestVisualYankCommand_Clipboard_ErrorDoesNotPreventInternalRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{
+		copyErr: errors.New("clipboard unavailable"),
+	}
+	m.clipboard = clipboard
+	m.mode = ModeVisual
+	m.visualAnchor = Position{Row: 0, Col: 0}
+	m.cursorRow = 0
+	m.cursorCol = 4
+
+	cmd := &VisualYankCommand{mode: ModeVisual}
+	result := cmd.Execute(m)
+
+	// Command should still succeed
+	assert.Equal(t, Executed, result)
+	// Internal register should be set despite clipboard error
+	assert.Equal(t, "hello", m.lastYankedText, "internal register should work despite clipboard error")
+	// Clipboard was called (even though it errored)
+	assert.True(t, clipboard.copyCalled)
+}
+
+// TestVisualYankCommand_Clipboard_EmptySelection tests empty selection behavior
+func TestVisualYankCommand_Clipboard_EmptySelection(t *testing.T) {
+	m := newTestModelWithContent("")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.mode = ModeVisual
+	m.visualAnchor = Position{Row: 0, Col: 0}
+	m.cursorRow = 0
+	m.cursorCol = 0
+
+	cmd := &VisualYankCommand{mode: ModeVisual}
+	result := cmd.Execute(m)
+
+	assert.Equal(t, Executed, result)
+	// Empty selection exits visual mode but doesn't yank or call clipboard
+	assert.False(t, clipboard.copyCalled, "clipboard.Copy should not be called for empty selection")
 }
 
 // ============================================================================

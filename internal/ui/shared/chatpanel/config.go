@@ -3,6 +3,7 @@ package chatpanel
 import (
 	"time"
 
+	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 )
 
@@ -25,6 +26,10 @@ type Config struct {
 	// VimMode enables vim keybindings in the text input area.
 	// When false, the input behaves as a standard textarea.
 	VimMode bool
+
+	// Clipboard provides system clipboard access for yank operations.
+	// When nil, yank operations will only use the internal register.
+	Clipboard shared.Clipboard
 }
 
 // DefaultConfig returns a Config with sensible defaults.

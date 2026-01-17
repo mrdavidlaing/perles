@@ -455,6 +455,10 @@ func New(services mode.Services) Model {
 		Placeholder: "Enter BQL query ex: status in (open,in_progress) and label not in (backlog) order by priority,created desc",
 		MaxHeight:   3,
 	})
+	// Wire up clipboard for yank operations
+	if services.Clipboard != nil {
+		input = input.SetClipboard(services.Clipboard)
+	}
 	input.SetLexer(bql.NewSyntaxLexer())
 	input.Focus()
 

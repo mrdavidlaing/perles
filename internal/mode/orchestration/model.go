@@ -265,6 +265,10 @@ func New(cfg Config) Model {
 		CharLimit:   0,
 		MaxHeight:   2, // Allow wrapping within 2 lines
 	})
+	// Wire up clipboard for yank operations
+	if cfg.Services.Clipboard != nil {
+		ta = ta.SetClipboard(cfg.Services.Clipboard)
+	}
 	ta.Focus() // Focus input by default
 
 	// Get timeouts config from services, falling back to defaults if not available

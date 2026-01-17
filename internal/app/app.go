@@ -182,6 +182,7 @@ func NewWithConfig(
 		SessionTimeout:   chatpanel.DefaultConfig().SessionTimeout,
 		WorkflowRegistry: workflowRegistry,
 		VimMode:          cfg.UI.VimMode,
+		Clipboard:        services.Clipboard,
 	}
 	cp := chatpanel.New(chatPanelCfg)
 

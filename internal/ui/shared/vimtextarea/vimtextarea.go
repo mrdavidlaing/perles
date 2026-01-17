@@ -9,8 +9,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )
+
+// Clipboard defines the interface for clipboard operations.
+// This interface is defined here to avoid import cycles with mode/shared.
+// The shared.SystemClipboard implementation satisfies this interface.
+type Clipboard interface {
+	Copy(text string) error
+}
 
 // mouseEscapePattern matches SGR mouse tracking sequences that weren't parsed by bubbletea.
 // These look like "[<65;87;15M" or "<65;87;15M" (CSI < Pb ; Px ; Py M/m format).
@@ -106,6 +114,9 @@ type Model struct {
 
 	// Syntax highlighting
 	lexer SyntaxLexer // Lexer for syntax highlighting (nil = no highlighting)
+
+	// Clipboard for system clipboard integration (optional, nil = no clipboard)
+	clipboard Clipboard
 
 	// Command-based undo/redo
 	history *CommandHistory
@@ -498,6 +509,34 @@ func (m *Model) SetLexer(l SyntaxLexer) {
 // Lexer returns the currently configured syntax lexer, or nil if none.
 func (m Model) Lexer() SyntaxLexer {
 	return m.lexer
+}
+
+// ============================================================================
+// Clipboard API
+// ============================================================================
+
+// SetClipboard sets the clipboard for system clipboard integration.
+// When set, yank operations will copy text to the system clipboard.
+// This follows the immutable pattern - returns a new Model with clipboard set.
+func (m Model) SetClipboard(clipboard Clipboard) Model {
+	m.clipboard = clipboard
+	return m
+}
+
+// copyToSystemClipboard copies text to the system clipboard if available.
+// Handles nil clipboard gracefully (no-op).
+// Logs errors but doesn't propagate them - clipboard is a nice-to-have feature.
+// NOTE: This helper will be called by yank commands in commands_yank.go, commands_visual.go,
+// and commands_textobject.go as part of the clipboard integration epic (perles-yfh4).
+//
+//nolint:unused // Will be used by follow-up tasks perles-yfh4.2, perles-yfh4.3, perles-yfh4.4
+func (m *Model) copyToSystemClipboard(text string) {
+	if m.clipboard == nil {
+		return
+	}
+	if err := m.clipboard.Copy(text); err != nil {
+		log.Error(log.CatUI, "clipboard copy failed", "error", err.Error())
+	}
 }
 
 // ============================================================================

@@ -120,7 +120,8 @@ type Model struct {
 // New creates a new editor for the given column.
 // executor is used to run BQL queries for live preview.
 // vimEnabled controls whether vim mode is used for BQL query input.
-func New(columnIndex int, allColumns []config.ColumnConfig, executor bql.BQLExecutor, vimEnabled bool) Model {
+// clipboard is optional; when provided, yank operations copy to system clipboard.
+func New(columnIndex int, allColumns []config.ColumnConfig, executor bql.BQLExecutor, vimEnabled bool, clipboard shared.Clipboard) Model {
 	cfg := allColumns[columnIndex]
 
 	nameInput := textinput.New()
@@ -151,6 +152,10 @@ func New(columnIndex int, allColumns []config.ColumnConfig, executor bql.BQLExec
 		DefaultMode: defaultMode,
 		Placeholder: "status = open and ready = true",
 	})
+	// Wire up clipboard for yank operations
+	if clipboard != nil {
+		queryInput = queryInput.SetClipboard(clipboard)
+	}
 	queryInput.SetValue(cfg.Query)
 	queryInput.SetLexer(bql.NewSyntaxLexer())
 
@@ -193,7 +198,8 @@ func New(columnIndex int, allColumns []config.ColumnConfig, executor bql.BQLExec
 // NewForCreate creates an editor for adding a new column.
 // insertAfterIndex specifies where to insert the new column (to the right of this index).
 // vimEnabled controls whether vim mode is used for BQL query input.
-func NewForCreate(insertAfterIndex int, allColumns []config.ColumnConfig, executor bql.BQLExecutor, vimEnabled bool) Model {
+// clipboard is optional; when provided, yank operations copy to system clipboard.
+func NewForCreate(insertAfterIndex int, allColumns []config.ColumnConfig, executor bql.BQLExecutor, vimEnabled bool, clipboard shared.Clipboard) Model {
 	// Default config for new column
 	cfg := config.ColumnConfig{
 		Name:  "",
@@ -219,6 +225,10 @@ func NewForCreate(insertAfterIndex int, allColumns []config.ColumnConfig, execut
 		DefaultMode: defaultMode,
 		Placeholder: "status = open and ready = true",
 	})
+	// Wire up clipboard for yank operations
+	if clipboard != nil {
+		queryInput = queryInput.SetClipboard(clipboard)
+	}
 	queryInput.SetValue(cfg.Query)
 	queryInput.SetLexer(bql.NewSyntaxLexer())
 

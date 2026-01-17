@@ -135,6 +135,10 @@ func New(cfg Config) Model {
 		CharLimit:   0, // No limit
 		MaxHeight:   4, // Allow up to 4 lines for input (matches input pane height)
 	})
+	// Wire up clipboard for yank operations
+	if cfg.Clipboard != nil {
+		input = input.SetClipboard(cfg.Clipboard)
+	}
 
 	// Create initial session
 	now := time.Now()

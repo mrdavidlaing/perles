@@ -1960,3 +1960,102 @@ func TestVisualSelectTextObjectCommand_Bracket_Keys(t *testing.T) {
 	cmd2 := &VisualSelectTextObjectCommand{object: 'b', inner: false}
 	require.Equal(t, []string{"vab"}, cmd2.Keys())
 }
+
+// ============================================================================
+// YankTextObjectCommand - Clipboard Integration Tests
+// ============================================================================
+
+func TestYankTextObjectCommand_InnerWord_CopiesTextToClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 2 // cursor in "hello"
+
+	cmd := &YankTextObjectCommand{object: 'w', inner: true}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "hello", clipboard.copiedText)
+}
+
+func TestYankTextObjectCommand_AroundWord_CopiesTextWithWhitespaceToClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 2 // cursor in "hello"
+
+	cmd := &YankTextObjectCommand{object: 'w', inner: false}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "hello ", clipboard.copiedText)
+}
+
+func TestYankTextObjectCommand_InnerQuote_CopiesQuotedContentToClipboard(t *testing.T) {
+	m := newTestModelWithContent(`say "hello" now`)
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 6 // cursor at 'l' inside quotes
+
+	cmd := &YankTextObjectCommand{object: '"', inner: true}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "hello", clipboard.copiedText)
+}
+
+func TestYankTextObjectCommand_InnerBracket_CopiesToClipboard(t *testing.T) {
+	m := newTestModelWithContent("foo(bar)baz")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 5 // cursor at 'a' in "bar"
+
+	cmd := &YankTextObjectCommand{object: 'b', inner: true}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "bar", clipboard.copiedText)
+}
+
+func TestYankTextObjectCommand_StillSetsInternalRegister_WithClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 2 // cursor in "hello"
+
+	cmd := &YankTextObjectCommand{object: 'w', inner: true}
+	cmd.Execute(m)
+
+	// Verify internal register is still set
+	require.Equal(t, "hello", m.lastYankedText, "internal register should still be set")
+	require.False(t, m.lastYankWasLinewise)
+}
+
+func TestYankTextObjectCommand_WithNilClipboard_NoPanic(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	// clipboard is nil by default
+	m.cursorCol = 2
+
+	cmd := &YankTextObjectCommand{object: 'w', inner: true}
+	require.NotPanics(t, func() {
+		cmd.Execute(m)
+	})
+
+	// Internal register should still work
+	require.Equal(t, "hello", m.lastYankedText)
+}
+
+func TestYankTextObjectCommand_ClipboardError_StillSetsInternalRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{copyErr: errClipboard}
+	m.clipboard = clipboard
+	m.cursorCol = 2
+
+	cmd := &YankTextObjectCommand{object: 'w', inner: true}
+	cmd.Execute(m)
+
+	// Clipboard was called (even though it failed)
+	require.True(t, clipboard.copyCalled)
+	// Internal register should still be set
+	require.Equal(t, "hello", m.lastYankedText)
+}

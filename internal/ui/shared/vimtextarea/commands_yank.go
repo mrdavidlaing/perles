@@ -23,6 +23,9 @@ func (c *YankLineCommand) Execute(m *Model) ExecuteResult {
 	m.lastYankedText = m.content[m.cursorRow]
 	m.lastYankWasLinewise = true
 
+	// Copy to system clipboard (no-op if clipboard is nil)
+	m.copyToSystemClipboard(m.lastYankedText)
+
 	// Cursor stays in place - yank doesn't move cursor
 	return Executed
 }
@@ -69,6 +72,8 @@ func (c *YankWordCommand) Execute(m *Model) ExecuteResult {
 		m.lastYankedText = ""
 		m.lastYankWasLinewise = false
 		c.showHighlight = false
+		// Copy to system clipboard (no-op if clipboard is nil)
+		m.copyToSystemClipboard(m.lastYankedText)
 		return Executed
 	}
 
@@ -89,6 +94,9 @@ func (c *YankWordCommand) Execute(m *Model) ExecuteResult {
 	}
 	m.lastYankWasLinewise = false
 	c.showHighlight = len(m.lastYankedText) > 0
+
+	// Copy to system clipboard (no-op if clipboard is nil)
+	m.copyToSystemClipboard(m.lastYankedText)
 
 	// Cursor stays in place - yank doesn't move cursor
 	return Executed
@@ -136,6 +144,8 @@ func (c *YankToEOLCommand) Execute(m *Model) ExecuteResult {
 		m.lastYankedText = ""
 		m.lastYankWasLinewise = false
 		c.showHighlight = false
+		// Copy to system clipboard (no-op if clipboard is nil)
+		m.copyToSystemClipboard(m.lastYankedText)
 		return Executed
 	}
 
@@ -148,6 +158,9 @@ func (c *YankToEOLCommand) Execute(m *Model) ExecuteResult {
 	m.lastYankedText = line[m.cursorCol:]
 	m.lastYankWasLinewise = false
 	c.showHighlight = len(m.lastYankedText) > 0
+
+	// Copy to system clipboard (no-op if clipboard is nil)
+	m.copyToSystemClipboard(m.lastYankedText)
 
 	// Cursor stays in place - yank doesn't move cursor
 	return Executed

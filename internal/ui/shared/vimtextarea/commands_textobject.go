@@ -227,6 +227,9 @@ func (c *YankTextObjectCommand) Execute(m *Model) ExecuteResult {
 	m.lastYankWasLinewise = false
 	c.showHighlight = len(m.lastYankedText) > 0
 
+	// Copy to system clipboard (no-op if clipboard is nil)
+	m.copyToSystemClipboard(m.lastYankedText)
+
 	return Executed
 }
 

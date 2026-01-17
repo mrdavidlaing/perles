@@ -1,10 +1,14 @@
 package vimtextarea
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// errClipboard is used in clipboard error tests
+var errClipboard = errors.New("clipboard unavailable")
 
 // ============================================================================
 // YankLineCommand Tests (yy)
@@ -403,4 +407,219 @@ func TestYankCommands_ContentUnchanged(t *testing.T) {
 			require.Equal(t, tt.content, m.content, "content should not be modified")
 		})
 	}
+}
+
+// ============================================================================
+// Clipboard Integration Tests
+// ============================================================================
+
+// TestYankLineCommand_CopiesTextToClipboard tests yy copies to system clipboard
+func TestYankLineCommand_CopiesTextToClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+
+	cmd := &YankLineCommand{}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "hello world", clipboard.copiedText)
+}
+
+// TestYankLineCommand_StillSetsInternalRegister tests yy sets internal register even with clipboard
+func TestYankLineCommand_StillSetsInternalRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+
+	cmd := &YankLineCommand{}
+	cmd.Execute(m)
+
+	require.Equal(t, "hello world", m.lastYankedText, "internal register should still be set")
+	require.True(t, m.lastYankWasLinewise, "lastYankWasLinewise should be true")
+}
+
+// TestYankLineCommand_WithNilClipboard_NoPanic tests yy doesn't panic with nil clipboard
+func TestYankLineCommand_WithNilClipboard_NoPanic(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	// clipboard is nil by default
+
+	cmd := &YankLineCommand{}
+	require.NotPanics(t, func() {
+		cmd.Execute(m)
+	})
+
+	// Internal register should still work
+	require.Equal(t, "hello world", m.lastYankedText)
+}
+
+// TestYankLineCommand_ClipboardError_StillSetsRegister tests yy sets register even on clipboard error
+func TestYankLineCommand_ClipboardError_StillSetsRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{copyErr: errClipboard}
+	m.clipboard = clipboard
+
+	cmd := &YankLineCommand{}
+	cmd.Execute(m)
+
+	// Clipboard was called (even though it failed)
+	require.True(t, clipboard.copyCalled)
+	// Internal register should still be set
+	require.Equal(t, "hello world", m.lastYankedText)
+}
+
+// TestYankWordCommand_CopiesTextToClipboard tests yw copies to system clipboard
+func TestYankWordCommand_CopiesTextToClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 0 // At 'h'
+
+	cmd := &YankWordCommand{}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "hello ", clipboard.copiedText)
+}
+
+// TestYankWordCommand_StillSetsInternalRegister tests yw sets internal register even with clipboard
+func TestYankWordCommand_StillSetsInternalRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 0
+
+	cmd := &YankWordCommand{}
+	cmd.Execute(m)
+
+	require.Equal(t, "hello ", m.lastYankedText, "internal register should still be set")
+	require.False(t, m.lastYankWasLinewise, "lastYankWasLinewise should be false")
+}
+
+// TestYankWordCommand_WithNilClipboard_NoPanic tests yw doesn't panic with nil clipboard
+func TestYankWordCommand_WithNilClipboard_NoPanic(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	// clipboard is nil by default
+	m.cursorCol = 0
+
+	cmd := &YankWordCommand{}
+	require.NotPanics(t, func() {
+		cmd.Execute(m)
+	})
+
+	require.Equal(t, "hello ", m.lastYankedText)
+}
+
+// TestYankWordCommand_ClipboardError_StillSetsRegister tests yw sets register even on clipboard error
+func TestYankWordCommand_ClipboardError_StillSetsRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{copyErr: errClipboard}
+	m.clipboard = clipboard
+	m.cursorCol = 0
+
+	cmd := &YankWordCommand{}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled)
+	require.Equal(t, "hello ", m.lastYankedText)
+}
+
+// TestYankWordCommand_EmptyLine_CopiesEmptyToClipboard tests yw on empty line copies empty string
+func TestYankWordCommand_EmptyLine_CopiesEmptyToClipboard(t *testing.T) {
+	m := newTestModelWithContent("")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+
+	cmd := &YankWordCommand{}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called even for empty string")
+	require.Equal(t, "", clipboard.copiedText)
+}
+
+// TestYankToEOLCommand_CopiesTextToClipboard tests y$ copies to system clipboard
+func TestYankToEOLCommand_CopiesTextToClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 6 // At 'w' in "world"
+
+	cmd := &YankToEOLCommand{}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "world", clipboard.copiedText)
+}
+
+// TestYankToEOLCommand_StillSetsInternalRegister tests y$ sets internal register even with clipboard
+func TestYankToEOLCommand_StillSetsInternalRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 6
+
+	cmd := &YankToEOLCommand{}
+	cmd.Execute(m)
+
+	require.Equal(t, "world", m.lastYankedText, "internal register should still be set")
+	require.False(t, m.lastYankWasLinewise, "lastYankWasLinewise should be false")
+}
+
+// TestYankToEOLCommand_WithNilClipboard_NoPanic tests y$ doesn't panic with nil clipboard
+func TestYankToEOLCommand_WithNilClipboard_NoPanic(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	// clipboard is nil by default
+	m.cursorCol = 6
+
+	cmd := &YankToEOLCommand{}
+	require.NotPanics(t, func() {
+		cmd.Execute(m)
+	})
+
+	require.Equal(t, "world", m.lastYankedText)
+}
+
+// TestYankToEOLCommand_ClipboardError_StillSetsRegister tests y$ sets register even on clipboard error
+func TestYankToEOLCommand_ClipboardError_StillSetsRegister(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{copyErr: errClipboard}
+	m.clipboard = clipboard
+	m.cursorCol = 6
+
+	cmd := &YankToEOLCommand{}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled)
+	require.Equal(t, "world", m.lastYankedText)
+}
+
+// TestYankToEOLCommand_AtEOL_CopiesEmptyToClipboard tests y$ at end of line copies empty string
+func TestYankToEOLCommand_AtEOL_CopiesEmptyToClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 5 // Past end of line
+
+	cmd := &YankToEOLCommand{}
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called even for empty string")
+	require.Equal(t, "", clipboard.copiedText)
+}
+
+// TestYankToEOLCommand_YAlias_CopiesTextToClipboard tests Y (alias for y$) copies to clipboard
+func TestYankToEOLCommand_YAlias_CopiesTextToClipboard(t *testing.T) {
+	m := newTestModelWithContent("hello world")
+	clipboard := &mockClipboard{}
+	m.clipboard = clipboard
+	m.cursorCol = 6 // At 'w'
+
+	// Y is registered as YankToEOLCommand
+	cmd, ok := DefaultRegistry.Get(ModeNormal, "Y")
+	require.True(t, ok, "Y command should be registered")
+
+	cmd.Execute(m)
+
+	require.True(t, clipboard.copyCalled, "clipboard.Copy should be called")
+	require.Equal(t, "world", clipboard.copiedText)
 }

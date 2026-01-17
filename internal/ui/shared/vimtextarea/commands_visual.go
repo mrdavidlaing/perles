@@ -262,6 +262,9 @@ func (c *VisualYankCommand) Execute(m *Model) ExecuteResult {
 	m.lastYankWasLinewise = c.wasLinewise
 	c.yankedText = selectedText
 
+	// Copy to system clipboard if available
+	m.copyToSystemClipboard(m.lastYankedText)
+
 	// Capture selection bounds for highlight
 	start, end := m.SelectionBounds()
 	c.highlightStart = start

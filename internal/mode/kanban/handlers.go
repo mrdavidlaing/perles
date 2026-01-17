@@ -111,9 +111,9 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		focusedCol := m.board.FocusedColumn()
 		columns := m.currentViewColumns()
 		if focusedCol >= 0 && focusedCol < len(columns) {
-			// Pass executor for BQL preview queries and vim mode setting
+			// Pass executor for BQL preview queries, vim mode, and clipboard
 			vimEnabled := m.services.Config.UI.VimMode
-			m.colEditor = coleditor.New(focusedCol, columns, m.services.Executor, vimEnabled).
+			m.colEditor = coleditor.New(focusedCol, columns, m.services.Executor, vimEnabled, m.services.Clipboard).
 				SetSize(m.width, m.height)
 			m.view = ViewColumnEditor
 		}
@@ -130,9 +130,9 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			insertAfter = -1
 		}
 
-		// Create editor in New mode
+		// Create editor in New mode with clipboard for yank operations
 		vimEnabled := m.services.Config.UI.VimMode
-		m.colEditor = coleditor.NewForCreate(insertAfter, columns, m.services.Executor, vimEnabled).
+		m.colEditor = coleditor.NewForCreate(insertAfter, columns, m.services.Executor, vimEnabled, m.services.Clipboard).
 			SetSize(m.width, m.height)
 		m.view = ViewColumnEditor
 		return m, nil
