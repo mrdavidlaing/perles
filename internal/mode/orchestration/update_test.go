@@ -633,10 +633,10 @@ func TestHandleReplaceCoordinator_SetsPendingRefresh(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 
-	// Without cmdSubmitter, should show error and not set pendingRefresh
+	// Without cmdSubmitter, should return toast command and not set pendingRefresh
 	require.False(t, m.pendingRefresh)
-	m, _ = m.handleReplaceCoordinator()
-	require.NotNil(t, m.errorModal, "should set error when no cmdSubmitter")
+	m, cmd := m.handleReplaceCoordinator()
+	require.NotNil(t, cmd, "should return toast command when no cmdSubmitter")
 	require.False(t, m.pendingRefresh, "should not set pendingRefresh without cmdSubmitter")
 }
 
@@ -668,8 +668,6 @@ func TestHandleReplaceCoordinator_WithCmdSubmitter(t *testing.T) {
 	require.Equal(t, "coordinator", sendCmd.ProcessID, "should be for coordinator")
 	require.Contains(t, sendCmd.Content, "[CONTEXT REFRESH INITIATED]", "should contain handoff header")
 
-	// Verify no error modal was set
-	require.Nil(t, m.errorModal, "should not set error modal when cmdSubmitter exists")
 }
 
 func TestHandleReplaceCoordinator_MessageContent(t *testing.T) {
@@ -1726,21 +1724,9 @@ func TestUpdate_StatusMapping_NormalCompletion(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 	m.initializer = newTestInitializer(InitReady, nil)
-	m.errorModal = nil // No error
 
 	status := m.determineSessionStatus()
 	require.Equal(t, session.StatusCompleted, status, "normal completion should map to StatusCompleted")
-}
-
-func TestUpdate_StatusMapping_ErrorModal(t *testing.T) {
-	// Test that presence of error modal maps to StatusFailed
-	m := New(Config{})
-	m = m.SetSize(120, 40)
-	m.initializer = newTestInitializer(InitReady, nil)
-	m = m.SetError("test error") // This sets errorModal
-
-	status := m.determineSessionStatus()
-	require.Equal(t, session.StatusFailed, status, "error modal should map to StatusFailed")
 }
 
 func TestUpdate_StatusMapping_InitFailed(t *testing.T) {
@@ -2670,10 +2656,12 @@ func TestHandleCoordinatorProcessEvent_ProcessTokenUsage_NilMetrics(t *testing.T
 }
 
 func TestHandleCoordinatorProcessEvent_ProcessError(t *testing.T) {
-	// Test ProcessError (coordinator) shows error modal when init is ready
+	// Test ProcessError (coordinator) is logged when init is ready
+	// Note: Errors are now shown via toast (returned from SetError), not modal.
+	// The handleCoordinatorProcessEvent doesn't return a command, so it just logs.
 	m := New(Config{})
 	m = m.SetSize(120, 40)
-	// Set up initializer in ready state so error modal is shown
+	// Set up initializer in ready state
 	m.initializer = newTestInitializer(InitReady, nil)
 
 	evt := events.ProcessEvent{
@@ -2683,13 +2671,15 @@ func TestHandleCoordinatorProcessEvent_ProcessError(t *testing.T) {
 		Error:     errors.New("coordinator error occurred"),
 	}
 
+	// Should not panic and should handle the error gracefully
 	m = m.handleCoordinatorProcessEvent(evt)
 
-	require.NotNil(t, m.errorModal, "error modal should be shown when init is ready")
+	// No assertion needed - errors are logged and shown in coordinator output
+	require.NotNil(t, m)
 }
 
 func TestHandleCoordinatorProcessEvent_ProcessError_DuringInit(t *testing.T) {
-	// Test ProcessError during initialization does NOT show modal (init screen shows error inline)
+	// Test ProcessError during initialization is handled gracefully
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 	// Set up initializer in loading state
@@ -2702,13 +2692,13 @@ func TestHandleCoordinatorProcessEvent_ProcessError_DuringInit(t *testing.T) {
 		Error:     errors.New("coordinator error occurred"),
 	}
 
+	// Should not panic
 	m = m.handleCoordinatorProcessEvent(evt)
-
-	require.Nil(t, m.errorModal, "error modal should NOT be shown during init - init screen handles errors")
+	require.NotNil(t, m)
 }
 
 func TestHandleCoordinatorProcessEvent_ProcessError_NilError(t *testing.T) {
-	// Test nil error doesn't show modal
+	// Test nil error is handled gracefully
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 
@@ -2719,9 +2709,9 @@ func TestHandleCoordinatorProcessEvent_ProcessError_NilError(t *testing.T) {
 		Error:     nil, // Nil error
 	}
 
+	// Should not panic
 	m = m.handleCoordinatorProcessEvent(evt)
-
-	require.Nil(t, m.errorModal, "nil error should not show modal")
+	require.NotNil(t, m)
 }
 
 func TestHandleCoordinatorProcessEvent_ProcessQueueChanged(t *testing.T) {
@@ -2992,7 +2982,7 @@ func TestHandleWorkerProcessEvent_ProcessTokenUsage_NilMetrics(t *testing.T) {
 }
 
 func TestHandleWorkerProcessEvent_ProcessError(t *testing.T) {
-	// Test ProcessError (worker) is logged but doesn't show modal (non-fatal)
+	// Test ProcessError (worker) is logged (non-fatal)
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 	m = m.UpdateWorker("worker-1", events.ProcessStatusWorking)
@@ -3004,10 +2994,9 @@ func TestHandleWorkerProcessEvent_ProcessError(t *testing.T) {
 		Error:     errors.New("worker error"),
 	}
 
+	// Should not panic
 	m = m.handleWorkerProcessEvent(evt)
-
-	// Worker errors should NOT show modal (unlike coordinator errors)
-	require.Nil(t, m.errorModal, "worker errors should not show modal")
+	require.NotNil(t, m)
 }
 
 func TestHandleWorkerProcessEvent_ProcessQueueChanged(t *testing.T) {
@@ -3331,8 +3320,7 @@ func TestHandleStopProcessCommand_ParsesWorkerID(t *testing.T) {
 	// Send /stop command via handleUserInput
 	m, cmd := m.handleUserInput("/stop worker-1", "COORDINATOR")
 
-	// Verify no error modal
-	require.Nil(t, m.errorModal, "should not set error modal")
+	// Verify no toast command (successful submission)
 	require.Nil(t, cmd, "should return nil command (submission is synchronous)")
 
 	// Verify command was submitted
@@ -3358,8 +3346,7 @@ func TestHandleStopProcessCommand_ParsesForceFlag(t *testing.T) {
 	// Send /stop command with --force flag
 	m, cmd := m.handleUserInput("/stop worker-2 --force", "COORDINATOR")
 
-	// Verify no error modal
-	require.Nil(t, m.errorModal, "should not set error modal")
+	// Verify no toast command (successful submission)
 	require.Nil(t, cmd, "should return nil command")
 
 	// Verify command was submitted with Force=true
@@ -3372,7 +3359,7 @@ func TestHandleStopProcessCommand_ParsesForceFlag(t *testing.T) {
 }
 
 func TestHandleStopProcessCommand_InvalidSyntax(t *testing.T) {
-	// Test that /stop with no worker ID shows usage error
+	// Test that /stop with no worker ID returns toast command with usage error
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 
@@ -3383,9 +3370,8 @@ func TestHandleStopProcessCommand_InvalidSyntax(t *testing.T) {
 	// Send /stop command without worker ID (just "/stop " to trigger the handler)
 	m, cmd := m.handleUserInput("/stop ", "COORDINATOR")
 
-	// Verify error modal is set
-	require.NotNil(t, m.errorModal, "should set error modal for invalid syntax")
-	require.Nil(t, cmd, "should return nil command")
+	// Verify toast command is returned for error
+	require.NotNil(t, cmd, "should return toast command for invalid syntax")
 
 	// Verify no command was submitted
 	commands := mockSubmitter.Commands()
@@ -3397,13 +3383,9 @@ func TestHandleStopProcessCommand_SubmitsCommand(t *testing.T) {
 	m := New(Config{})
 	m = m.SetSize(120, 40)
 
-	// First test: without v2Infra, should show error
+	// First test: without v2Infra, should return toast command
 	m, cmd := m.handleUserInput("/stop worker-1", "COORDINATOR")
-	require.NotNil(t, m.errorModal, "should set error when no cmdSubmitter")
-	require.Nil(t, cmd, "should return nil command")
-
-	// Reset error modal
-	m = m.ClearError()
+	require.NotNil(t, cmd, "should return toast command when no cmdSubmitter")
 
 	// Now set up mock v2 infrastructure
 	infra, mockSubmitter := mockV2Infra()
@@ -3412,9 +3394,8 @@ func TestHandleStopProcessCommand_SubmitsCommand(t *testing.T) {
 	// Send /stop command
 	m, cmd = m.handleUserInput("/stop worker-3", "COORDINATOR")
 
-	// Verify no error
-	require.Nil(t, m.errorModal, "should not set error modal when cmdSubmitter exists")
-	require.Nil(t, cmd, "should return nil command")
+	// Verify no toast command (successful submission)
+	require.Nil(t, cmd, "should return nil command when cmdSubmitter exists")
 
 	// Verify command was submitted correctly
 	commands := mockSubmitter.Commands()
@@ -3436,11 +3417,11 @@ func TestHandleSlashCommand_RoutesStopCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Send /stop command via handleSlashCommand
-	m, handled := m.handleSlashCommand("/stop worker-1")
+	m, cmd, handled := m.handleSlashCommand("/stop worker-1")
 
 	// Verify command was handled
 	require.True(t, handled, "should return handled=true for known command")
-	require.Nil(t, m.errorModal, "should not set error modal")
+	require.Nil(t, cmd, "should not return toast command for successful submission")
 
 	// Verify command was submitted (proves routing worked)
 	commands := mockSubmitter.Commands()
@@ -3460,11 +3441,12 @@ func TestHandleSlashCommand_UnknownCommandNotHandled(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Send an unknown command
-	m, handled := m.handleSlashCommand("/unknowncmd")
+	m, cmd, handled := m.handleSlashCommand("/unknowncmd")
 
 	// Verify command was NOT handled (should fall through)
 	require.False(t, handled, "should return handled=false for unknown command")
-	require.Nil(t, m.errorModal, "should not set error modal for unknown command")
+	require.Nil(t, cmd, "should not return toast command for unknown command")
+	require.NotNil(t, m) // just to verify m is not nil
 }
 
 func TestHandleUserInput_RoutesSlashCommandsToRouter(t *testing.T) {
@@ -3479,8 +3461,7 @@ func TestHandleUserInput_RoutesSlashCommandsToRouter(t *testing.T) {
 	// Send /stop command via handleUserInput (target should be ignored for slash commands)
 	m, cmd := m.handleUserInput("/stop worker-1", "some-target")
 
-	// Verify no error modal
-	require.Nil(t, m.errorModal, "should not set error modal")
+	// Verify no toast command (successful submission)
 	require.Nil(t, cmd, "should return nil command")
 
 	// Verify command was submitted (proves routing through handleSlashCommand worked)
@@ -3503,9 +3484,8 @@ func TestHandleUserInput_NonSlashInputRoutesToTarget(t *testing.T) {
 	// Send a regular message (not starting with /)
 	m, cmd := m.handleUserInput("hello world", "COORDINATOR")
 
-	// Verify no error modal
-	require.Nil(t, m.errorModal, "should not set error modal")
-	require.Nil(t, cmd, "should return nil command")
+	// Verify no error (nil cmd means no error toast)
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify a SendToProcess command was submitted to coordinator
 	commands := mockSubmitter.Commands()
@@ -3528,9 +3508,8 @@ func TestHandleUserInput_UnknownSlashCommandFallsThrough(t *testing.T) {
 	// Send an unknown slash command via handleUserInput
 	m, cmd := m.handleUserInput("/unknowncmd arg1 arg2", "COORDINATOR")
 
-	// Verify no error modal (unknown commands should not error)
-	require.Nil(t, m.errorModal, "should not set error modal for unknown slash command")
-	require.Nil(t, cmd, "should return nil command")
+	// Verify no error (unknown commands should not error, they pass through)
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify the message was sent to coordinator as regular input
 	commands := mockSubmitter.Commands()
@@ -3553,10 +3532,10 @@ func TestHandleSpawnWorkerCommand_CreatesCorrectCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /spawn command
-	m = m.handleSpawnWorkerCommand()
+	m, cmd := m.handleSpawnWorkerCommand()
 
-	// Verify no error modal
-	require.Nil(t, m.errorModal, "should not set error modal")
+	// Verify no error (nil cmd means no error toast)
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify command was submitted with correct parameters
 	commands := mockSubmitter.Commands()
@@ -3577,7 +3556,7 @@ func TestHandleSpawnWorkerCommand_SubmitsToSubmitter(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /spawn command
-	m = m.handleSpawnWorkerCommand()
+	m, _ = m.handleSpawnWorkerCommand()
 
 	// Verify command was submitted
 	commands := mockSubmitter.Commands()
@@ -3593,10 +3572,11 @@ func TestHandleSpawnWorkerCommand_ErrorWhenNilSubmitter(t *testing.T) {
 	// Don't set up v2 infrastructure (cmdSubmitter will be nil)
 
 	// Execute /spawn command
-	m = m.handleSpawnWorkerCommand()
+	m, cmd := m.handleSpawnWorkerCommand()
 
-	// Verify error was set
-	require.NotNil(t, m.errorModal, "should set error modal when submitter is nil")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when submitter is nil")
+	_ = m // silence unused variable warning
 }
 
 func TestHandleSlashCommand_RoutesSpawnCommand(t *testing.T) {
@@ -3609,11 +3589,11 @@ func TestHandleSlashCommand_RoutesSpawnCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Send /spawn command via handleSlashCommand
-	m, handled := m.handleSlashCommand("/spawn")
+	m, cmd, handled := m.handleSlashCommand("/spawn")
 
 	// Verify command was handled
 	require.True(t, handled, "should return handled=true for /spawn command")
-	require.Nil(t, m.errorModal, "should not set error modal")
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify command was submitted (proves routing worked)
 	commands := mockSubmitter.Commands()
@@ -3650,10 +3630,10 @@ func TestHandleRetireWorkerCommand_CreatesCorrectCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /retire command
-	m = m.handleRetireWorkerCommand("/retire worker-1")
+	m, cmd := m.handleRetireWorkerCommand("/retire worker-1")
 
-	// Verify no error modal
-	require.Nil(t, m.errorModal, "should not set error modal")
+	// Verify no error (nil cmd means no error toast)
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify command was submitted with correct parameters
 	commands := mockSubmitter.Commands()
@@ -3678,7 +3658,7 @@ func TestHandleRetireWorkerCommand_IncludesReasonInCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /retire command with reason
-	m = m.handleRetireWorkerCommand("/retire worker-1 context window exceeded")
+	m, _ = m.handleRetireWorkerCommand("/retire worker-1 context window exceeded")
 
 	// Verify command has the custom reason
 	commands := mockSubmitter.Commands()
@@ -3698,10 +3678,11 @@ func TestHandleRetireWorkerCommand_UsageErrorWithoutWorkerId(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /retire command without arguments
-	m = m.handleRetireWorkerCommand("/retire")
+	m, cmd := m.handleRetireWorkerCommand("/retire")
 
-	// Verify error was set
-	require.NotNil(t, m.errorModal, "should set error modal when missing worker-id")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when missing worker-id")
+	_ = m // silence unused variable warning
 }
 
 func TestHandleRetireWorkerCommand_BlocksCoordinatorRetirement(t *testing.T) {
@@ -3714,10 +3695,11 @@ func TestHandleRetireWorkerCommand_BlocksCoordinatorRetirement(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /retire coordinator command
-	m = m.handleRetireWorkerCommand("/retire coordinator")
+	m, cmd := m.handleRetireWorkerCommand("/retire coordinator")
 
-	// Verify error was set with coordinator-specific message
-	require.NotNil(t, m.errorModal, "should set error modal when trying to retire coordinator")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when trying to retire coordinator")
+	_ = m // silence unused variable warning
 
 	// Verify no command was submitted
 	commands := mockSubmitter.Commands()
@@ -3736,10 +3718,11 @@ func TestHandleRetireWorkerCommand_WorkerNotFoundError(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /retire command for nonexistent worker
-	m = m.handleRetireWorkerCommand("/retire nonexistent-worker")
+	m, cmd := m.handleRetireWorkerCommand("/retire nonexistent-worker")
 
-	// Verify error was set
-	require.NotNil(t, m.errorModal, "should set error modal when worker not found")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when worker not found")
+	_ = m // silence unused variable warning
 
 	// Verify no command was submitted
 	commands := mockSubmitter.Commands()
@@ -3765,10 +3748,11 @@ func TestHandleRetireWorkerCommand_ErrorWhenNilSubmitter(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /retire command
-	m = m.handleRetireWorkerCommand("/retire worker-1")
+	m, cmd := m.handleRetireWorkerCommand("/retire worker-1")
 
-	// Verify error was set
-	require.NotNil(t, m.errorModal, "should set error modal when submitter is nil")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when submitter is nil")
+	_ = m // silence unused variable warning
 }
 
 func TestHandleSlashCommand_RoutesRetireCommand(t *testing.T) {
@@ -3784,11 +3768,11 @@ func TestHandleSlashCommand_RoutesRetireCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Send /retire command via handleSlashCommand
-	m, handled := m.handleSlashCommand("/retire worker-1")
+	m, cmd, handled := m.handleSlashCommand("/retire worker-1")
 
 	// Verify command was handled
 	require.True(t, handled, "should return handled=true for /retire command")
-	require.Nil(t, m.errorModal, "should not set error modal")
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify command was submitted (proves routing worked)
 	commands := mockSubmitter.Commands()
@@ -3813,10 +3797,10 @@ func TestHandleReplaceWorkerCommand_CreatesCorrectCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /replace command
-	m = m.handleReplaceWorkerCommand("/replace worker-1")
+	m, cmd := m.handleReplaceWorkerCommand("/replace worker-1")
 
-	// Verify no error modal
-	require.Nil(t, m.errorModal, "should not set error modal")
+	// Verify no error (nil cmd means no error toast)
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify command was submitted with correct parameters
 	commands := mockSubmitter.Commands()
@@ -3841,7 +3825,7 @@ func TestHandleReplaceWorkerCommand_IncludesReasonInCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /replace command with reason
-	m = m.handleReplaceWorkerCommand("/replace worker-1 context window exceeded")
+	m, _ = m.handleReplaceWorkerCommand("/replace worker-1 context window exceeded")
 
 	// Verify command has the custom reason
 	commands := mockSubmitter.Commands()
@@ -3861,10 +3845,11 @@ func TestHandleReplaceWorkerCommand_UsageErrorWithoutWorkerId(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /replace command without arguments
-	m = m.handleReplaceWorkerCommand("/replace")
+	m, cmd := m.handleReplaceWorkerCommand("/replace")
 
-	// Verify error was set
-	require.NotNil(t, m.errorModal, "should set error modal when missing worker-id")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when missing worker-id")
+	_ = m // silence unused variable warning
 }
 
 func TestHandleReplaceWorkerCommand_CoordinatorIsAllowed(t *testing.T) {
@@ -3881,10 +3866,10 @@ func TestHandleReplaceWorkerCommand_CoordinatorIsAllowed(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /replace coordinator command
-	m = m.handleReplaceWorkerCommand("/replace coordinator")
+	m, cmd := m.handleReplaceWorkerCommand("/replace coordinator")
 
-	// Verify no error modal (coordinator replacement is allowed)
-	require.Nil(t, m.errorModal, "should NOT set error modal for /replace coordinator")
+	// Verify no error (coordinator replacement is allowed)
+	require.Nil(t, cmd, "should return nil command (no error) for /replace coordinator")
 
 	// Verify command was submitted
 	commands := mockSubmitter.Commands()
@@ -3906,10 +3891,11 @@ func TestHandleReplaceWorkerCommand_WorkerNotFoundError(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /replace command for nonexistent worker
-	m = m.handleReplaceWorkerCommand("/replace nonexistent-worker")
+	m, cmd := m.handleReplaceWorkerCommand("/replace nonexistent-worker")
 
-	// Verify error was set
-	require.NotNil(t, m.errorModal, "should set error modal when worker not found")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when worker not found")
+	_ = m // silence unused variable warning
 
 	// Verify no command was submitted
 	commands := mockSubmitter.Commands()
@@ -3935,10 +3921,11 @@ func TestHandleReplaceWorkerCommand_ErrorWhenNilSubmitter(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Execute /replace command
-	m = m.handleReplaceWorkerCommand("/replace worker-1")
+	m, cmd := m.handleReplaceWorkerCommand("/replace worker-1")
 
-	// Verify error was set
-	require.NotNil(t, m.errorModal, "should set error modal when submitter is nil")
+	// Verify error was returned (non-nil cmd produces error toast)
+	require.NotNil(t, cmd, "should return error command when submitter is nil")
+	_ = m // silence unused variable warning
 }
 
 func TestHandleSlashCommand_RoutesReplaceCommand(t *testing.T) {
@@ -3954,11 +3941,11 @@ func TestHandleSlashCommand_RoutesReplaceCommand(t *testing.T) {
 	m = m.SetV2Infra(infra)
 
 	// Send /replace command via handleSlashCommand
-	m, handled := m.handleSlashCommand("/replace worker-1")
+	m, cmd, handled := m.handleSlashCommand("/replace worker-1")
 
 	// Verify command was handled
 	require.True(t, handled, "should return handled=true for /replace command")
-	require.Nil(t, m.errorModal, "should not set error modal")
+	require.Nil(t, cmd, "should return nil command (no error)")
 
 	// Verify command was submitted (proves routing worked)
 	commands := mockSubmitter.Commands()

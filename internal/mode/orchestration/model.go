@@ -41,6 +41,7 @@ import (
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
 	"github.com/zjrosen/perles/internal/ui/shared/quitmodal"
+	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )
@@ -110,9 +111,6 @@ type Model struct {
 	// User input
 	input   vimtextarea.Model
 	vimMode vimtextarea.Mode // Track current vim mode for display
-
-	// Error display (modal overlay)
-	errorModal *modal.Model
 
 	// Quit confirmation modal
 	quitModal quitmodal.Model
@@ -377,11 +375,6 @@ func (m Model) SetSize(width, height int) Model {
 		m.workerPane.contentDirty[workerID] = true
 	}
 
-	// Update error modal size if present
-	if m.errorModal != nil {
-		m.errorModal.SetSize(width, height)
-	}
-
 	// Update quit modal size (always update to cache dimensions)
 	m.quitModal.SetSize(width, height)
 
@@ -621,24 +614,14 @@ func (m Model) CycleMessageTarget() Model {
 	return m
 }
 
-// SetError displays an error in a modal overlay.
-// Clears any active quit confirmation modal since errors take priority.
-func (m Model) SetError(msg string) Model {
-	mdl := modal.New(modal.Config{
-		Title:       "Error",
-		Message:     msg + "\n\nPress Esc to dismiss",
-		HideButtons: true,
-	})
-	mdl.SetSize(m.width, m.height)
-	m.errorModal = &mdl
-	m.quitModal.Hide() // Clear quit modal - error takes priority
-	return m
-}
-
-// ClearError clears the error display.
-func (m Model) ClearError() Model {
-	m.errorModal = nil
-	return m
+// SetError returns a command that displays an error toast notification.
+func (m Model) SetError(msg string) (Model, tea.Cmd) {
+	return m, func() tea.Msg {
+		return mode.ShowToastMsg{
+			Message: msg,
+			Style:   toaster.StyleError,
+		}
+	}
 }
 
 // processRepo returns the process repository from v2Infra, or nil if not initialized.
@@ -884,14 +867,12 @@ func (m Model) handleWorkflowSelected(item commandpalette.Item) (Model, tea.Cmd)
 // sendWorkflowToCoordinator sends the selected workflow content to the coordinator.
 func (m Model) sendWorkflowToCoordinator(workflowID string) (Model, tea.Cmd) {
 	if m.workflowRegistry == nil {
-		m = m.SetError("Workflow registry not available")
-		return m, nil
+		return m.SetError("Workflow registry not available")
 	}
 
 	wf, ok := m.workflowRegistry.Get(workflowID)
 	if !ok {
-		m = m.SetError("Workflow not found: " + workflowID)
-		return m, nil
+		return m.SetError("Workflow not found: " + workflowID)
 	}
 
 	// Track the active workflow for prompt customization

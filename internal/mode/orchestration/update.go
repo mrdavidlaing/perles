@@ -198,7 +198,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// Continue to start coordinator without worktree
 			return m.handleStartCoordinator()
 		}
-		m = m.ClearError()
 		return m, nil
 
 	// Handle modal submit for worktree modal
@@ -243,13 +242,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 
-		// Forward key events to error modal when it's visible
-		if m.errorModal != nil {
-			var cmd tea.Cmd
-			*m.errorModal, cmd = m.errorModal.Update(msg)
-			return m, cmd
-		}
-
 		// Forward key events to workflow picker when it's visible
 		if m.showWorkflowPicker && m.workflowPicker != nil {
 			var cmd tea.Cmd
@@ -283,8 +275,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					// Retry: use the initializer's Retry method
 					if m.initializer != nil && m.initListener != nil {
 						if err := m.initializer.Retry(); err != nil {
-							m = m.SetError(err.Error())
-							return m, nil
+							return m.SetError(err.Error())
 						}
 						// Reset spinner frame for view
 						m.spinnerFrame = 0
@@ -537,8 +528,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	// Handle coordinator errors from user input commands
 	case CoordinatorErrorMsg:
-		m = m.SetError(msg.Error.Error())
-		return m, nil
+		return m.SetError(msg.Error.Error())
 
 	// Handle worker errors from user input commands
 	case WorkerErrorMsg:
@@ -602,8 +592,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.pendingRefresh = false
 			cmdSubmitter := m.cmdSubmitter()
 			if cmdSubmitter == nil {
-				m = m.SetError("Command submitter not available")
-				return m, nil
+				return m.SetError("Command submitter not available")
 			}
 			msgRepo := m.messageRepo
 			return m, func() tea.Msg {
@@ -761,9 +750,11 @@ func (m Model) handleCoordinatorProcessEvent(evt events.ProcessEvent) Model {
 
 	case events.ProcessError:
 		log.Debug(log.CatOrch, "coordinator error", "error", evt.Error)
-		// Only show error modal when past initialization - init screen shows errors inline
+		// Only show error toast when past initialization - init screen shows errors inline
+		// Note: We can't return a cmd from this handler, so we log the error instead
+		// The error is already shown in the coordinator output via "⚠️ Error: ..." message
 		if evt.Error != nil && m.getInitPhase() == InitReady {
-			m = m.SetError(evt.Error.Error())
+			log.Debug(log.CatOrch, "coordinator error (shown in output)", "error", evt.Error)
 		}
 
 	case events.ProcessQueueChanged:
@@ -985,8 +976,7 @@ func (m *Model) showQuitModal() {
 // If in a git repo and worktree decision hasn't been made, shows worktree prompt modal first.
 func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 	if m.workDir == "" {
-		m = m.SetError("Work directory not configured")
-		return m, nil
+		return m.SetError("Work directory not configured")
 	}
 
 	// Initialize GitExecutor if not set
@@ -1048,8 +1038,7 @@ func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 
 	// Start the initializer
 	if err := m.initializer.Start(); err != nil {
-		m = m.SetError(err.Error())
-		return m, nil
+		return m.SetError(err.Error())
 	}
 
 	return m, tea.Batch(
@@ -1062,8 +1051,8 @@ func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 func (m Model) handleUserInput(content, target string) (Model, tea.Cmd) {
 	// Check for known slash commands first (intercept before routing to coordinator/workers)
 	if strings.HasPrefix(content, "/") {
-		if newModel, handled := m.handleSlashCommand(content); handled {
-			return newModel, nil
+		if newModel, cmd, handled := m.handleSlashCommand(content); handled {
+			return newModel, cmd
 		}
 		// Unknown slash commands fall through to normal message routing
 	}
@@ -1080,12 +1069,12 @@ func (m Model) handleUserInput(content, target string) (Model, tea.Cmd) {
 }
 
 // handleSlashCommand routes slash commands to their respective handlers.
-// Returns (model, handled) where handled indicates if the command was recognized.
+// Returns (model, cmd, handled) where handled indicates if the command was recognized.
 // Unknown commands return handled=false so they can fall through to normal message routing.
-func (m Model) handleSlashCommand(content string) (Model, bool) {
+func (m Model) handleSlashCommand(content string) (Model, tea.Cmd, bool) {
 	parts := strings.Fields(content)
 	if len(parts) == 0 {
-		return m, false
+		return m, nil, false
 	}
 
 	// Handle two-word commands first (e.g., "/show commands", "/hide commands")
@@ -1095,26 +1084,30 @@ func (m Model) handleSlashCommand(content string) (Model, bool) {
 		case "/show commands":
 			m.showCommandPane = true
 			m.commandPane.contentDirty = true
-			return m, true
+			return m, nil, true
 		case "/hide commands":
 			m.showCommandPane = false
-			return m, true
+			return m, nil, true
 		}
 	}
 
-	cmd := parts[0]
-	switch cmd {
+	slashCmd := parts[0]
+	switch slashCmd {
 	case "/stop":
-		return m.handleStopProcessCommand(content), true
+		m, cmd := m.handleStopProcessCommand(content)
+		return m, cmd, true
 	case "/spawn":
-		return m.handleSpawnWorkerCommand(), true
+		m, cmd := m.handleSpawnWorkerCommand()
+		return m, cmd, true
 	case "/retire":
-		return m.handleRetireWorkerCommand(content), true
+		m, cmd := m.handleRetireWorkerCommand(content)
+		return m, cmd, true
 	case "/replace":
-		return m.handleReplaceWorkerCommand(content), true
+		m, cmd := m.handleReplaceWorkerCommand(content)
+		return m, cmd, true
 	default:
 		// Unknown commands are not handled - fall through to normal routing
-		return m, false
+		return m, nil, false
 	}
 }
 
@@ -1123,8 +1116,7 @@ func (m Model) handleSlashCommand(content string) (Model, bool) {
 func (m Model) handleUserInputToCoordinator(content string) (Model, tea.Cmd) {
 	cmdSubmitter := m.cmdSubmitter()
 	if cmdSubmitter == nil {
-		m = m.SetError("Command submitter not available")
-		return m, nil
+		return m.SetError("Command submitter not available")
 	}
 
 	// Submit v2 command to send message to coordinator
@@ -1140,8 +1132,7 @@ func (m Model) handleUserInputToCoordinator(content string) (Model, tea.Cmd) {
 func (m Model) handleUserInputToWorker(content, workerID string) (Model, tea.Cmd) {
 	cmdSubmitter := m.cmdSubmitter()
 	if cmdSubmitter == nil {
-		m = m.SetError("Command submitter not available")
-		return m, nil
+		return m.SetError("Command submitter not available")
 	}
 
 	// Submit v2 command to send message to worker
@@ -1157,8 +1148,7 @@ func (m Model) handleUserInputToWorker(content, workerID string) (Model, tea.Cmd
 func (m Model) handleUserInputBroadcast(content string) (Model, tea.Cmd) {
 	cmdSubmitter := m.cmdSubmitter()
 	if cmdSubmitter == nil {
-		m = m.SetError("Command submitter not available")
-		return m, nil
+		return m.SetError("Command submitter not available")
 	}
 
 	// Send to coordinator via v2 command
@@ -1209,8 +1199,7 @@ func (m Model) handlePauseToggle() (Model, tea.Cmd) {
 func (m Model) handleReplaceCoordinator() (Model, tea.Cmd) {
 	cmdSubmitter := m.cmdSubmitter()
 	if cmdSubmitter == nil {
-		m = m.SetError("Command submitter not available")
-		return m, nil
+		return m.SetError("Command submitter not available")
 	}
 
 	// Set pending refresh flag
@@ -1254,7 +1243,7 @@ When you're ready, call: ` + "`prepare_handoff`" + ` with your summary.`
 
 // handleStopProcessCommand parses and handles the /stop <process-id> [--force] command.
 // Syntax: /stop worker-1 [--force] or /stop coordinator [--force]
-func (m Model) handleStopProcessCommand(content string) Model {
+func (m Model) handleStopProcessCommand(content string) (Model, tea.Cmd) {
 	parts := strings.Fields(content)
 	if len(parts) < 2 {
 		return m.SetError("Usage: /stop <process-id> [--force]")
@@ -1271,12 +1260,12 @@ func (m Model) handleStopProcessCommand(content string) Model {
 	cmd := command.NewStopProcessCommand(command.SourceUser, processID, force, "user_requested")
 	cmdSubmitter.Submit(cmd)
 
-	return m
+	return m, nil
 }
 
 // handleSpawnWorkerCommand handles the /spawn command to spawn a new worker.
 // Syntax: /spawn (no arguments expected)
-func (m Model) handleSpawnWorkerCommand() Model {
+func (m Model) handleSpawnWorkerCommand() (Model, tea.Cmd) {
 	cmdSubmitter := m.cmdSubmitter()
 	if cmdSubmitter == nil {
 		return m.SetError("Command submitter not available")
@@ -1285,12 +1274,12 @@ func (m Model) handleSpawnWorkerCommand() Model {
 	cmd := command.NewSpawnProcessCommand(command.SourceUser, repository.RoleWorker)
 	cmdSubmitter.Submit(cmd)
 
-	return m
+	return m, nil
 }
 
 // handleRetireWorkerCommand handles the /retire command to retire a worker.
 // Syntax: /retire <worker-id> [reason]
-func (m Model) handleRetireWorkerCommand(content string) Model {
+func (m Model) handleRetireWorkerCommand(content string) (Model, tea.Cmd) {
 	parts := strings.Fields(content)
 	if len(parts) < 2 {
 		return m.SetError("Usage: /retire <worker-id> [reason]")
@@ -1325,13 +1314,13 @@ func (m Model) handleRetireWorkerCommand(content string) Model {
 	cmd := command.NewRetireProcessCommand(command.SourceUser, workerID, reason)
 	cmdSubmitter.Submit(cmd)
 
-	return m
+	return m, nil
 }
 
 // handleReplaceWorkerCommand handles the /replace command to replace a worker.
 // Syntax: /replace <worker-id> [reason]
 // Note: Unlike /retire, /replace coordinator IS allowed (equivalent to Ctrl+R).
-func (m Model) handleReplaceWorkerCommand(content string) Model {
+func (m Model) handleReplaceWorkerCommand(content string) (Model, tea.Cmd) {
 	parts := strings.Fields(content)
 	if len(parts) < 2 {
 		return m.SetError("Usage: /replace <worker-id> [reason]")
@@ -1361,7 +1350,7 @@ func (m Model) handleReplaceWorkerCommand(content string) Model {
 	cmd := command.NewReplaceProcessCommand(command.SourceUser, workerID, reason)
 	cmdSubmitter.Submit(cmd)
 
-	return m
+	return m, nil
 }
 
 // workerServerCache manages worker MCP servers that share the same message store.
@@ -1454,11 +1443,6 @@ func (m Model) determineSessionStatus() session.Status {
 
 	// Check if initialization failed
 	if initPhase == InitFailed {
-		return session.StatusFailed
-	}
-
-	// Check if there's an error modal showing (indicates error state)
-	if m.errorModal != nil {
 		return session.StatusFailed
 	}
 

@@ -793,12 +793,21 @@ func TestView_Golden_Paused(t *testing.T) {
 	teatest.RequireEqualOutput(t, []byte(view))
 }
 
-func TestView_Golden_WithError(t *testing.T) {
+func TestSetError_ReturnsToastCommand(t *testing.T) {
 	m := newReadyModel(120, 30)
-	m = m.SetError("Worker failed: connection refused")
+	newM, cmd := m.SetError("Worker failed: connection refused")
 
-	view := m.View()
-	teatest.RequireEqualOutput(t, []byte(view))
+	// Model should be returned unchanged (no modal state)
+	require.Equal(t, m.width, newM.width)
+
+	// Command should be non-nil (produces toast message)
+	require.NotNil(t, cmd, "SetError should return a command for toast display")
+
+	// Execute the command to verify it produces ShowToastMsg
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should produce ShowToastMsg")
+	require.Equal(t, "Worker failed: connection refused", toastMsg.Message)
 }
 
 func TestView_Golden_FullscreenCoordinator(t *testing.T) {

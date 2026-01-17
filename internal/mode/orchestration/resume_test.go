@@ -199,11 +199,8 @@ func TestHandleResumeSession_LoadError_ShowsError(t *testing.T) {
 	msg := ResumeSessionMsg{SessionDir: nonExistentDir}
 	m, cmd := m.handleResumeSession(msg)
 
-	// Verify error modal is shown
-	require.NotNil(t, m.errorModal, "error modal should be shown on load failure")
-
-	// Verify no command returned on error
-	require.Nil(t, cmd, "no command should be returned on error")
+	// Verify toast command is returned (replaces error modal)
+	require.NotNil(t, cmd, "toast command should be returned on load failure")
 
 	// Verify resumedSession is not set
 	require.Nil(t, m.resumedSession, "resumedSession should not be set on error")
@@ -219,11 +216,8 @@ func TestHandleResumeSession_InvalidPath(t *testing.T) {
 	msg := ResumeSessionMsg{SessionDir: invalidDir}
 	m, cmd := m.handleResumeSession(msg)
 
-	// Verify error modal is shown
-	require.NotNil(t, m.errorModal, "error modal should be shown for invalid session path")
-
-	// Verify no command returned
-	require.Nil(t, cmd)
+	// Verify toast command is returned (replaces error modal)
+	require.NotNil(t, cmd, "toast command should be returned for invalid session path")
 
 	// Verify resumedSession is not set
 	require.Nil(t, m.resumedSession)
@@ -292,11 +286,8 @@ func TestHandleStartRestoredSession_NilSession_ShowsError(t *testing.T) {
 	msg := StartRestoredSessionMsg{Session: nil}
 	m, cmd := m.handleStartRestoredSession(msg)
 
-	// Verify error modal is shown
-	require.NotNil(t, m.errorModal, "error modal should be shown for nil session")
-
-	// Verify no command returned
-	require.Nil(t, cmd)
+	// Verify toast command is returned (replaces error modal)
+	require.NotNil(t, cmd, "toast command should be returned for nil session")
 }
 
 // =============================================================================
@@ -574,9 +565,8 @@ func TestHandleResumeSession_ValidationFailure(t *testing.T) {
 	msg := ResumeSessionMsg{SessionDir: sessionDir}
 	m, cmd := m.handleResumeSession(msg)
 
-	// Should show error due to validation failure
-	require.NotNil(t, m.errorModal, "error modal should be shown for non-resumable session")
-	require.Nil(t, cmd)
+	// Should return toast command due to validation failure
+	require.NotNil(t, cmd, "toast command should be returned for non-resumable session")
 	require.Nil(t, m.resumedSession)
 }
 
@@ -601,9 +591,8 @@ func TestHandleResumeSession_MissingCoordinatorRef(t *testing.T) {
 	msg := ResumeSessionMsg{SessionDir: sessionDir}
 	m, cmd := m.handleResumeSession(msg)
 
-	// Should show error due to missing coordinator ref
-	require.NotNil(t, m.errorModal)
-	require.Nil(t, cmd)
+	// Should return toast command due to missing coordinator ref
+	require.NotNil(t, cmd, "toast command should be returned for missing coordinator ref")
 	require.Nil(t, m.resumedSession)
 }
 

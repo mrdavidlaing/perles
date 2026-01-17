@@ -129,11 +129,6 @@ func (m Model) renderMainView() string {
 		mainView = m.uncommittedModal.Overlay(mainView)
 	}
 
-	// Show error modal overlay (on top - errors take priority)
-	if m.errorModal != nil {
-		mainView = m.errorModal.Overlay(mainView)
-	}
-
 	return mainView
 }
 

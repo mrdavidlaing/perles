@@ -40,8 +40,7 @@ func (m Model) handleResumeSession(msg ResumeSessionMsg) (Model, tea.Cmd) {
 	if err != nil {
 		log.Error(log.CatOrch, "Failed to load session for resumption",
 			"subsystem", "resume", "sessionDir", msg.SessionDir, "error", err)
-		m = m.SetError("Failed to load session: " + err.Error())
-		return m, nil
+		return m.SetError("Failed to load session: " + err.Error())
 	}
 
 	log.Debug(log.CatOrch, "Session loaded for resumption",
@@ -56,8 +55,7 @@ func (m Model) handleResumeSession(msg ResumeSessionMsg) (Model, tea.Cmd) {
 	if uiState == nil {
 		log.Error(log.CatOrch, "Failed to build UI state from session",
 			"subsystem", "resume", "sessionDir", msg.SessionDir)
-		m = m.SetError("Failed to build UI state from session")
-		return m, nil
+		return m.SetError("Failed to build UI state from session")
 	}
 
 	log.Debug(log.CatOrch, "UI state built from session",
@@ -110,8 +108,7 @@ func startRestoredSession(loadedSession *session.ResumableSession) tea.Cmd {
 // repositories from the loaded session data.
 func (m Model) handleStartRestoredSession(msg StartRestoredSessionMsg) (Model, tea.Cmd) {
 	if msg.Session == nil {
-		m = m.SetError("No session data available for restoration")
-		return m, nil
+		return m.SetError("No session data available for restoration")
 	}
 
 	log.Debug(log.CatOrch, "Starting restored session initialization",
