@@ -1262,18 +1262,18 @@ func (m Model) handleReplaceCoordinator() (Model, tea.Cmd) {
 	m.pendingRefresh = true
 
 	// Start timeout timer
-	timeoutCmd := tea.Tick(15*time.Second, func(time.Time) tea.Msg {
+	timeoutCmd := tea.Tick(120*time.Second, func(time.Time) tea.Msg {
 		return RefreshTimeoutMsg{}
 	})
 
 	// Send message to coordinator to post handoff via v2 command
 	handoffMessage := `[CONTEXT REFRESH INITIATED]
 
-Your context window is approaching limits. The user has initiated a coordinator refresh (Ctrl+R).
+Your context window is approaching limits. The user has initiated a coordinator refresh.
 
 WHAT'S ABOUT TO HAPPEN:
 - You will be replaced with a fresh coordinator session
-- All workers will continue running (their state is preserved)
+- All workers will continue running
 - External state (message log, bd tasks, etc.) is preserved
 - The new coordinator will start with a clean context window
 
