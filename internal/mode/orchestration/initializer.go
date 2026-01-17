@@ -1259,6 +1259,7 @@ func (i *Initializer) cleanupResources() {
 	v2Infra := i.v2Infra
 	tracingProvider := i.tracingProvider
 	sess := i.session
+	phase := i.phase
 
 	i.mcpServer = nil
 	i.v2Infra = nil
@@ -1277,7 +1278,14 @@ func (i *Initializer) cleanupResources() {
 		cancel()
 	}
 
-	if sess != nil {
+	// Close session only if initialization never completed (InitReady).
+	// Once initialization completes, the Model takes ownership via Resources()
+	// and is responsible for closing the session with the appropriate status
+	// via Model.Cleanup() -> determineSessionStatus().
+	//
+	// If we didn't reach InitReady, the Model never got the session, so we must
+	// close it here to release file handles (important on Windows).
+	if sess != nil && phase != InitReady {
 		_ = sess.Close(session.StatusFailed)
 	}
 
