@@ -1,7 +1,10 @@
 package orchestration
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +22,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/session"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
 	"github.com/zjrosen/perles/internal/ui/shared/panes"
@@ -2279,4 +2283,167 @@ func TestInit_ResumeSession_WithEmptyString_ReturnsStartCoordinatorMsg(t *testin
 	msg := cmd()
 	_, ok := msg.(StartCoordinatorMsg)
 	require.True(t, ok, "Init() should return StartCoordinatorMsg when resumeSessionDir is explicitly empty")
+}
+
+// =============================================================================
+// Workflow State Persistence Tests (perles-jke7.12)
+// =============================================================================
+
+func TestSendWorkflowToCoordinator_PersistsStateToSession(t *testing.T) {
+	// Create a temporary directory for the session
+	tmpDir := t.TempDir()
+
+	// Create a real session
+	sess, err := session.New("test-session-id", tmpDir)
+	require.NoError(t, err)
+	defer sess.Close(session.StatusCompleted)
+
+	// Create a registry with a test workflow
+	reg := workflow.NewRegistry()
+	reg.Add(workflow.Workflow{
+		ID:          "test-workflow",
+		Name:        "Test Workflow",
+		Description: "A test workflow for testing",
+		Content:     "This is the workflow content",
+		Source:      workflow.SourceBuiltIn,
+		TargetMode:  workflow.TargetOrchestration,
+	})
+
+	// Create model with session and workflow registry
+	m := New(Config{
+		WorkflowRegistry: reg,
+	})
+	m = m.SetSize(120, 40)
+	m.session = sess
+
+	// Send workflow to coordinator
+	m, _ = m.sendWorkflowToCoordinator("test-workflow")
+
+	// Verify workflow state was persisted to session
+	// Read the workflow state file directly
+	statePath := filepath.Join(tmpDir, workflow.WorkflowStateFilename)
+	data, err := os.ReadFile(statePath)
+	require.NoError(t, err, "workflow state file should exist")
+
+	var state workflow.WorkflowState
+	err = json.Unmarshal(data, &state)
+	require.NoError(t, err, "workflow state should be valid JSON")
+
+	require.Equal(t, "test-workflow", state.WorkflowID, "WorkflowID should match")
+	require.Equal(t, "Test Workflow", state.WorkflowName, "WorkflowName should match")
+	require.Equal(t, "This is the workflow content", state.WorkflowContent, "WorkflowContent should match")
+	require.False(t, state.StartedAt.IsZero(), "StartedAt should be set")
+}
+
+func TestSendWorkflowToCoordinator_WorkflowStateContainsCorrectFields(t *testing.T) {
+	// Create a temporary directory for the session
+	tmpDir := t.TempDir()
+
+	// Create a real session
+	sess, err := session.New("test-session-id", tmpDir)
+	require.NoError(t, err)
+	defer sess.Close(session.StatusCompleted)
+
+	// Create a registry with a test workflow
+	reg := workflow.NewRegistry()
+	reg.Add(workflow.Workflow{
+		ID:          "complex-workflow",
+		Name:        "Complex Workflow Name",
+		Description: "A complex workflow description",
+		Content:     "Step 1: Do this\nStep 2: Do that\nStep 3: Complete",
+		Source:      workflow.SourceUser,
+		TargetMode:  workflow.TargetOrchestration,
+	})
+
+	m := New(Config{
+		WorkflowRegistry: reg,
+	})
+	m = m.SetSize(120, 40)
+	m.session = sess
+
+	beforeSend := time.Now()
+	m, _ = m.sendWorkflowToCoordinator("complex-workflow")
+	afterSend := time.Now()
+
+	// Retrieve workflow state via session method
+	state, err := sess.GetActiveWorkflowState()
+	require.NoError(t, err)
+	require.NotNil(t, state, "GetActiveWorkflowState should return state")
+
+	// Verify all fields
+	require.Equal(t, "complex-workflow", state.WorkflowID)
+	require.Equal(t, "Complex Workflow Name", state.WorkflowName)
+	require.Equal(t, "Step 1: Do this\nStep 2: Do that\nStep 3: Complete", state.WorkflowContent)
+	require.True(t, state.StartedAt.After(beforeSend) || state.StartedAt.Equal(beforeSend),
+		"StartedAt should be >= beforeSend")
+	require.True(t, state.StartedAt.Before(afterSend) || state.StartedAt.Equal(afterSend),
+		"StartedAt should be <= afterSend")
+}
+
+func TestSendWorkflowToCoordinator_NoSessionDoesNotPanic(t *testing.T) {
+	// Create a registry with a test workflow
+	reg := workflow.NewRegistry()
+	reg.Add(workflow.Workflow{
+		ID:          "test-workflow",
+		Name:        "Test Workflow",
+		Description: "A test workflow",
+		Content:     "Test content",
+		Source:      workflow.SourceBuiltIn,
+		TargetMode:  workflow.TargetOrchestration,
+	})
+
+	m := New(Config{
+		WorkflowRegistry: reg,
+	})
+	m = m.SetSize(120, 40)
+	m.session = nil // Explicitly nil
+
+	// Should not panic - workflow still sends to coordinator
+	require.NotPanics(t, func() {
+		m, _ = m.sendWorkflowToCoordinator("test-workflow")
+	})
+
+	// Verify the workflow is still tracked in activeWorkflowRef
+	require.NotNil(t, m.activeWorkflowRef.workflow, "workflow should still be tracked")
+	require.Equal(t, "test-workflow", m.activeWorkflowRef.workflow.ID)
+}
+
+func TestSendWorkflowToCoordinator_PersistenceErrorDoesNotFailSelection(t *testing.T) {
+	// Create a temporary directory for the session
+	tmpDir := t.TempDir()
+
+	// Create a real session
+	sess, err := session.New("test-session-id", tmpDir)
+	require.NoError(t, err)
+
+	// Create a registry with a test workflow
+	reg := workflow.NewRegistry()
+	reg.Add(workflow.Workflow{
+		ID:          "test-workflow",
+		Name:        "Test Workflow",
+		Description: "A test workflow",
+		Content:     "Test content",
+		Source:      workflow.SourceBuiltIn,
+		TargetMode:  workflow.TargetOrchestration,
+	})
+
+	m := New(Config{
+		WorkflowRegistry: reg,
+	})
+	m = m.SetSize(120, 40)
+	m.session = sess
+
+	// Close the session to simulate a write error scenario
+	err = sess.Close(session.StatusCompleted)
+	require.NoError(t, err)
+
+	// Workflow selection should not fail even though persistence will fail
+	// (SetActiveWorkflowState returns os.ErrClosed on closed session)
+	require.NotPanics(t, func() {
+		m, _ = m.sendWorkflowToCoordinator("test-workflow")
+	})
+
+	// Verify the workflow is still tracked in activeWorkflowRef
+	require.NotNil(t, m.activeWorkflowRef.workflow, "workflow should still be tracked despite persistence error")
+	require.Equal(t, "test-workflow", m.activeWorkflowRef.workflow.ID)
 }

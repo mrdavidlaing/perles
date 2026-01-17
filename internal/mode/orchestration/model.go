@@ -901,6 +901,20 @@ func (m Model) sendWorkflowToCoordinator(workflowID string) (Model, tea.Cmd) {
 	// Format as instruction to coordinator
 	content := fmt.Sprintf("[WORKFLOW: %s]\n\n%s", wf.Name, wf.Content)
 
+	// Persist workflow state to session for coordinator refresh continuity
+	if m.session != nil {
+		workflowState := &workflow.WorkflowState{
+			WorkflowID:      wf.ID,
+			WorkflowName:    wf.Name,
+			WorkflowContent: wf.Content,
+			StartedAt:       time.Now(),
+		}
+		if err := m.session.SetActiveWorkflowState(workflowState); err != nil {
+			// Log warning but don't fail - workflow still works without persistence
+			log.Warn(log.CatOrch, "Failed to persist workflow state", "workflowID", wf.ID, "error", err)
+		}
+	}
+
 	return m.handleUserInputToCoordinator(content)
 }
 

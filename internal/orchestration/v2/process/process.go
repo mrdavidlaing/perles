@@ -244,19 +244,19 @@ func (p *Process) handleOutputEvent(event *client.OutputEvent) {
 		}
 	}
 
-	// Handle error events (e.g., turn.failed, error from Codex)
-	if event.Type == client.EventError {
-		errMsg := event.GetErrorMessage()
-		p.output.Append("⚠️ Error: " + errMsg)
-		p.handleInFlightError(fmt.Errorf("process error: %s", errMsg))
-		return
-	}
-
 	// Check for context exhaustion in assistant messages with error code
 	// This catches the Claude-specific pattern where error is in message content
 	if event.IsAssistant() && event.Error != nil && event.Error.IsContextExceeded() {
 		p.output.Append("⚠️ Context Exhausted")
 		p.handleInFlightError(&ContextExceededError{})
+		return
+	}
+
+	// Handle error events (e.g., turn.failed, error from Codex)
+	if event.Type == client.EventError {
+		errMsg := event.GetErrorMessage()
+		p.output.Append("⚠️ Error: " + errMsg)
+		p.handleInFlightError(fmt.Errorf("process error: %s", errMsg))
 		return
 	}
 

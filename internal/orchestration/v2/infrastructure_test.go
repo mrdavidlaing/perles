@@ -12,6 +12,7 @@ import (
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 )
 
 // createTestAgentProvider creates an AgentProvider mock for testing.
@@ -485,4 +486,48 @@ func TestInfrastructure_Integration(t *testing.T) {
 		infra.Drain()
 		assert.False(t, infra.Core.Processor.IsRunning())
 	})
+
+	t.Run("creates infrastructure with WorkflowStateProvider", func(t *testing.T) {
+		mockClient := mocks.NewMockHeadlessClient(t)
+		mockClient.EXPECT().Type().Return(client.ClientClaude).Maybe()
+
+		mockProvider := mocks.NewMockAgentProvider(t)
+		mockProvider.EXPECT().Client().Return(mockClient, nil).Maybe()
+		mockProvider.EXPECT().Extensions().Return(map[string]any{}).Maybe()
+		mockProvider.EXPECT().Type().Return(client.ClientClaude).Maybe()
+
+		// Create a mock workflow state provider
+		workflowProvider := &mockWorkflowStateProvider{}
+
+		cfg := InfrastructureConfig{
+			Port:                  8080,
+			AgentProvider:         mockProvider,
+			WorkDir:               "/tmp/test",
+			MessageRepo:           repository.NewMemoryMessageRepository(),
+			WorkflowStateProvider: workflowProvider,
+		}
+
+		// Create infrastructure with WorkflowStateProvider
+		infra, err := NewInfrastructure(cfg)
+		require.NoError(t, err)
+		require.NotNil(t, infra)
+
+		// Start the infrastructure
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		err = infra.Start(ctx)
+		require.NoError(t, err)
+		assert.True(t, infra.Core.Processor.IsRunning())
+
+		// Clean up
+		infra.Shutdown()
+	})
+}
+
+// mockWorkflowStateProvider implements handler.WorkflowStateProvider for testing.
+type mockWorkflowStateProvider struct{}
+
+func (m *mockWorkflowStateProvider) GetActiveWorkflowState() (*workflow.WorkflowState, error) {
+	return nil, nil
 }

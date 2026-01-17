@@ -2,6 +2,7 @@ package handler_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
 	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 )
 
 // ===========================================================================
@@ -909,9 +911,8 @@ func TestProcessTurnCompleteHandler_WorkerContextExceeded_NoTask(t *testing.T) {
 	require.Len(t, result.FollowUp, 1)
 }
 
-func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_NotHandledAsWorker(t *testing.T) {
-	// Tests that context exceeded for coordinator is NOT handled by the special
-	// worker context exceeded logic (only workers get this special handling)
+func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_MarksStatusFailed(t *testing.T) {
+	// Tests that coordinator context exhaustion marks status as Failed
 	processRepo, queueRepo := setupProcessRepos()
 
 	coord := &repository.Process{
@@ -930,10 +931,15 @@ func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_NotHandledAsWorke
 	result, err := h.Handle(context.Background(), cmd)
 
 	require.NoError(t, err)
+	assert.True(t, result.Success)
 
-	// Should be handled as a normal mid-session failure, not the special worker path
+	// Should transition to Failed
 	turnResult := result.Data.(*handler.ProcessTurnCompleteResult)
 	assert.Equal(t, repository.StatusFailed, turnResult.NewStatus)
+
+	// Verify coordinator is Failed in repo
+	updated, _ := processRepo.Get(repository.CoordinatorID)
+	assert.Equal(t, repository.StatusFailed, updated.Status)
 
 	// Should NOT queue message to coordinator (can't message itself about context exhaustion)
 	coordQueue := queueRepo.GetOrCreate(repository.CoordinatorID)
@@ -1038,8 +1044,8 @@ func TestProcessTurnCompleteHandler_NonContextExceededError_NoSound(t *testing.T
 	assert.Len(t, mockSound.playedSounds, 0, "sound should not be played for non-context-exceeded errors")
 }
 
-func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_NoSound(t *testing.T) {
-	// Tests that sound is NOT played for coordinator context exhaustion
+func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_PlaysSound(t *testing.T) {
+	// Tests that sound IS played for coordinator context exhaustion
 	processRepo, queueRepo := setupProcessRepos()
 
 	coord := &repository.Process{
@@ -1054,7 +1060,7 @@ func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_NoSound(t *testin
 	h := handler.NewProcessTurnCompleteHandler(processRepo, queueRepo,
 		handler.WithProcessTurnSoundService(mockSound))
 
-	// Context exceeded error but for coordinator
+	// Context exceeded error for coordinator
 	contextErr := &process.ContextExceededError{}
 	cmd := command.NewProcessTurnCompleteCommand(repository.CoordinatorID, false, nil, contextErr)
 	result, err := h.Handle(context.Background(), cmd)
@@ -1062,8 +1068,121 @@ func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_NoSound(t *testin
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 
-	// Verify sound was NOT played (context exceeded handling is only for workers)
-	assert.Len(t, mockSound.playedSounds, 0, "sound should not be played for coordinator")
+	// Verify sound WAS played for coordinator context exhaustion
+	require.Len(t, mockSound.playedSounds, 1, "sound should be played once")
+	assert.Equal(t, "deny", mockSound.playedSounds[0].soundFile)
+	assert.Equal(t, "coordinator_out_of_context", mockSound.playedSounds[0].useCase)
+}
+
+func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_EmitsAutoRefreshEvent(t *testing.T) {
+	// Tests that ProcessAutoRefreshRequired event is emitted
+	processRepo, queueRepo := setupProcessRepos()
+
+	coord := &repository.Process{
+		ID:               repository.CoordinatorID,
+		Role:             repository.RoleCoordinator,
+		Status:           repository.StatusWorking,
+		HasCompletedTurn: true,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewProcessTurnCompleteHandler(processRepo, queueRepo)
+
+	contextErr := &process.ContextExceededError{}
+	cmd := command.NewProcessTurnCompleteCommand(repository.CoordinatorID, false, nil, contextErr)
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+
+	// Verify ProcessAutoRefreshRequired event was emitted
+	require.NotEmpty(t, result.Events)
+	foundAutoRefresh := false
+	for _, evt := range result.Events {
+		if pe, ok := evt.(events.ProcessEvent); ok && pe.Type == events.ProcessAutoRefreshRequired {
+			foundAutoRefresh = true
+			assert.Equal(t, repository.CoordinatorID, pe.ProcessID)
+			assert.Equal(t, events.RoleCoordinator, pe.Role)
+			assert.Equal(t, events.ProcessStatusFailed, pe.Status)
+		}
+	}
+	assert.True(t, foundAutoRefresh, "ProcessAutoRefreshRequired event should be emitted")
+}
+
+func TestProcessTurnCompleteHandler_CoordinatorContextExceeded_ReturnsReplaceCommandAsFollowUp(t *testing.T) {
+	// Tests that ReplaceProcessCommand is returned as follow-up command
+	processRepo, queueRepo := setupProcessRepos()
+
+	coord := &repository.Process{
+		ID:               repository.CoordinatorID,
+		Role:             repository.RoleCoordinator,
+		Status:           repository.StatusWorking,
+		HasCompletedTurn: true,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewProcessTurnCompleteHandler(processRepo, queueRepo)
+
+	contextErr := &process.ContextExceededError{}
+	cmd := command.NewProcessTurnCompleteCommand(repository.CoordinatorID, false, nil, contextErr)
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify ReplaceProcessCommand is returned as follow-up command
+	require.Len(t, result.FollowUp, 1, "should have one follow-up command")
+	replaceCmd, ok := result.FollowUp[0].(*command.ReplaceProcessCommand)
+	require.True(t, ok, "should be ReplaceProcessCommand")
+	assert.Equal(t, repository.CoordinatorID, replaceCmd.ProcessID)
+	assert.Equal(t, "context_exceeded_auto_refresh", replaceCmd.Reason)
+}
+
+func TestProcessTurnCompleteHandler_WorkerContextExceeded_StillWorks(t *testing.T) {
+	// Regression test: Worker context exhaustion still works after adding coordinator handling
+	processRepo, queueRepo := setupProcessRepos()
+
+	// Create coordinator to receive the worker message
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	worker := &repository.Process{
+		ID:               "worker-1",
+		Role:             repository.RoleWorker,
+		Status:           repository.StatusWorking,
+		TaskID:           "task-abc",
+		HasCompletedTurn: true,
+	}
+	processRepo.AddProcess(worker)
+
+	h := handler.NewProcessTurnCompleteHandler(processRepo, queueRepo)
+
+	contextErr := &process.ContextExceededError{}
+	cmd := command.NewProcessTurnCompleteCommand("worker-1", false, nil, contextErr)
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify worker is Failed
+	turnResult := result.Data.(*handler.ProcessTurnCompleteResult)
+	assert.Equal(t, repository.StatusFailed, turnResult.NewStatus)
+	assert.True(t, turnResult.QueuedDelivery, "should queue delivery to coordinator")
+
+	// Verify message was queued to coordinator
+	coordQueue := queueRepo.GetOrCreate(repository.CoordinatorID)
+	require.False(t, coordQueue.IsEmpty())
+	entry, _ := coordQueue.Dequeue()
+	assert.Contains(t, entry.Content, "WORKER CONTEXT EXHAUSTED")
+	assert.Contains(t, entry.Content, "task-abc")
+
+	// Verify follow-up command
+	require.Len(t, result.FollowUp, 1)
+	deliverCmd := result.FollowUp[0].(*command.DeliverProcessQueuedCommand)
+	assert.Equal(t, repository.CoordinatorID, deliverCmd.ProcessID)
 }
 
 // ===========================================================================
@@ -2545,6 +2664,360 @@ func TestReplaceProcessHandler_ReplaceCoordinator_PassesReplacePrompt(t *testing
 	expectedPrompt := prompt.BuildReplacePrompt()
 	assert.Equal(t, expectedPrompt, call.InitialPromptOverride)
 	assert.Contains(t, call.InitialPromptOverride, "[CONTEXT REFRESH - NEW SESSION]")
+}
+
+func TestReplaceProcessHandler_SpawnBeforeRetire_SuccessfulReplacement(t *testing.T) {
+	// Test: Successful replacement - new spawns, old retires
+	// This test verifies the spawn-before-retire ordering works correctly
+	processRepo, _ := setupProcessRepos()
+	registry := process.NewProcessRegistry()
+	spawner := &mockProcessSpawner{}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, registry, handler.WithReplaceSpawner(spawner))
+
+	cmd := command.NewReplaceProcessCommand(command.SourceMCPTool, repository.CoordinatorID, "context_exceeded_auto_refresh")
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify spawner was called
+	require.Len(t, spawner.spawnCalls, 1)
+	assert.Equal(t, repository.CoordinatorID, spawner.spawnCalls[0].ID)
+
+	// Verify old coordinator is retired
+	oldCoord, _ := processRepo.Get(repository.CoordinatorID)
+	// Note: The new coordinator overwrites the old one with same ID
+	// Verify by checking the status is Ready (new coordinator) not Retired (old)
+	assert.Equal(t, repository.StatusReady, oldCoord.Status)
+
+	// Verify events emitted
+	require.Len(t, result.Events, 2)
+	retiredEvent := result.Events[0].(events.ProcessEvent)
+	assert.Equal(t, events.ProcessStatusChange, retiredEvent.Type)
+	assert.Equal(t, events.ProcessStatusRetired, retiredEvent.Status)
+
+	spawnedEvent := result.Events[1].(events.ProcessEvent)
+	assert.Equal(t, events.ProcessSpawned, spawnedEvent.Type)
+}
+
+func TestReplaceProcessHandler_SpawnBeforeRetire_SpawnFailure_RestoresOldCoordinator(t *testing.T) {
+	// Test: Spawn failure - old coordinator restored to StatusReady
+	// This is the critical safety test: spawn fails, old coordinator recovers
+	processRepo, _ := setupProcessRepos()
+	registry := process.NewProcessRegistry()
+	spawner := &mockProcessSpawner{
+		spawnErr: errors.New("spawn failed"),
+	}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, registry, handler.WithReplaceSpawner(spawner))
+
+	cmd := command.NewReplaceProcessCommand(command.SourceMCPTool, repository.CoordinatorID, "context_exceeded")
+	result, err := h.Handle(context.Background(), cmd)
+
+	// Should return error
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "failed to spawn new coordinator")
+
+	// Critical: Old coordinator should be restored to StatusReady
+	restoredCoord, _ := processRepo.Get(repository.CoordinatorID)
+	assert.Equal(t, repository.StatusReady, restoredCoord.Status)
+}
+
+func TestReplaceProcessHandler_SpawnBeforeRetire_StatusRetiringSetBeforeSpawn(t *testing.T) {
+	// Test: StatusRetiring set before spawn attempt
+	// We verify this by using a spawner that captures the coordinator status when called
+	processRepo, _ := setupProcessRepos()
+	registry := process.NewProcessRegistry()
+
+	var statusDuringSpawn repository.ProcessStatus
+
+	// Custom spawner that captures status during spawn
+	customSpawner := &statusCapturingSpawner{
+		processRepo:    processRepo,
+		processID:      repository.CoordinatorID,
+		capturedStatus: &statusDuringSpawn,
+	}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, registry, handler.WithReplaceSpawner(customSpawner))
+
+	cmd := command.NewReplaceProcessCommand(command.SourceMCPTool, repository.CoordinatorID, "test")
+	_, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+
+	// Verify StatusRetiring was set when spawn was called
+	assert.Equal(t, repository.StatusRetiring, statusDuringSpawn)
+}
+
+func TestReplaceProcessHandler_SpawnBeforeRetire_RegistryUpdatedOnSuccess(t *testing.T) {
+	// Test: Registry updated correctly on success
+	processRepo, _ := setupProcessRepos()
+	registry := process.NewProcessRegistry()
+
+	// Create a mock live process to register (use NewDormant so Stop() doesn't block)
+	mockLiveProcess := process.NewDormant(repository.CoordinatorID, repository.RoleCoordinator, "", nil, nil)
+	registry.Register(mockLiveProcess)
+
+	// Spawner that returns a new process (use NewDormant for same reason)
+	spawner := &mockProcessSpawnerWithProcess{
+		returnProcess: process.NewDormant(repository.CoordinatorID, repository.RoleCoordinator, "", nil, nil),
+	}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, registry, handler.WithReplaceSpawner(spawner))
+
+	cmd := command.NewReplaceProcessCommand(command.SourceMCPTool, repository.CoordinatorID, "test")
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify registry has the new process (should be the one from spawner)
+	registeredProcess := registry.Get(repository.CoordinatorID)
+	assert.NotNil(t, registeredProcess)
+	assert.Same(t, spawner.returnProcess, registeredProcess)
+}
+
+func TestReplaceProcessHandler_SpawnBeforeRetire_NoRegistryChangeOnSpawnFailure(t *testing.T) {
+	// Test: No registry change on spawn failure
+	processRepo, _ := setupProcessRepos()
+	registry := process.NewProcessRegistry()
+
+	// Create and register original live process (use NewDormant so Stop() doesn't block)
+	originalLiveProcess := process.NewDormant(repository.CoordinatorID, repository.RoleCoordinator, "", nil, nil)
+	registry.Register(originalLiveProcess)
+
+	// Spawner that fails
+	spawner := &mockProcessSpawner{
+		spawnErr: errors.New("spawn failed"),
+	}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, registry, handler.WithReplaceSpawner(spawner))
+
+	cmd := command.NewReplaceProcessCommand(command.SourceMCPTool, repository.CoordinatorID, "test")
+	_, err := h.Handle(context.Background(), cmd)
+
+	// Should fail
+	require.Error(t, err)
+
+	// Registry should still have the original process
+	registeredProcess := registry.Get(repository.CoordinatorID)
+	assert.NotNil(t, registeredProcess)
+	assert.Same(t, originalLiveProcess, registeredProcess)
+}
+
+// ===========================================================================
+// ReplaceProcessHandler Workflow-Aware Prompt Tests
+// ===========================================================================
+
+// mockWorkflowStateProvider provides configurable workflow state for testing.
+type mockWorkflowStateProvider struct {
+	workflowState *workflow.WorkflowState
+	err           error
+}
+
+func (m *mockWorkflowStateProvider) GetActiveWorkflowState() (*workflow.WorkflowState, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.workflowState, nil
+}
+
+func TestReplaceProcessHandler_AutoRefreshWithActiveWorkflow_UsesContinuationPrompt(t *testing.T) {
+	// Test: auto_refresh with active workflow uses continuation prompt
+	processRepo, _ := setupProcessRepos()
+	spawner := &mockProcessSpawner{}
+
+	activeWorkflow := &workflow.WorkflowState{
+		WorkflowID:      "test-workflow",
+		WorkflowName:    "Test Workflow",
+		WorkflowContent: "# Test workflow content",
+	}
+	workflowProvider := &mockWorkflowStateProvider{workflowState: activeWorkflow}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, nil,
+		handler.WithReplaceSpawner(spawner),
+		handler.WithWorkflowStateProvider(workflowProvider),
+	)
+
+	cmd := command.NewReplaceProcessCommand(command.SourceInternal, repository.CoordinatorID, "context_exceeded_auto_refresh")
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify spawner was called with continuation prompt
+	require.Len(t, spawner.spawnCalls, 1)
+	call := spawner.spawnCalls[0]
+	assert.Contains(t, call.InitialPromptOverride, "[CONTEXT REFRESH - WORKFLOW CONTINUATION]")
+	assert.Contains(t, call.InitialPromptOverride, "Test Workflow")
+	assert.Contains(t, call.InitialPromptOverride, "# Test workflow content")
+	assert.Contains(t, call.InitialPromptOverride, "Do NOT wait for user input")
+}
+
+func TestReplaceProcessHandler_AutoRefreshWithoutWorkflow_UsesStandardPrompt(t *testing.T) {
+	// Test: auto_refresh without workflow uses standard prompt
+	processRepo, _ := setupProcessRepos()
+	spawner := &mockProcessSpawner{}
+
+	// No active workflow
+	workflowProvider := &mockWorkflowStateProvider{workflowState: nil}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, nil,
+		handler.WithReplaceSpawner(spawner),
+		handler.WithWorkflowStateProvider(workflowProvider),
+	)
+
+	cmd := command.NewReplaceProcessCommand(command.SourceInternal, repository.CoordinatorID, "context_exceeded_auto_refresh")
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify spawner was called with standard prompt
+	require.Len(t, spawner.spawnCalls, 1)
+	call := spawner.spawnCalls[0]
+	expectedPrompt := prompt.BuildReplacePrompt()
+	assert.Equal(t, expectedPrompt, call.InitialPromptOverride)
+	assert.Contains(t, call.InitialPromptOverride, "[CONTEXT REFRESH - NEW SESSION]")
+}
+
+func TestReplaceProcessHandler_NilWorkflowProvider_UsesStandardPrompt(t *testing.T) {
+	// Test: nil session/provider falls back to standard prompt
+	processRepo, _ := setupProcessRepos()
+	spawner := &mockProcessSpawner{}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	// No workflow provider configured
+	h := handler.NewReplaceProcessHandler(processRepo, nil,
+		handler.WithReplaceSpawner(spawner),
+		// Note: No WithWorkflowStateProvider call
+	)
+
+	cmd := command.NewReplaceProcessCommand(command.SourceInternal, repository.CoordinatorID, "context_exceeded_auto_refresh")
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify spawner was called with standard prompt
+	require.Len(t, spawner.spawnCalls, 1)
+	call := spawner.spawnCalls[0]
+	expectedPrompt := prompt.BuildReplacePrompt()
+	assert.Equal(t, expectedPrompt, call.InitialPromptOverride)
+}
+
+func TestReplaceProcessHandler_WorkflowProviderError_UsesStandardPrompt(t *testing.T) {
+	// Test: workflow provider error falls back to standard prompt
+	processRepo, _ := setupProcessRepos()
+	spawner := &mockProcessSpawner{}
+
+	workflowProvider := &mockWorkflowStateProvider{err: errors.New("failed to read workflow state")}
+
+	coord := &repository.Process{
+		ID:     repository.CoordinatorID,
+		Role:   repository.RoleCoordinator,
+		Status: repository.StatusReady,
+	}
+	processRepo.AddProcess(coord)
+
+	h := handler.NewReplaceProcessHandler(processRepo, nil,
+		handler.WithReplaceSpawner(spawner),
+		handler.WithWorkflowStateProvider(workflowProvider),
+	)
+
+	cmd := command.NewReplaceProcessCommand(command.SourceInternal, repository.CoordinatorID, "context_exceeded_auto_refresh")
+	result, err := h.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify spawner was called with standard prompt (graceful fallback)
+	require.Len(t, spawner.spawnCalls, 1)
+	call := spawner.spawnCalls[0]
+	expectedPrompt := prompt.BuildReplacePrompt()
+	assert.Equal(t, expectedPrompt, call.InitialPromptOverride)
+}
+
+// statusCapturingSpawner captures the process status during spawn for testing
+type statusCapturingSpawner struct {
+	processRepo    *repository.MemoryProcessRepository
+	processID      string
+	capturedStatus *repository.ProcessStatus
+}
+
+func (s *statusCapturingSpawner) SpawnProcess(ctx context.Context, id string, role repository.ProcessRole, opts handler.SpawnOptions) (*process.Process, error) {
+	// Capture the status at the time of spawn
+	proc, err := s.processRepo.Get(s.processID)
+	if err == nil {
+		*s.capturedStatus = proc.Status
+	}
+	return nil, nil
+}
+
+// mockProcessSpawnerWithProcess returns a specific process instance
+type mockProcessSpawnerWithProcess struct {
+	returnProcess *process.Process
+}
+
+func (m *mockProcessSpawnerWithProcess) SpawnProcess(ctx context.Context, id string, role repository.ProcessRole, opts handler.SpawnOptions) (*process.Process, error) {
+	return m.returnProcess, nil
 }
 
 // ===========================================================================

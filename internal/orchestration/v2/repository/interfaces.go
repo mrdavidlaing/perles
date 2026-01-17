@@ -58,6 +58,7 @@ const (
 	StatusWorking  = events.ProcessStatusWorking
 	StatusPaused   = events.ProcessStatusPaused
 	StatusStopped  = events.ProcessStatusStopped
+	StatusRetiring = events.ProcessStatusRetiring
 	StatusRetired  = events.ProcessStatusRetired
 	StatusFailed   = events.ProcessStatusFailed
 )

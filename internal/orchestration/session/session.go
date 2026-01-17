@@ -16,6 +16,7 @@ import (
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 )
@@ -78,6 +79,9 @@ type Session struct {
 	// pathBuilder is used for constructing session index paths.
 	// Set via WithPathBuilder option.
 	pathBuilder *SessionPathBuilder
+
+	// Workflow state for persistence across coordinator refresh cycles.
+	activeWorkflowState *workflow.WorkflowState
 
 	// Synchronization.
 	mu     sync.Mutex
@@ -1340,4 +1344,97 @@ func (s *Session) UpdateWorkflowCompletion(status, summary string, completedAt t
 	meta.WorkflowCompletedAt = completedAt
 
 	return meta.Save(s.Dir)
+}
+
+// SetActiveWorkflowState caches workflow state in memory and persists it to disk.
+// The state is written to {session_dir}/workflow_state.json.
+func (s *Session) SetActiveWorkflowState(state *workflow.WorkflowState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return os.ErrClosed
+	}
+
+	// Cache in memory
+	s.activeWorkflowState = state
+
+	// Persist to disk
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling workflow state: %w", err)
+	}
+
+	statePath := filepath.Join(s.Dir, workflow.WorkflowStateFilename)
+	if err := os.WriteFile(statePath, data, 0600); err != nil {
+		return fmt.Errorf("writing workflow state file: %w", err)
+	}
+
+	log.Debug(log.CatOrch, "Session: persisted workflow state", "sessionID", s.ID, "workflowID", state.WorkflowID)
+
+	return nil
+}
+
+// GetActiveWorkflowState returns the cached workflow state if available,
+// otherwise loads it from disk. Returns nil if no workflow is active.
+func (s *Session) GetActiveWorkflowState() (*workflow.WorkflowState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil, os.ErrClosed
+	}
+
+	// Return cached value if available
+	if s.activeWorkflowState != nil {
+		return s.activeWorkflowState, nil
+	}
+
+	// Try to load from disk
+	statePath := filepath.Join(s.Dir, workflow.WorkflowStateFilename)
+	data, err := os.ReadFile(statePath) //nolint:gosec // G304: path is constructed from trusted s.Dir
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No workflow state file - this is normal when no workflow is active
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading workflow state file: %w", err)
+	}
+
+	var state workflow.WorkflowState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("unmarshaling workflow state: %w", err)
+	}
+
+	// Cache the loaded state
+	s.activeWorkflowState = &state
+
+	return &state, nil
+}
+
+// ClearActiveWorkflowState clears the memory cache and deletes the workflow state file from disk.
+func (s *Session) ClearActiveWorkflowState() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return os.ErrClosed
+	}
+
+	// Clear memory cache
+	s.activeWorkflowState = nil
+
+	// Delete file from disk
+	statePath := filepath.Join(s.Dir, workflow.WorkflowStateFilename)
+	if err := os.Remove(statePath); err != nil {
+		if os.IsNotExist(err) {
+			// File doesn't exist - this is fine
+			return nil
+		}
+		return fmt.Errorf("removing workflow state file: %w", err)
+	}
+
+	log.Debug(log.CatOrch, "Session: cleared workflow state", "sessionID", s.ID)
+
+	return nil
 }

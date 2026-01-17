@@ -16,6 +16,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 )
@@ -4797,4 +4798,244 @@ func TestSession_UpdateWorkflowCompletion_PreservesOtherMetadata(t *testing.T) {
 	require.Equal(t, workDir, meta.WorkDir)
 	require.Equal(t, "test-app", meta.ApplicationName)
 	require.Equal(t, "2026-01-14", meta.DatePartition)
+}
+
+// =============================================================================
+// Workflow State Management Tests
+// =============================================================================
+
+func TestSession_SetActiveWorkflowState_PersistsToFile(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-set"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close(StatusCompleted) })
+
+	startedAt := time.Now().UTC().Truncate(time.Second)
+	state := &workflow.WorkflowState{
+		WorkflowID:      "wf-abc123",
+		WorkflowName:    "Test Workflow",
+		WorkflowContent: "# Test\nSome workflow content",
+		StartedAt:       startedAt,
+	}
+
+	err = sess.SetActiveWorkflowState(state)
+	require.NoError(t, err)
+
+	// Verify file was created
+	statePath := filepath.Join(sessionDir, workflow.WorkflowStateFilename)
+	_, err = os.Stat(statePath)
+	require.NoError(t, err, "workflow state file should exist")
+
+	// Verify file contents
+	data, err := os.ReadFile(statePath)
+	require.NoError(t, err)
+
+	var loaded workflow.WorkflowState
+	err = json.Unmarshal(data, &loaded)
+	require.NoError(t, err)
+
+	require.Equal(t, "wf-abc123", loaded.WorkflowID)
+	require.Equal(t, "Test Workflow", loaded.WorkflowName)
+	require.Equal(t, "# Test\nSome workflow content", loaded.WorkflowContent)
+	require.True(t, startedAt.Equal(loaded.StartedAt))
+}
+
+func TestSession_GetActiveWorkflowState_ReturnsCached(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-cached"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close(StatusCompleted) })
+
+	state := &workflow.WorkflowState{
+		WorkflowID:   "wf-cached",
+		WorkflowName: "Cached Workflow",
+	}
+
+	err = sess.SetActiveWorkflowState(state)
+	require.NoError(t, err)
+
+	// Get should return cached value
+	got, err := sess.GetActiveWorkflowState()
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "wf-cached", got.WorkflowID)
+	require.Equal(t, "Cached Workflow", got.WorkflowName)
+
+	// Verify it's the same pointer (cached)
+	require.Same(t, state, got)
+}
+
+func TestSession_GetActiveWorkflowState_LoadsFromDiskWhenCacheEmpty(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-disk"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	// Create session and set state
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	startedAt := time.Now().UTC().Truncate(time.Second)
+	state := &workflow.WorkflowState{
+		WorkflowID:      "wf-disk",
+		WorkflowName:    "Disk Workflow",
+		WorkflowContent: "Content from disk",
+		StartedAt:       startedAt,
+	}
+
+	err = sess.SetActiveWorkflowState(state)
+	require.NoError(t, err)
+	_ = sess.Close(StatusCompleted)
+
+	// Reopen session (cache is empty)
+	sess2, err := Reopen(sessionID, sessionDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess2.Close(StatusCompleted) })
+
+	// Get should load from disk
+	got, err := sess2.GetActiveWorkflowState()
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "wf-disk", got.WorkflowID)
+	require.Equal(t, "Disk Workflow", got.WorkflowName)
+	require.Equal(t, "Content from disk", got.WorkflowContent)
+	require.True(t, startedAt.Equal(got.StartedAt))
+}
+
+func TestSession_GetActiveWorkflowState_ReturnsNilWhenNoFile(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-nofile"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close(StatusCompleted) })
+
+	// Get without setting should return nil
+	got, err := sess.GetActiveWorkflowState()
+	require.NoError(t, err)
+	require.Nil(t, got, "should return nil when no workflow state file exists")
+}
+
+func TestSession_ClearActiveWorkflowState_RemovesFileAndCache(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-clear"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close(StatusCompleted) })
+
+	// Set state first
+	state := &workflow.WorkflowState{
+		WorkflowID:   "wf-clear",
+		WorkflowName: "Clear Workflow",
+	}
+	err = sess.SetActiveWorkflowState(state)
+	require.NoError(t, err)
+
+	// Verify file exists
+	statePath := filepath.Join(sessionDir, workflow.WorkflowStateFilename)
+	_, err = os.Stat(statePath)
+	require.NoError(t, err, "workflow state file should exist before clear")
+
+	// Clear the state
+	err = sess.ClearActiveWorkflowState()
+	require.NoError(t, err)
+
+	// Verify file is deleted
+	_, err = os.Stat(statePath)
+	require.True(t, os.IsNotExist(err), "workflow state file should be deleted")
+
+	// Verify cache is cleared
+	got, err := sess.GetActiveWorkflowState()
+	require.NoError(t, err)
+	require.Nil(t, got, "should return nil after clear")
+}
+
+func TestSession_ClearActiveWorkflowState_NoErrorWhenNoFile(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-clear-nofile"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close(StatusCompleted) })
+
+	// Clear without setting should not error
+	err = sess.ClearActiveWorkflowState()
+	require.NoError(t, err, "clearing non-existent workflow state should not error")
+}
+
+func TestSession_WorkflowState_RoundTrip(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-roundtrip"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sess.Close(StatusCompleted) })
+
+	startedAt := time.Now().UTC().Truncate(time.Second)
+	original := &workflow.WorkflowState{
+		WorkflowID:      "wf-roundtrip-xyz",
+		WorkflowName:    "Complex Workflow Name",
+		WorkflowContent: "# Workflow\n\nStep 1: Do X\nStep 2: Do Y\n\n## Notes\n\nSome notes here.",
+		StartedAt:       startedAt,
+	}
+
+	// Set
+	err = sess.SetActiveWorkflowState(original)
+	require.NoError(t, err)
+
+	// Clear cache to force disk read
+	sess.mu.Lock()
+	sess.activeWorkflowState = nil
+	sess.mu.Unlock()
+
+	// Get
+	got, err := sess.GetActiveWorkflowState()
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	// Verify all fields preserved
+	require.Equal(t, original.WorkflowID, got.WorkflowID)
+	require.Equal(t, original.WorkflowName, got.WorkflowName)
+	require.Equal(t, original.WorkflowContent, got.WorkflowContent)
+	require.True(t, original.StartedAt.Equal(got.StartedAt), "StartedAt should be preserved")
+}
+
+func TestSession_WorkflowState_ClosedSessionErrors(t *testing.T) {
+	baseDir := t.TempDir()
+	sessionID := "test-workflow-closed"
+	sessionDir := filepath.Join(baseDir, "session")
+
+	sess, err := New(sessionID, sessionDir)
+	require.NoError(t, err)
+
+	// Close the session
+	err = sess.Close(StatusCompleted)
+	require.NoError(t, err)
+
+	state := &workflow.WorkflowState{
+		WorkflowID:   "wf-closed",
+		WorkflowName: "Test",
+	}
+
+	// SetActiveWorkflowState should error
+	err = sess.SetActiveWorkflowState(state)
+	require.ErrorIs(t, err, os.ErrClosed)
+
+	// GetActiveWorkflowState should error
+	_, err = sess.GetActiveWorkflowState()
+	require.ErrorIs(t, err, os.ErrClosed)
+
+	// ClearActiveWorkflowState should error
+	err = sess.ClearActiveWorkflowState()
+	require.ErrorIs(t, err, os.ErrClosed)
 }

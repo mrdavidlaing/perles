@@ -28,6 +28,10 @@ const (
 	ProcessWorking ProcessEventType = "working"
 	// ProcessWorkflowComplete is emitted when a workflow completes.
 	ProcessWorkflowComplete ProcessEventType = "workflow_complete"
+	// ProcessAutoRefreshRequired is emitted when a coordinator's context is exhausted
+	// and an automatic refresh is needed. This event is for TUI notification only;
+	// the actual refresh is triggered by the handler layer.
+	ProcessAutoRefreshRequired ProcessEventType = "auto_refresh_required"
 )
 
 // ProcessRole identifies what kind of process this is.
@@ -58,6 +62,11 @@ const (
 	ProcessStatusPaused ProcessStatus = "paused"
 	// ProcessStatusStopped means the process has been stopped by user request (can be resumed).
 	ProcessStatusStopped ProcessStatus = "stopped"
+	// ProcessStatusRetiring means the process is being replaced and will retire after handoff.
+	// This is an intermediate state during coordinator replacement (spawn-before-retire pattern).
+	// The process is still active and can complete its current work, but will transition to
+	// Retired once the replacement is ready.
+	ProcessStatusRetiring ProcessStatus = "retiring"
 	// ProcessStatusRetired means the process has been gracefully shut down (terminal state).
 	ProcessStatusRetired ProcessStatus = "retired"
 	// ProcessStatusFailed means the process encountered an error (terminal state).

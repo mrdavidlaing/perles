@@ -2759,6 +2759,55 @@ func TestHandleCoordinatorProcessEvent_ProcessStatusChange(t *testing.T) {
 	require.False(t, m.paused)
 }
 
+func TestHandleCoordinatorProcessEvent_ProcessAutoRefreshRequired(t *testing.T) {
+	// Test ProcessAutoRefreshRequired displays notification in chat
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+
+	evt := events.ProcessEvent{
+		Type:      events.ProcessAutoRefreshRequired,
+		ProcessID: "coordinator",
+		Role:      events.RoleCoordinator,
+	}
+
+	m = m.handleCoordinatorProcessEvent(evt)
+
+	// Verify notification message was added to chat
+	require.Len(t, m.coordinatorPane.messages, 1, "should have one notification message")
+	require.Equal(t, "system", m.coordinatorPane.messages[0].Role, "notification should be from system")
+	require.Contains(t, m.coordinatorPane.messages[0].Content, "Context limit reached", "notification should mention context limit")
+	require.Contains(t, m.coordinatorPane.messages[0].Content, "Auto-refreshing", "notification should mention auto-refresh")
+}
+
+func TestHandleCoordinatorProcessEvent_ProcessAutoRefreshRequired_NoCommandSubmitted(t *testing.T) {
+	// Test ProcessAutoRefreshRequired does NOT submit any commands
+	// The handler only displays a notification - the actual refresh is triggered elsewhere
+	m := New(Config{})
+	m = m.SetSize(120, 40)
+
+	// Record initial state - no v2Infra means no command submission possible
+	// This test verifies the handler doesn't try to submit commands
+
+	evt := events.ProcessEvent{
+		Type:      events.ProcessAutoRefreshRequired,
+		ProcessID: "coordinator",
+		Role:      events.RoleCoordinator,
+	}
+
+	// handleCoordinatorProcessEvent returns Model (not a tea.Cmd)
+	// This inherently means no command can be submitted - the method signature
+	// doesn't allow returning commands. This verifies the acceptance criteria:
+	// "No duplicate command submission"
+	m = m.handleCoordinatorProcessEvent(evt)
+
+	// Verify only the notification was added (no other side effects)
+	require.Len(t, m.coordinatorPane.messages, 1, "should only have notification message")
+	// Verify coordinator status wasn't changed
+	require.Equal(t, events.ProcessStatus(""), m.coordinatorStatus, "coordinator status should not change")
+	// Verify paused state wasn't affected
+	require.False(t, m.paused, "paused state should not change")
+}
+
 // Worker ProcessEvent tests
 
 func TestHandleWorkerProcessEvent_ProcessSpawned(t *testing.T) {

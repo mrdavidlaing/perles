@@ -969,6 +969,7 @@ func (i *Initializer) createWorkspaceWithContext(ctx context.Context) error {
 		SessionRefNotifier:      sess,       // Session implements SessionRefNotifier for crash-resilient resumption
 		SoundService:            i.cfg.SoundService,
 		SessionMetadataProvider: sess, // Session implements SessionMetadataProvider for workflow completion
+		WorkflowStateProvider:   sess, // Session implements WorkflowStateProvider for auto-refresh workflow continuation
 	})
 	if err != nil {
 		_ = listenerResult.Listener.Close()

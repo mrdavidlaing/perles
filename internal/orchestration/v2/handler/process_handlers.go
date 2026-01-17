@@ -21,6 +21,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/process"
 	"github.com/zjrosen/perles/internal/orchestration/v2/prompt"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/sound"
 )
 
@@ -392,6 +393,7 @@ type DeliverProcessQueuedResult struct {
 // It processes turn completion, updates the repository, and triggers queue drain.
 // Same logic for both coordinator and workers.
 // For workers, it also enforces turn completion by checking if required tools were called.
+// For coordinators, it detects context exhaustion and triggers automatic replacement.
 type ProcessTurnCompleteHandler struct {
 	processRepo     repository.ProcessRepository
 	queueRepo       repository.QueueRepository
@@ -529,6 +531,54 @@ func (h *ProcessTurnCompleteHandler) Handle(ctx context.Context, cmd command.Com
 			}
 
 			return SuccessWithEventsAndFollowUp(result, nil, []command.Command{deliverCmd}), nil
+		}
+	}
+
+	// ===========================================================================
+	// Coordinator Context Exceeded Error Handling
+	// ===========================================================================
+	// When the coordinator's context window is exhausted, we automatically trigger
+	// replacement. This enables truly uninterrupted orchestration sessions.
+	if turnCmd.Error != nil && proc.Role == repository.RoleCoordinator {
+		var contextExceededError *process.ContextExceededError
+		if errors.As(turnCmd.Error, &contextExceededError) {
+			// Mark coordinator as Failed
+			proc.Status = repository.StatusFailed
+			proc.LastActivityAt = time.Now()
+
+			if err := h.processRepo.Save(proc); err != nil {
+				return nil, fmt.Errorf("failed to save coordinator: %w", err)
+			}
+
+			// Play sound to alert user
+			h.soundService.Play("deny", "coordinator_out_of_context")
+
+			// Emit ProcessAutoRefreshRequired event for TUI notification
+			autoRefreshEvent := events.ProcessEvent{
+				Type:      events.ProcessAutoRefreshRequired,
+				ProcessID: proc.ID,
+				Role:      proc.Role,
+				Status:    events.ProcessStatusFailed,
+			}
+
+			// Create ReplaceProcessCommand to trigger automatic coordinator replacement
+			replaceCmd := command.NewReplaceProcessCommand(
+				command.SourceInternal,
+				repository.CoordinatorID,
+				"context_exceeded_auto_refresh",
+			)
+			if turnCmd.TraceID() != "" {
+				replaceCmd.SetTraceID(turnCmd.TraceID())
+			}
+
+			result := &ProcessTurnCompleteResult{
+				ProcessID:      proc.ID,
+				NewStatus:      repository.StatusFailed,
+				QueuedDelivery: false,
+				WasNoOp:        false,
+			}
+
+			return SuccessWithEventsAndFollowUp(result, []any{autoRefreshEvent}, []command.Command{replaceCmd}), nil
 		}
 	}
 
@@ -1158,14 +1208,22 @@ func (r *SpawnProcessResult) GetProcessID() string {
 // ReplaceProcessHandler
 // ===========================================================================
 
+// WorkflowStateProvider provides access to workflow state for coordinator replacement.
+// Implementations must be thread-safe.
+type WorkflowStateProvider interface {
+	// GetActiveWorkflowState returns the current workflow state, or nil if no workflow is active.
+	GetActiveWorkflowState() (*workflow.WorkflowState, error)
+}
+
 // ReplaceProcessHandler handles CmdReplaceProcess commands.
 // This is one of the two handlers with role-specific branching:
 // - Coordinator: context window refresh with handoff prompt
 // - Worker: simple retire and spawn replacement
 type ReplaceProcessHandler struct {
-	processRepo repository.ProcessRepository
-	registry    *process.ProcessRegistry
-	spawner     UnifiedProcessSpawner
+	processRepo           repository.ProcessRepository
+	registry              *process.ProcessRegistry
+	spawner               UnifiedProcessSpawner
+	workflowStateProvider WorkflowStateProvider
 }
 
 // ReplaceProcessHandlerOption configures ReplaceProcessHandler.
@@ -1175,6 +1233,16 @@ type ReplaceProcessHandlerOption func(*ReplaceProcessHandler)
 func WithReplaceSpawner(spawner UnifiedProcessSpawner) ReplaceProcessHandlerOption {
 	return func(h *ReplaceProcessHandler) {
 		h.spawner = spawner
+	}
+}
+
+// WithWorkflowStateProvider sets the workflow state provider for coordinator replacement.
+// When provided and the replacement reason is "context_exceeded_auto_refresh", the handler
+// will check for an active workflow and use a continuation prompt instead of the standard
+// replace prompt, enabling autonomous workflow resumption.
+func WithWorkflowStateProvider(provider WorkflowStateProvider) ReplaceProcessHandlerOption {
+	return func(h *ReplaceProcessHandler) {
+		h.workflowStateProvider = provider
 	}
 }
 
@@ -1209,7 +1277,7 @@ func (h *ReplaceProcessHandler) Handle(ctx context.Context, cmd command.Command)
 	}
 
 	if proc.IsCoordinator() {
-		return h.replaceCoordinator(ctx, proc, replaceCmd.Reason)
+		return h.replaceCoordinator(ctx, proc)
 	}
 	return h.replaceWorker(ctx, proc, replaceCmd.Reason)
 }
@@ -1218,8 +1286,53 @@ func (h *ReplaceProcessHandler) Handle(ctx context.Context, cmd command.Command)
 // Unlike workers, coordinators receive a handoff prompt via BuildReplacePrompt() that provides
 // context about the replacement (why it happened, what state to recover). This enables the new
 // coordinator to understand its role in an ongoing session and recover orchestration state.
-func (h *ReplaceProcessHandler) replaceCoordinator(ctx context.Context, proc *repository.Process, _ string) (*command.CommandResult, error) {
-	// Stop the old coordinator
+//
+// For auto-refresh scenarios (reason="context_exceeded_auto_refresh") with an active workflow,
+// the handler uses BuildWorkflowContinuationPrompt instead, which includes the workflow content
+// and instructs the coordinator to resume autonomously without waiting for user input.
+//
+// This method uses spawn-before-retire ordering to prevent unrecoverable session state:
+// 1. Mark old coordinator StatusRetiring (still active, rejecting new messages)
+// 2. Build replacement prompt (workflow-aware if auto-refresh with active workflow)
+// 3. Spawn new coordinator FIRST
+// 4. If spawn fails: restore old to StatusReady, return error
+// 5. Stop old coordinator process
+// 6. Mark old coordinator StatusRetired
+// 7. Update registry (unregister old, register new)
+// 8. Save new coordinator as StatusReady
+func (h *ReplaceProcessHandler) replaceCoordinator(ctx context.Context, proc *repository.Process) (*command.CommandResult, error) {
+	// Step 1: Mark old coordinator as Retiring (not Retired yet)
+	// This intermediate state signals that the coordinator should reject new messages
+	// but is still active until replacement succeeds.
+	proc.Status = repository.StatusRetiring
+	if err := h.processRepo.Save(proc); err != nil {
+		return nil, fmt.Errorf("failed to mark coordinator as retiring: %w", err)
+	}
+
+	// Step 2: Build replacement prompt
+	replacePrompt := h.buildReplacementPrompt()
+
+	// Step 3: Spawn new coordinator FIRST (before stopping old)
+	var newLiveProcess *process.Process
+	if h.spawner != nil {
+		opts := SpawnOptions{
+			InitialPromptOverride: replacePrompt,
+		}
+		var err error
+		newLiveProcess, err = h.spawner.SpawnProcess(ctx, repository.CoordinatorID, repository.RoleCoordinator, opts)
+		if err != nil {
+			// Step 4: Spawn failed - restore old coordinator to StatusReady
+			// This is the key safety feature: old coordinator remains operational
+			proc.Status = repository.StatusReady
+			if saveErr := h.processRepo.Save(proc); saveErr != nil {
+				log.Warn(log.CatOrch, "Failed to restore coordinator status after spawn failure",
+					"processID", proc.ID, "saveError", saveErr, "spawnError", err)
+			}
+			return nil, fmt.Errorf("failed to spawn new coordinator: %w", err)
+		}
+	}
+
+	// Step 5: Stop old coordinator process
 	if h.registry != nil {
 		oldProcess := h.registry.Get(proc.ID)
 		if oldProcess != nil {
@@ -1227,48 +1340,30 @@ func (h *ReplaceProcessHandler) replaceCoordinator(ctx context.Context, proc *re
 		}
 	}
 
-	// Mark old as retired
+	// Step 6: Mark old coordinator as Retired
 	proc.Status = repository.StatusRetired
 	proc.RetiredAt = time.Now()
 	if err := h.processRepo.Save(proc); err != nil {
 		return nil, fmt.Errorf("failed to retire old coordinator: %w", err)
 	}
 
-	// Create new coordinator entity (same ID)
+	// Step 7: Update registry (unregister old, register new)
+	if h.registry != nil && newLiveProcess != nil {
+		h.registry.Unregister(proc.ID)
+		h.registry.Register(newLiveProcess)
+	}
+
+	// Step 8: Create and save new coordinator entity as Ready
 	newProc := &repository.Process{
 		ID:             repository.CoordinatorID,
 		Role:           repository.RoleCoordinator,
-		Status:         repository.StatusPending,
+		Status:         repository.StatusReady,
 		CreatedAt:      time.Now(),
 		LastActivityAt: time.Now(),
 	}
-
 	if err := h.processRepo.Save(newProc); err != nil {
 		return nil, fmt.Errorf("failed to save new coordinator: %w", err)
 	}
-
-	// Spawn new coordinator process
-	if h.spawner != nil {
-		// Coordinator always uses default (generic) agent type
-		// Pass replace prompt to provide context refresh instructions
-		replacePrompt := prompt.BuildReplacePrompt()
-		opts := SpawnOptions{
-			InitialPromptOverride: replacePrompt,
-		}
-		newLiveProcess, err := h.spawner.SpawnProcess(ctx, repository.CoordinatorID, repository.RoleCoordinator, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to spawn new coordinator: %w", err)
-		}
-
-		if h.registry != nil {
-			h.registry.Unregister(proc.ID)
-			h.registry.Register(newLiveProcess)
-		}
-	}
-
-	// Update status to Ready (spawner success or no spawner = ready for tests)
-	newProc.Status = repository.StatusReady
-	_ = h.processRepo.Save(newProc)
 
 	// Emit events
 	var resultEvents []any
@@ -1395,6 +1490,25 @@ func (h *ReplaceProcessHandler) replaceWorker(ctx context.Context, proc *reposit
 	}
 
 	return SuccessWithEvents(result, resultEvents...), nil
+}
+
+// buildReplacementPrompt determines which prompt to use for coordinator replacement.
+// For auto-refresh (reason="context_exceeded_auto_refresh") with an active workflow,
+// it uses BuildWorkflowContinuationPrompt for autonomous resumption.
+// Otherwise, it uses the standard BuildReplacePrompt that waits for user direction.
+func (h *ReplaceProcessHandler) buildReplacementPrompt() string {
+	// Check for auto-refresh with active workflow
+	if h.workflowStateProvider != nil {
+		workflowState, err := h.workflowStateProvider.GetActiveWorkflowState()
+		if err != nil {
+			log.Warn(log.CatOrch, "Failed to get workflow state for replacement prompt", "error", err)
+		} else if workflowState != nil && workflowState.IsActive() {
+			return prompt.BuildWorkflowContinuationPrompt(workflowState)
+		}
+	}
+
+	// Default: use standard replace prompt that waits for user direction
+	return prompt.BuildReplacePrompt()
 }
 
 // ReplaceProcessResult contains the result of replacing a process.

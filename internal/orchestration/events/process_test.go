@@ -23,6 +23,23 @@ func TestProcessWorkflowComplete_UsableInProcessEvent(t *testing.T) {
 	require.Equal(t, "workflow_complete", string(event.Type))
 }
 
+func TestProcessAutoRefreshRequired_ConstantValue(t *testing.T) {
+	// Verify ProcessAutoRefreshRequired has the correct string value
+	require.Equal(t, "auto_refresh_required", string(ProcessAutoRefreshRequired))
+}
+
+func TestProcessAutoRefreshRequired_UsableInProcessEvent(t *testing.T) {
+	// Verify the event type can be used in ProcessEvent struct
+	event := ProcessEvent{
+		Type:      ProcessAutoRefreshRequired,
+		ProcessID: "coordinator-1",
+		Role:      RoleCoordinator,
+	}
+
+	require.Equal(t, ProcessAutoRefreshRequired, event.Type)
+	require.Equal(t, "auto_refresh_required", string(event.Type))
+}
+
 func TestProcessPhase_Values(t *testing.T) {
 	// Verify all ProcessPhase constants have correct string values
 	tests := []struct {
@@ -63,4 +80,40 @@ func TestProcessPhase_AllPhasesAreDefined(t *testing.T) {
 	}
 
 	require.Len(t, phases, 6, "Expected exactly 6 workflow phases")
+}
+
+func TestProcessStatusRetiring_ConstantValue(t *testing.T) {
+	// Verify ProcessStatusRetiring has the correct string value
+	require.Equal(t, "retiring", string(ProcessStatusRetiring))
+}
+
+func TestProcessStatusRetiring_IsTerminal(t *testing.T) {
+	// Verify IsTerminal() returns false for Retiring status
+	// Retiring is an intermediate state, not a terminal state
+	require.False(t, ProcessStatusRetiring.IsTerminal(), "Retiring should NOT be a terminal status")
+}
+
+func TestProcessStatus_IsTerminal(t *testing.T) {
+	// Verify IsTerminal() returns correct values for all statuses
+	tests := []struct {
+		status     ProcessStatus
+		isTerminal bool
+	}{
+		{ProcessStatusPending, false},
+		{ProcessStatusStarting, false},
+		{ProcessStatusReady, false},
+		{ProcessStatusWorking, false},
+		{ProcessStatusPaused, false},
+		{ProcessStatusStopped, false},
+		{ProcessStatusRetiring, false}, // Retiring is NOT terminal - coordinator is still active
+		{ProcessStatusRetired, true},
+		{ProcessStatusFailed, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.status), func(t *testing.T) {
+			require.Equal(t, tt.isTerminal, tt.status.IsTerminal(),
+				"IsTerminal() for %s should be %v", tt.status, tt.isTerminal)
+		})
+	}
 }

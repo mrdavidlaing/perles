@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+
+	"github.com/zjrosen/perles/internal/orchestration/workflow"
 )
 
 // promptModeData holds data for rendering the prompt mode system prompt.
@@ -234,6 +236,44 @@ func BuildReplacePrompt() string {
 	prompt.WriteString("2. **Wait for the user to provide direction before taking any other action.**\n")
 	prompt.WriteString("3. Do NOT assign tasks, spawn workers, or make decisions until the user tells you what to do.\n")
 	prompt.WriteString("4. Acknowledge that you've read the handoff and are ready for instructions.\n")
+
+	return prompt.String()
+}
+
+// BuildWorkflowContinuationPrompt creates a prompt for a coordinator that was
+// auto-refreshed due to context exhaustion while running a workflow. Unlike
+// BuildReplacePrompt (which waits for user direction), this prompt instructs
+// the coordinator to autonomously resume the workflow.
+func BuildWorkflowContinuationPrompt(workflowState *workflow.WorkflowState) string {
+	var prompt strings.Builder
+
+	// Section 1: Continuation marker
+	prompt.WriteString("[CONTEXT REFRESH - WORKFLOW CONTINUATION]\n\n")
+
+	// Section 2: Context explanation
+	prompt.WriteString("Your context window was exhausted, so you've been automatically refreshed.\n")
+	prompt.WriteString("Your workers are still running and all external state is preserved.\n\n")
+
+	// Section 3: Active workflow section
+	if workflowState != nil && workflowState.WorkflowName != "" {
+		prompt.WriteString(fmt.Sprintf("ACTIVE WORKFLOW: %s\n", workflowState.WorkflowName))
+		prompt.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		prompt.WriteString(workflowState.WorkflowContent)
+		prompt.WriteString("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	}
+
+	// Section 4: Recovery instructions
+	prompt.WriteString("AVAILABLE TOOLS FOR RECOVERY:\n")
+	prompt.WriteString("- `query_worker_state`: See all workers, tasks, and their current status\n")
+	prompt.WriteString("- `read_message_log`: See recent activity and progress updates\n")
+	prompt.WriteString("- All standard coordinator tools\n\n")
+
+	prompt.WriteString("RECOVERY STEPS:\n")
+	prompt.WriteString("1. Read the message log to understand current progress\n")
+	prompt.WriteString("2. Query worker state to see what workers are doing\n")
+	prompt.WriteString("3. Continue executing the workflow from where it left off\n\n")
+
+	prompt.WriteString("**IMPORTANT: Do NOT wait for user input - resume the workflow autonomously.**\n")
 
 	return prompt.String()
 }

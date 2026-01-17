@@ -773,6 +773,11 @@ func (m Model) handleCoordinatorProcessEvent(evt events.ProcessEvent) Model {
 		// Update coordinator status for UI rendering
 		m.coordinatorStatus = evt.Status
 		m = m.updateStatusFromProcessStatus(evt.Status)
+
+	case events.ProcessAutoRefreshRequired:
+		// Display notification to user about auto-refresh
+		// Note: The actual refresh is triggered by ProcessTurnCompleteHandler, not here
+		m = m.AddChatMessage("system", "⚡ Context limit reached. Auto-refreshing coordinator...", false)
 	}
 
 	return m
@@ -1201,7 +1206,6 @@ func (m Model) handlePauseToggle() (Model, tea.Cmd) {
 // Sets pendingRefresh flag and sends a message to the coordinator asking it to post
 // a handoff message via prepare_handoff. The actual Replace() is triggered when the
 // handoff message is received in handleMessageEvent.
-// Also starts a 15-second timeout to handle cases where coordinator doesn't respond.
 func (m Model) handleReplaceCoordinator() (Model, tea.Cmd) {
 	cmdSubmitter := m.cmdSubmitter()
 	if cmdSubmitter == nil {

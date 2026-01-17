@@ -65,6 +65,9 @@ type InfrastructureConfig struct {
 	// SessionMetadataProvider provides access to session metadata for workflow completion.
 	// Optional - if nil, workflow completion status is not persisted to session metadata.
 	SessionMetadataProvider handler.SessionMetadataProvider
+	// WorkflowStateProvider provides workflow state for coordinator replacement.
+	// Optional - if nil, auto-refresh uses standard replace prompt instead of workflow continuation.
+	WorkflowStateProvider handler.WorkflowStateProvider
 	// NudgeDebounce is the debounce duration for coordinator nudges.
 	// Defaults to nudger.DefaultDebounce (1 second) if zero.
 	NudgeDebounce time.Duration
@@ -192,9 +195,25 @@ func NewInfrastructure(cfg InfrastructureConfig) (*Infrastructure, error) {
 	beadsExec := beads.NewRealExecutor(cfg.WorkDir)
 
 	// Register all command handlers
-	registerHandlers(cmdProcessor, processRepo, taskRepo, queueRepo, processRegistry, turnEnforcer,
-		aiClient, extensions, beadsExec, cfg.Port, eventBus, cfg.WorkDir, cfg.Tracer,
-		cfg.SessionRefNotifier, cfg.SoundService, cfg.SessionMetadataProvider)
+	registerHandlers(
+		cmdProcessor,
+		processRepo,
+		taskRepo,
+		queueRepo,
+		processRegistry,
+		turnEnforcer,
+		aiClient,
+		extensions,
+		beadsExec,
+		cfg.Port,
+		eventBus,
+		cfg.WorkDir,
+		cfg.Tracer,
+		cfg.SessionRefNotifier,
+		cfg.SoundService,
+		cfg.SessionMetadataProvider,
+		cfg.WorkflowStateProvider,
+	)
 
 	// Create command submitter adapter
 	cmdSubmitter := handler.NewProcessorSubmitterAdapter(cmdProcessor)
@@ -305,6 +324,7 @@ func registerHandlers(
 	sessionRefNotifier handler.SessionRefNotifier,
 	soundService sound.SoundService,
 	sessionMetadataProvider handler.SessionMetadataProvider,
+	workflowStateProvider handler.WorkflowStateProvider,
 ) {
 	// Create shared infrastructure components
 	cmdSubmitter := handler.NewProcessorSubmitterAdapter(cmdProcessor)
@@ -395,7 +415,8 @@ func registerHandlers(
 		handler.NewStopWorkerHandler(processRepo, taskRepo, queueRepo, processRegistry))
 	cmdProcessor.RegisterHandler(command.CmdReplaceProcess,
 		handler.NewReplaceProcessHandler(processRepo, processRegistry,
-			handler.WithReplaceSpawner(processSpawner)))
+			handler.WithReplaceSpawner(processSpawner),
+			handler.WithWorkflowStateProvider(workflowStateProvider)))
 
 	// ============================================================
 	// Aggregation handlers (1)
