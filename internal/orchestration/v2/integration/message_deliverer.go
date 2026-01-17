@@ -48,6 +48,7 @@ type ProcessSessionDeliverer struct {
 	client          client.HeadlessClient
 	resumer         ProcessResumer
 	timeout         time.Duration
+	extensions      map[string]any
 }
 
 // ProcessSessionDelivererOption configures ProcessSessionDeliverer.
@@ -66,18 +67,27 @@ func WithDeliveryTimeout(timeout time.Duration) ProcessSessionDelivererOption {
 //   - sessionProvider: provides session IDs and MCP config for processes
 //   - aiClient: HeadlessClient for spawning/resuming sessions
 //   - resumer: ProcessResumer for resuming processes (typically ProcessRegistry)
+//   - extensions: provider-specific configuration (e.g., model settings)
 //   - opts: optional configuration
 func NewProcessSessionDeliverer(
 	sessionProvider SessionProvider,
 	aiClient client.HeadlessClient,
 	resumer ProcessResumer,
+	extensions map[string]any,
 	opts ...ProcessSessionDelivererOption,
 ) *ProcessSessionDeliverer {
+	// Defensive shallow copy to prevent accidental mutation races
+	extCopy := make(map[string]any, len(extensions))
+	for k, v := range extensions {
+		extCopy[k] = v
+	}
+
 	d := &ProcessSessionDeliverer{
 		sessionProvider: sessionProvider,
 		client:          aiClient,
 		resumer:         resumer,
 		timeout:         DefaultDeliveryTimeout,
+		extensions:      extCopy,
 	}
 	for _, opt := range opts {
 		opt(d)
@@ -149,6 +159,7 @@ func (d *ProcessSessionDeliverer) Deliver(ctx context.Context, processID, conten
 		MCPConfig:       mcpConfig,
 		SkipPermissions: true,
 		DisallowedTools: []string{"AskUserQuestion"},
+		Extensions:      d.extensions,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to resume session for process %s: %w", processID, err)
