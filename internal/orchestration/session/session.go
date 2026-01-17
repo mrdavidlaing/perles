@@ -901,7 +901,7 @@ func (s *Session) handleCoordinatorProcessEvent(event events.ProcessEvent) {
 func (s *Session) attachProcessBroker(ctx context.Context, broker *pubsub.Broker[events.ProcessEvent]) {
 	sub := broker.Subscribe(ctx)
 
-	go func() {
+	log.SafeGo("session-process-broker", func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -916,7 +916,7 @@ func (s *Session) attachProcessBroker(ctx context.Context, broker *pubsub.Broker
 				}
 			}
 		}
-	}()
+	})
 
 	log.Debug(log.CatOrch, "Session attached to process broker", "sessionID", s.ID)
 }
@@ -932,7 +932,7 @@ func (s *Session) attachProcessBroker(ctx context.Context, broker *pubsub.Broker
 func (s *Session) AttachV2EventBus(ctx context.Context, broker *pubsub.Broker[any]) {
 	sub := broker.Subscribe(ctx)
 
-	go func() {
+	log.SafeGo("session-v2-event-bus", func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -952,7 +952,7 @@ func (s *Session) AttachV2EventBus(ctx context.Context, broker *pubsub.Broker[an
 				// Other event types from v2EventBus are ignored by session logger
 			}
 		}
-	}()
+	})
 
 	log.Debug(log.CatOrch, "Session attached to v2EventBus", "sessionID", s.ID)
 }
@@ -1053,7 +1053,7 @@ func (s *Session) handleProcessEvent(event events.ProcessEvent) {
 func (s *Session) attachMessageBroker(ctx context.Context, broker *pubsub.Broker[message.Event]) {
 	sub := broker.Subscribe(ctx)
 
-	go func() {
+	log.SafeGo("session-message-broker", func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -1065,7 +1065,7 @@ func (s *Session) attachMessageBroker(ctx context.Context, broker *pubsub.Broker
 				s.handleMessageEvent(ev.Payload)
 			}
 		}
-	}()
+	})
 
 	log.Debug(log.CatOrch, "Session attached to message broker", "sessionID", s.ID)
 }
@@ -1087,7 +1087,7 @@ func (s *Session) handleMessageEvent(event message.Event) {
 func (s *Session) AttachMCPBroker(ctx context.Context, broker *pubsub.Broker[events.MCPEvent]) {
 	sub := broker.Subscribe(ctx)
 
-	go func() {
+	log.SafeGo("session-mcp-broker", func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -1099,7 +1099,7 @@ func (s *Session) AttachMCPBroker(ctx context.Context, broker *pubsub.Broker[eve
 				s.handleMCPEvent(ev.Payload)
 			}
 		}
-	}()
+	})
 
 	log.Debug(log.CatOrch, "Session attached to MCP broker", "sessionID", s.ID)
 }

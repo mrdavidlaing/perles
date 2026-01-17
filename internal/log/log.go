@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -227,4 +228,33 @@ func NewListener(ctx context.Context) *LogListener {
 		return nil
 	}
 	return pubsub.NewContinuousListener(ctx, defaultLogger.broker)
+}
+
+// SafeGo runs a function in a goroutine with panic recovery.
+// If the function panics, the panic is logged with a stack trace
+// and the goroutine exits gracefully without crashing the application.
+//
+// Use this for long-running goroutines that handle external events
+// where a panic could otherwise crash the entire application.
+//
+// Example:
+//
+//	log.SafeGo("session-event-handler", func() {
+//	    for event := range events {
+//	        handleEvent(event)
+//	    }
+//	})
+func SafeGo(name string, fn func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				Error(CatOrch, "Panic recovered in goroutine",
+					"goroutine", name,
+					"panic", fmt.Sprintf("%v", r),
+					"stack", string(debug.Stack()),
+				)
+			}
+		}()
+		fn()
+	}()
 }
