@@ -124,10 +124,10 @@ func (m *mockMessageLog) getMessages() []mockMessage {
 // mockFullMessageRepository implements MessageRepository for testing.
 type mockFullMessageRepository struct {
 	mockMessageLog
-	entries     []message.Entry
-	unreadFor   map[string][]message.Entry
-	markReadCnt map[string]int
-	count       int
+	entries          []message.Entry
+	unreadFor        map[string][]message.Entry
+	readAndMarkCalls map[string]int
+	count            int
 }
 
 func newMockFullMessageRepository() *mockFullMessageRepository {
@@ -135,9 +135,9 @@ func newMockFullMessageRepository() *mockFullMessageRepository {
 		mockMessageLog: mockMessageLog{
 			messages: make([]mockMessage, 0),
 		},
-		entries:     make([]message.Entry, 0),
-		unreadFor:   make(map[string][]message.Entry),
-		markReadCnt: make(map[string]int),
+		entries:          make([]message.Entry, 0),
+		unreadFor:        make(map[string][]message.Entry),
+		readAndMarkCalls: make(map[string]int),
 	}
 }
 
@@ -149,21 +149,18 @@ func (m *mockFullMessageRepository) Entries() []message.Entry {
 	return result
 }
 
-func (m *mockFullMessageRepository) UnreadFor(agentID string) []message.Entry {
+func (m *mockFullMessageRepository) ReadAndMark(agentID string) []message.Entry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.readAndMarkCalls[agentID]++
 	if unread, ok := m.unreadFor[agentID]; ok {
 		result := make([]message.Entry, len(unread))
 		copy(result, unread)
+		// Clear unread after reading (simulates atomic read-and-mark)
+		m.unreadFor[agentID] = nil
 		return result
 	}
 	return []message.Entry{}
-}
-
-func (m *mockFullMessageRepository) MarkRead(agentID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.markReadCnt[agentID]++
 }
 
 func (m *mockFullMessageRepository) Count() int {
@@ -197,10 +194,10 @@ func (m *mockFullMessageRepository) setUnreadFor(agentID string, entries []messa
 	m.unreadFor[agentID] = entries
 }
 
-func (m *mockFullMessageRepository) getMarkReadCount(agentID string) int {
+func (m *mockFullMessageRepository) getReadAndMarkCount(agentID string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.markReadCnt[agentID]
+	return m.readAndMarkCalls[agentID]
 }
 
 // testAdapter creates an adapter with a running processor for testing.
@@ -680,7 +677,7 @@ func TestHandleReadMessageLog(t *testing.T) {
 		assert.Equal(t, "Hi back", resp.Messages[1].Content)
 
 		// MarkRead should NOT be called when read_all=true
-		assert.Equal(t, 0, msgRepo.getMarkReadCount("worker-1"))
+		assert.Equal(t, 0, msgRepo.getReadAndMarkCount("worker-1"))
 	})
 
 	t.Run("read_unread_returns_unread_entries", func(t *testing.T) {
@@ -716,7 +713,7 @@ func TestHandleReadMessageLog(t *testing.T) {
 		assert.Equal(t, "New task", resp.Messages[0].Content)
 
 		// MarkRead should be called when read_all=false
-		assert.Equal(t, 1, msgRepo.getMarkReadCount("worker-1"))
+		assert.Equal(t, 1, msgRepo.getReadAndMarkCount("worker-1"))
 	})
 
 	t.Run("read_unread_calls_mark_read", func(t *testing.T) {
@@ -728,7 +725,7 @@ func TestHandleReadMessageLog(t *testing.T) {
 		_, err := adapter.HandleReadMessageLog(context.Background(), args, "worker-2")
 
 		require.NoError(t, err)
-		assert.Equal(t, 1, msgRepo.getMarkReadCount("worker-2"))
+		assert.Equal(t, 1, msgRepo.getReadAndMarkCount("worker-2"))
 	})
 
 	t.Run("invalid_json_args", func(t *testing.T) {

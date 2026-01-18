@@ -943,11 +943,9 @@ func (m *mockMessageRepository) Entries() []message.Entry {
 	return nil
 }
 
-func (m *mockMessageRepository) UnreadFor(_ string) []message.Entry {
+func (m *mockMessageRepository) ReadAndMark(_ string) []message.Entry {
 	return nil
 }
-
-func (m *mockMessageRepository) MarkRead(_ string) {}
 
 func (m *mockMessageRepository) Count() int {
 	m.mu.Lock()

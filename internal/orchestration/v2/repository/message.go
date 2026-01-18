@@ -86,38 +86,33 @@ func (r *MemoryMessageRepository) Entries() []Message {
 	return result
 }
 
-// UnreadFor returns all messages that the given agent hasn't read yet.
-// Does not modify read state - call MarkRead to update.
+// ReadAndMark atomically reads unread messages and marks them as read.
+// Returns all messages that the given agent hasn't read yet.
 // Note: All agents see all messages regardless of the To field (broadcast semantics).
-func (r *MemoryMessageRepository) UnreadFor(agentID string) []Message {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+func (r *MemoryMessageRepository) ReadAndMark(agentID string) []Message {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	lastRead := r.readState[agentID]
 	if lastRead >= len(r.entries) {
 		return nil
 	}
 
-	// Return all unread entries (no recipient filtering)
+	// Copy unread entries
 	unread := make([]Message, len(r.entries)-lastRead)
 	copy(unread, r.entries[lastRead:])
-	return unread
-}
 
-// MarkRead marks all current messages as read by the given agent.
-// Updates the read state index and adds the agent to ReadBy on all entries.
-func (r *MemoryMessageRepository) MarkRead(agentID string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+	// Mark as read atomically - update read state index
 	r.readState[agentID] = len(r.entries)
 
-	// Also update ReadBy on individual entries
-	for i := range r.entries {
+	// Update ReadBy on the entries we just read
+	for i := lastRead; i < len(r.entries); i++ {
 		if !slices.Contains(r.entries[i].ReadBy, agentID) {
 			r.entries[i].ReadBy = append(r.entries[i].ReadBy, agentID)
 		}
 	}
+
+	return unread
 }
 
 // Count returns the total number of messages in the log.

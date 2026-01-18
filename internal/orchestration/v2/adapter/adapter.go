@@ -642,9 +642,10 @@ func (a *V2Adapter) HandleReadMessageLog(_ context.Context, args json.RawMessage
 			entries = entries[len(entries)-limit:]
 		}
 	} else {
-		entries = a.msgRepo.UnreadFor(agentID)
+		// Use atomic ReadAndMark to prevent race where messages appended between
+		// UnreadFor and MarkRead would be marked as read without being returned.
+		entries = a.msgRepo.ReadAndMark(agentID)
 		totalCount = len(entries)
-		a.msgRepo.MarkRead(agentID)
 	}
 
 	messages := make([]messageLogEntry, len(entries))

@@ -351,14 +351,10 @@ type MessageRepository interface {
 	// The returned slice is safe to modify without affecting the repository.
 	Entries() []Message
 
-	// UnreadFor returns all messages that the given agent hasn't read yet.
-	// Does not modify read state - call MarkRead to update.
+	// ReadAndMark atomically reads unread messages and marks them as read.
+	// Returns all messages that the given agent hasn't read yet.
 	// Note: All agents see all messages regardless of the To field (broadcast semantics).
-	UnreadFor(agentID string) []Message
-
-	// MarkRead marks all current messages as read by the given agent.
-	// Updates the read state index and adds the agent to ReadBy on all entries.
-	MarkRead(agentID string)
+	ReadAndMark(agentID string) []Message
 
 	// Count returns the total number of messages in the log.
 	Count() int

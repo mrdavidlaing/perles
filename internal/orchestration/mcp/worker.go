@@ -26,9 +26,9 @@ const (
 // Note: This interface is a subset of repository.MessageRepository.
 // MemoryMessageRepository satisfies this interface, verified by compile-time assertion below.
 type MessageStore interface {
-	UnreadFor(agentID string) []message.Entry
-	MarkRead(agentID string)
 	Append(from, to, content string, msgType message.MessageType) (*message.Entry, error)
+	// ReadAndMark atomically reads unread messages and marks them as read.
+	ReadAndMark(agentID string) []message.Entry
 }
 
 // Compile-time interface assertion: MemoryMessageRepository satisfies MessageStore.
@@ -285,11 +285,9 @@ func (ws *WorkerServer) handleCheckMessages(_ context.Context, _ json.RawMessage
 		return nil, fmt.Errorf("message store not available")
 	}
 
-	// Get unread messages for this worker
-	unread := ws.msgStore.UnreadFor(ws.workerID)
-
-	// Mark as read after retrieving
-	ws.msgStore.MarkRead(ws.workerID)
+	// Use atomic ReadAndMark to prevent race where messages appended between
+	// UnreadFor and MarkRead would be marked as read without being returned.
+	unread := ws.msgStore.ReadAndMark(ws.workerID)
 
 	// Build structured response
 	messages := make([]checkMessageEntry, len(unread))

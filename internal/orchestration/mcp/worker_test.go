@@ -23,9 +23,8 @@ type mockMessageStore struct {
 	mu        sync.RWMutex
 
 	// Track method calls for verification
-	appendCalls    []appendCall
-	unreadForCalls []string
-	markReadCalls  []string
+	appendCalls      []appendCall
+	readAndMarkCalls []string
 }
 
 type appendCall struct {
@@ -37,11 +36,10 @@ type appendCall struct {
 
 func newMockMessageStore() *mockMessageStore {
 	return &mockMessageStore{
-		entries:        make([]message.Entry, 0),
-		readState:      make(map[string]int),
-		appendCalls:    make([]appendCall, 0),
-		unreadForCalls: make([]string, 0),
-		markReadCalls:  make([]string, 0),
+		entries:          make([]message.Entry, 0),
+		readState:        make(map[string]int),
+		appendCalls:      make([]appendCall, 0),
+		readAndMarkCalls: make([]string, 0),
 	}
 }
 
@@ -59,32 +57,22 @@ func (m *mockMessageStore) addEntry(from, to, content string) {
 	})
 }
 
-// UnreadFor returns all unread messages for the given agent (no recipient filtering).
-func (m *mockMessageStore) UnreadFor(agentID string) []message.Entry {
+// ReadAndMark atomically reads unread messages and marks them as read.
+func (m *mockMessageStore) ReadAndMark(agentID string) []message.Entry {
 	m.mu.Lock()
-	m.unreadForCalls = append(m.unreadForCalls, agentID)
-	m.mu.Unlock()
+	defer m.mu.Unlock()
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.readAndMarkCalls = append(m.readAndMarkCalls, agentID)
 
 	lastRead := m.readState[agentID]
 	if lastRead >= len(m.entries) {
 		return nil
 	}
 
-	// Return all unread entries (no recipient filtering)
 	unread := make([]message.Entry, len(m.entries)-lastRead)
 	copy(unread, m.entries[lastRead:])
-	return unread
-}
-
-// MarkRead marks all messages up to now as read by the given agent.
-func (m *mockMessageStore) MarkRead(agentID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.markReadCalls = append(m.markReadCalls, agentID)
 	m.readState[agentID] = len(m.entries)
+	return unread
 }
 
 // Append adds a new message to the log.
@@ -201,13 +189,9 @@ func TestWorkerServer_CheckMessagesHappyPath(t *testing.T) {
 	result, err := handler(context.Background(), json.RawMessage(`{}`))
 	require.NoError(t, err, "Unexpected error")
 
-	// Verify UnreadFor was called with correct worker ID
-	require.Len(t, store.unreadForCalls, 1, "UnreadFor should be called once")
-	require.Equal(t, "WORKER.1", store.unreadForCalls[0], "UnreadFor called with wrong worker ID")
-
-	// Verify MarkRead was called
-	require.Len(t, store.markReadCalls, 1, "MarkRead should be called once")
-	require.Equal(t, "WORKER.1", store.markReadCalls[0], "MarkRead called with wrong worker ID")
+	// Verify ReadAndMark was called with correct worker ID
+	require.Len(t, store.readAndMarkCalls, 1, "ReadAndMark should be called once")
+	require.Equal(t, "WORKER.1", store.readAndMarkCalls[0], "ReadAndMark called with wrong worker ID")
 
 	// Verify result contains message count
 	require.NotNil(t, result, "Expected result with content")
