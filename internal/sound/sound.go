@@ -51,6 +51,7 @@ func NewSystemSoundService(eventConfigs map[string]config.SoundEventConfig) *Sys
 	log.Debug(log.CatConfig, "Sound service initialized",
 		"audioAvailable", available,
 		"audioCommand", cmd,
+		"config", eventConfigs,
 		"platform", runtime.GOOS,
 	)
 

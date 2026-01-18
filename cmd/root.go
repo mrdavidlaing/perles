@@ -75,6 +75,9 @@ func initConfig() {
 	viper.SetDefault("orchestration.amp.model", defaults.Orchestration.Amp.Model)
 	viper.SetDefault("orchestration.amp.mode", defaults.Orchestration.Amp.Mode)
 
+	// Sound defaults
+	viper.SetDefault("sound.events", defaults.Sound.Events)
+
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
