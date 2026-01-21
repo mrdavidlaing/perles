@@ -11,7 +11,7 @@ import (
 
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/session"
@@ -246,7 +246,7 @@ func createTestServices(t *testing.T, cfg *config.Config, clock *mocks.MockClock
 	}
 
 	if gitExecutor != nil {
-		services.GitExecutorFactory = func(path string) git.GitExecutor {
+		services.GitExecutorFactory = func(path string) appgit.GitExecutor {
 			return gitExecutor
 		}
 	}
@@ -427,7 +427,7 @@ func TestOpenSessionPicker_DeriveApplicationName(t *testing.T) {
 		Executor:  mockBQLExecutor,
 		Clock:     clock,
 		WorkDir:   "/test/workdir",
-		GitExecutorFactory: func(path string) git.GitExecutor {
+		GitExecutorFactory: func(path string) appgit.GitExecutor {
 			return gitExecutor
 		},
 	}

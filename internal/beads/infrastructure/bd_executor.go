@@ -1,4 +1,4 @@
-package beads
+package infrastructure
 
 import (
 	"bytes"
@@ -9,27 +9,29 @@ import (
 	"strings"
 	"time"
 
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
+	domain "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/log"
 )
 
-// Compile-time check that RealExecutor implements BeadsExecutor.
-var _ BeadsExecutor = (*RealExecutor)(nil)
+// Compile-time check that BDExecutor implements IssueExecutor.
+var _ appbeads.IssueExecutor = (*BDExecutor)(nil)
 
-// RealExecutor implements BeadsExecutor by executing actual BD commands.
-type RealExecutor struct {
-	workDir  string // Working directory for command execution
-	beadsDir string // Path to .beads directory for BEADS_DIR env var
+// BDExecutor implements IssueExecutor by executing actual BD CLI commands.
+type BDExecutor struct {
+	workDir  string
+	beadsDir string
 }
 
-// NewRealExecutor creates a new RealExecutor.
+// NewBDExecutor creates a new BDExecutor.
 // workDir is the working directory for command execution.
 // beadsDir is the path to the .beads directory (sets BEADS_DIR env var).
-func NewRealExecutor(workDir, beadsDir string) *RealExecutor {
-	return &RealExecutor{workDir: workDir, beadsDir: beadsDir}
+func NewBDExecutor(workDir, beadsDir string) *BDExecutor {
+	return &BDExecutor{workDir: workDir, beadsDir: beadsDir}
 }
 
 // runBeads executes a bd command and returns stdout and any error.
-func (e *RealExecutor) runBeads(args ...string) (string, error) {
+func (e *BDExecutor) runBeads(args ...string) (string, error) {
 	//nolint:gosec // G204: args come from controlled sources
 	cmd := exec.Command("bd", args...)
 	if e.workDir != "" {
@@ -54,7 +56,7 @@ func (e *RealExecutor) runBeads(args ...string) (string, error) {
 }
 
 // UpdateStatus changes an issue's status via bd CLI.
-func (e *RealExecutor) UpdateStatus(issueID string, status Status) error {
+func (e *BDExecutor) UpdateStatus(issueID string, status domain.Status) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "UpdateStatus completed", "issueID", issueID, "status", status, "duration", time.Since(start))
@@ -68,7 +70,7 @@ func (e *RealExecutor) UpdateStatus(issueID string, status Status) error {
 }
 
 // UpdatePriority changes an issue's priority via bd CLI.
-func (e *RealExecutor) UpdatePriority(issueID string, priority Priority) error {
+func (e *BDExecutor) UpdatePriority(issueID string, priority domain.Priority) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "UpdatePriority completed", "issueID", issueID, "priority", priority, "duration", time.Since(start))
@@ -82,7 +84,7 @@ func (e *RealExecutor) UpdatePriority(issueID string, priority Priority) error {
 }
 
 // UpdateType changes an issue's type via bd CLI.
-func (e *RealExecutor) UpdateType(issueID string, issueType IssueType) error {
+func (e *BDExecutor) UpdateType(issueID string, issueType domain.IssueType) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "UpdateType completed", "issueID", issueID, "type", issueType, "duration", time.Since(start))
@@ -96,7 +98,7 @@ func (e *RealExecutor) UpdateType(issueID string, issueType IssueType) error {
 }
 
 // CloseIssue marks an issue as closed with a reason via bd CLI.
-func (e *RealExecutor) CloseIssue(issueID, reason string) error {
+func (e *BDExecutor) CloseIssue(issueID, reason string) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "CloseIssue completed", "issueID", issueID, "duration", time.Since(start))
@@ -110,13 +112,13 @@ func (e *RealExecutor) CloseIssue(issueID, reason string) error {
 }
 
 // ReopenIssue reopens a closed issue via bd CLI.
-func (e *RealExecutor) ReopenIssue(issueID string) error {
+func (e *BDExecutor) ReopenIssue(issueID string) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "ReopenIssue completed", "issueID", issueID, "duration", time.Since(start))
 	}()
 
-	if _, err := e.runBeads("update", issueID, "--status", string(StatusOpen), "--json"); err != nil {
+	if _, err := e.runBeads("update", issueID, "--status", string(domain.StatusOpen), "--json"); err != nil {
 		log.Error(log.CatBeads, "ReopenIssue failed", "issueID", issueID, "error", err)
 		return err
 	}
@@ -124,7 +126,7 @@ func (e *RealExecutor) ReopenIssue(issueID string) error {
 }
 
 // DeleteIssues deletes one or more issues in a single bd CLI call.
-func (e *RealExecutor) DeleteIssues(issueIDs []string) error {
+func (e *BDExecutor) DeleteIssues(issueIDs []string) error {
 	if len(issueIDs) == 0 {
 		return nil
 	}
@@ -148,7 +150,7 @@ func (e *RealExecutor) DeleteIssues(issueIDs []string) error {
 
 // SetLabels replaces all labels on an issue via bd CLI.
 // Pass an empty slice to remove all labels.
-func (e *RealExecutor) SetLabels(issueID string, labels []string) error {
+func (e *BDExecutor) SetLabels(issueID string, labels []string) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "SetLabels completed", "issueID", issueID, "labels", strings.Join(labels, ","), "duration", time.Since(start))
@@ -162,7 +164,7 @@ func (e *RealExecutor) SetLabels(issueID string, labels []string) error {
 }
 
 // ShowIssue executes 'bd show <id> --json' and parses the JSON array output.
-func (e *RealExecutor) ShowIssue(issueID string) (*Issue, error) {
+func (e *BDExecutor) ShowIssue(issueID string) (*domain.Issue, error) {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "ShowIssue completed", "issueID", issueID, "duration", time.Since(start))
@@ -174,8 +176,7 @@ func (e *RealExecutor) ShowIssue(issueID string) (*Issue, error) {
 		return nil, err
 	}
 
-	// bd show returns a JSON array
-	var issues []Issue
+	var issues []domain.Issue
 	if err := json.Unmarshal([]byte(output), &issues); err != nil {
 		err = fmt.Errorf("failed to parse bd show output: %w", err)
 		log.Error(log.CatBeads, "ShowIssue parse failed", "issueID", issueID, "error", err)
@@ -192,7 +193,7 @@ func (e *RealExecutor) ShowIssue(issueID string) (*Issue, error) {
 }
 
 // AddComment executes 'bd comment <id> --author <author> -- <text>'.
-func (e *RealExecutor) AddComment(issueID, author, text string) error {
+func (e *BDExecutor) AddComment(issueID, author, text string) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "AddComment completed", "issueID", issueID, "author", author, "duration", time.Since(start))
@@ -206,7 +207,7 @@ func (e *RealExecutor) AddComment(issueID, author, text string) error {
 }
 
 // CreateEpic creates a new epic via bd CLI.
-func (e *RealExecutor) CreateEpic(title, description string, labels []string) (CreateResult, error) {
+func (e *BDExecutor) CreateEpic(title, description string, labels []string) (domain.CreateResult, error) {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "CreateEpic completed", "title", title, "duration", time.Since(start))
@@ -220,21 +221,21 @@ func (e *RealExecutor) CreateEpic(title, description string, labels []string) (C
 	output, err := e.runBeads(args...)
 	if err != nil {
 		log.Error(log.CatBeads, "CreateEpic failed", "title", title, "error", err)
-		return CreateResult{}, err
+		return domain.CreateResult{}, err
 	}
 
-	var result CreateResult
+	var result domain.CreateResult
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		err = fmt.Errorf("failed to parse bd create output: %w", err)
 		log.Error(log.CatBeads, "CreateEpic parse failed", "error", err)
-		return CreateResult{}, err
+		return domain.CreateResult{}, err
 	}
 
 	return result, nil
 }
 
 // CreateTask creates a new task as a child of an epic via bd CLI.
-func (e *RealExecutor) CreateTask(title, description, parentID, assignee string, labels []string) (CreateResult, error) {
+func (e *BDExecutor) CreateTask(title, description, parentID, assignee string, labels []string) (domain.CreateResult, error) {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "CreateTask completed", "title", title, "parentID", parentID, "assignee", assignee, "duration", time.Since(start))
@@ -251,21 +252,21 @@ func (e *RealExecutor) CreateTask(title, description, parentID, assignee string,
 	output, err := e.runBeads(args...)
 	if err != nil {
 		log.Error(log.CatBeads, "CreateTask failed", "title", title, "error", err)
-		return CreateResult{}, err
+		return domain.CreateResult{}, err
 	}
 
-	var result CreateResult
+	var result domain.CreateResult
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		err = fmt.Errorf("failed to parse bd create output: %w", err)
 		log.Error(log.CatBeads, "CreateTask parse failed", "error", err)
-		return CreateResult{}, err
+		return domain.CreateResult{}, err
 	}
 
 	return result, nil
 }
 
 // AddDependency adds a dependency between two tasks via bd CLI.
-func (e *RealExecutor) AddDependency(taskID, dependsOnID string) error {
+func (e *BDExecutor) AddDependency(taskID, dependsOnID string) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "AddDependency completed", "taskID", taskID, "dependsOnID", dependsOnID, "duration", time.Since(start))

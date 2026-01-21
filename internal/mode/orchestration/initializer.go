@@ -12,9 +12,9 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zjrosen/perles/internal/beads"
+	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
 	"github.com/zjrosen/perles/internal/config"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	_ "github.com/zjrosen/perles/internal/orchestration/client/providers/amp"      // Register amp client
@@ -65,9 +65,9 @@ type InitializerConfig struct {
 	AgentProvider client.AgentProvider
 	Timeouts      config.TimeoutsConfig
 	// Worktree configuration
-	WorktreeBaseBranch string          // Branch to base worktree on. Empty = skip worktree creation
-	WorktreeBranchName string          // Optional custom branch name (empty = auto-generate)
-	GitExecutor        git.GitExecutor // Injected for testability
+	WorktreeBaseBranch string             // Branch to base worktree on. Empty = skip worktree creation
+	WorktreeBranchName string             // Optional custom branch name (empty = auto-generate)
+	GitExecutor        appgit.GitExecutor // Injected for testability
 	// Tracing configuration
 	TracingConfig config.TracingConfig // Distributed tracing settings
 	// Session storage configuration
@@ -229,7 +229,7 @@ func (b *InitializerConfigBuilder) WithTimeout(timeout time.Duration) *Initializ
 }
 
 // WithGitExecutor sets the git executor for worktree operations.
-func (b *InitializerConfigBuilder) WithGitExecutor(executor git.GitExecutor) *InitializerConfigBuilder {
+func (b *InitializerConfigBuilder) WithGitExecutor(executor appgit.GitExecutor) *InitializerConfigBuilder {
 	b.cfg.GitExecutor = executor
 	return b
 }
@@ -823,7 +823,7 @@ func (i *Initializer) createMCPServer(cfg MCPServerConfig) (*MCPServerResult, er
 	// Create coordinator server with the dynamic port and v2 adapter
 	mcpCoordServer := mcp.NewCoordinatorServerWithV2Adapter(
 		aiClient, cfg.MsgRepo, cfg.WorkDir, cfg.Port, extensions,
-		beads.NewRealExecutor(cfg.WorkDir, cfg.BeadsDir), cfg.V2Adapter)
+		infrabeads.NewBDExecutor(cfg.WorkDir, cfg.BeadsDir), cfg.V2Adapter)
 
 	// Set tracer for distributed tracing if provided
 	if cfg.Tracer != nil {

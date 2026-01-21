@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/zjrosen/perles/internal/git"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )
 
@@ -249,7 +249,7 @@ func renderNoChangesPlaceholder(width, height int) string {
 // Hash color: green for pushed, yellow for unpushed.
 // Selection highlights the full line width with a background color (only when focused).
 // Format: "abc1234 Fix auth bug"
-func renderCommitListItem(commit git.CommitInfo, selected, focused bool, width int) string {
+func renderCommitListItem(commit domaingit.CommitInfo, selected, focused bool, width int) string {
 	if width < 1 {
 		return ""
 	}
@@ -319,7 +319,7 @@ func renderCommitListItem(commit git.CommitInfo, selected, focused bool, width i
 // renderCommitList renders the commit list content (without borders).
 // Returns the inner content to be wrapped in a BorderedPane.
 // The focused parameter controls whether selection highlight is shown.
-func renderCommitList(commits []git.CommitInfo, selectedCommit, scrollTop, width, height int, focused bool) string {
+func renderCommitList(commits []domaingit.CommitInfo, selectedCommit, scrollTop, width, height int, focused bool) string {
 	if height < 1 || width < 1 {
 		return ""
 	}
@@ -905,7 +905,7 @@ func findLineIndex(lines []DiffLine, target *DiffLine) int {
 // Shows selection indicator (>) and (current) marker for the checked-out branch.
 // Selection highlights the full line width with a background color (only when focused).
 // Format: "> branch-name (current)" or "  branch-name"
-func renderBranchListItem(branch git.BranchInfo, selected, focused bool, width int) string {
+func renderBranchListItem(branch domaingit.BranchInfo, selected, focused bool, width int) string {
 	if width < 1 {
 		return ""
 	}
@@ -960,7 +960,7 @@ func renderBranchListItem(branch git.BranchInfo, selected, focused bool, width i
 // renderBranchList renders the branch list content (without borders).
 // Returns the inner content to be wrapped in a BorderedPane.
 // The focused parameter controls whether selection highlight is shown.
-func renderBranchList(branches []git.BranchInfo, selectedBranch, scrollTop, width, height int, focused bool) string {
+func renderBranchList(branches []domaingit.BranchInfo, selectedBranch, scrollTop, width, height int, focused bool) string {
 	if height < 1 || width < 1 {
 		return ""
 	}
@@ -999,7 +999,7 @@ func renderNoBranchesPlaceholder(width, height int) string {
 // Shows selection indicator (>) and displays as "dirname (branch)" format.
 // Selection highlights the full line width with a background color (only when focused).
 // Format: "> worktree-name (branch-name)" or "  worktree-name (branch-name)"
-func renderWorktreeListItem(worktree git.WorktreeInfo, selected, focused bool, width int) string {
+func renderWorktreeListItem(worktree domaingit.WorktreeInfo, selected, focused bool, width int) string {
 	if width < 1 {
 		return ""
 	}
@@ -1059,7 +1059,7 @@ func renderWorktreeListItem(worktree git.WorktreeInfo, selected, focused bool, w
 // renderWorktreeList renders the worktree list content (without borders).
 // Returns the inner content to be wrapped in a BorderedPane.
 // The focused parameter controls whether selection highlight is shown.
-func renderWorktreeList(worktrees []git.WorktreeInfo, selectedWorktree, scrollTop, width, height int, focused bool) string {
+func renderWorktreeList(worktrees []domaingit.WorktreeInfo, selectedWorktree, scrollTop, width, height int, focused bool) string {
 	if height < 1 || width < 1 {
 		return ""
 	}

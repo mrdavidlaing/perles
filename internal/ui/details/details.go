@@ -6,7 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zjrosen/perles/internal/beads"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/keys"
 	"github.com/zjrosen/perles/internal/ui/shared/markdown"
@@ -82,7 +83,7 @@ type Model struct {
 	selectedDependency int // Index into dependencies slice
 	executor           bql.BQLExecutor
 	comments           []beads.Comment
-	commentLoader      beads.BeadsClient
+	commentLoader      appbeads.CommentReader
 	commentsLoaded     bool
 	commentsError      error
 }
@@ -90,8 +91,8 @@ type Model struct {
 // New creates a new detail view.
 // The optional loader parameter enables loading full issue data for dependencies.
 // The optional commentLoader enables loading comments for the issue.
-// Pass *beads.Client for both (it implements both interfaces); nil disables loading.
-func New(issue beads.Issue, executor bql.BQLExecutor, commentLoader beads.BeadsClient) Model {
+// Pass *beads.SQLiteClient for both (it implements both interfaces); nil disables loading.
+func New(issue beads.Issue, executor bql.BQLExecutor, commentLoader appbeads.CommentReader) Model {
 	m := Model{
 		issue:         issue,
 		executor:      executor,

@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/mocks"
 )

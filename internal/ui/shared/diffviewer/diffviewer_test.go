@@ -10,7 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/stretchr/testify/require"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 )
 
@@ -97,7 +98,7 @@ func TestModel_ShowResetsState(t *testing.T) {
 	m.selectedWorkingDirNode = 5
 	m.err = nil
 	// Set commit state
-	m.commits = []git.CommitInfo{{Hash: "abc123"}}
+	m.commits = []domaingit.CommitInfo{{Hash: "abc123"}}
 	m.selectedCommit = 3
 	m.commitScrollTop = 2
 	m.currentBranch = "feature"
@@ -410,7 +411,7 @@ func TestView_WithCommits_Golden(t *testing.T) {
 		{NewPath: "go.mod", Additions: 1, Deletions: 1},
 	}
 	m.selectedWorkingDirNode = 0
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234567890def", ShortHash: "abc1234", Subject: "Fix authentication bug", Author: "Dev", Date: fixedTime.Add(-2 * time.Hour)},
 		{Hash: "def5678901234abc", ShortHash: "def5678", Subject: "Add feature X", Author: "Dev", Date: fixedTime.Add(-24 * time.Hour)},
 		{Hash: "ghi9012345678def", ShortHash: "ghi9012", Subject: "Refactor utils", Author: "Dev", Date: fixedTime.Add(-3 * 24 * time.Hour)},
@@ -431,7 +432,7 @@ func TestView_EmptyCommits_Golden(t *testing.T) {
 		{NewPath: "README.md", Additions: 10, Deletions: 0},
 	}
 	m.selectedWorkingDirNode = 0
-	m.commits = []git.CommitInfo{} // Empty - no commits yet
+	m.commits = []domaingit.CommitInfo{} // Empty - no commits yet
 	m.currentBranch = ""
 	m.refreshViewport()
 
@@ -450,7 +451,7 @@ func TestView_SingleCommit_Golden(t *testing.T) {
 		{NewPath: "initial.go", Additions: 50, Deletions: 0},
 	}
 	m.selectedWorkingDirNode = 0
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234567890def", ShortHash: "abc1234", Subject: "Initial commit", Author: "Dev", Date: fixedTime.Add(-1 * time.Hour)},
 	}
 	m.selectedCommit = 0
@@ -473,7 +474,7 @@ func TestView_NarrowViewport_Golden(t *testing.T) {
 		{NewPath: "utils.go", Additions: 10, Deletions: 0},
 	}
 	m.selectedWorkingDirNode = 0
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234567890def", ShortHash: "abc1234", Subject: "Fix bug", Author: "Dev", Date: fixedTime.Add(-1 * time.Hour)},
 		{Hash: "def5678901234abc", ShortHash: "def5678", Subject: "Add feature", Author: "Dev", Date: fixedTime.Add(-2 * 24 * time.Hour)},
 	}
@@ -515,7 +516,7 @@ func TestView_WideViewport_Golden(t *testing.T) {
 		{NewPath: "README.md", Additions: 20, Deletions: 2},
 	}
 	m.selectedWorkingDirNode = 0
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234567890def", ShortHash: "abc1234", Subject: "Implement new API endpoints for user management", Author: "Developer", Date: fixedTime.Add(-30 * time.Minute)},
 		{Hash: "def5678901234abc", ShortHash: "def5678", Subject: "Add logging infrastructure", Author: "Developer", Date: fixedTime.Add(-2 * time.Hour)},
 		{Hash: "ghi9012345678def", ShortHash: "ghi9012", Subject: "Refactor database connection handling", Author: "Developer", Date: fixedTime.Add(-5 * time.Hour)},
@@ -572,7 +573,7 @@ func TestModel_CommitsLoadedMsg(t *testing.T) {
 	m := New().SetSize(100, 50)
 	m.visible = true
 
-	commits := []git.CommitInfo{
+	commits := []domaingit.CommitInfo{
 		{Hash: "abc1234567890", ShortHash: "abc1234", Subject: "Fix bug", Author: "Dev", Date: time.Now()},
 		{Hash: "def5678901234", ShortHash: "def5678", Subject: "Add feature", Author: "Dev", Date: time.Now()},
 	}
@@ -607,7 +608,7 @@ func TestModel_CommitsLoadedMsg_EmptyCommits(t *testing.T) {
 	m.visible = true
 
 	// Empty commits (empty repository case)
-	m, cmd := m.Update(CommitsLoadedMsg{Commits: []git.CommitInfo{}, Branch: "main", Err: nil})
+	m, cmd := m.Update(CommitsLoadedMsg{Commits: []domaingit.CommitInfo{}, Branch: "main", Err: nil})
 
 	require.Nil(t, m.err)
 	require.Empty(t, m.commits)
@@ -622,10 +623,10 @@ func TestModel_LoadCommits_DetachedHead(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
 
 	// Setup mock to return detached HEAD error for GetCurrentBranch
-	mockGit.On("GetCommitLog", 50).Return([]git.CommitInfo{
+	mockGit.On("GetCommitLog", 50).Return([]domaingit.CommitInfo{
 		{Hash: "abc1234567890", ShortHash: "abc1234", Subject: "Commit", Author: "Dev", Date: time.Now()},
 	}, nil)
-	mockGit.On("GetCurrentBranch").Return("", git.ErrDetachedHead)
+	mockGit.On("GetCurrentBranch").Return("", domaingit.ErrDetachedHead)
 
 	m := NewWithGitExecutor(mockGit)
 
@@ -679,7 +680,7 @@ func TestModel_LoadCommits_BranchError(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
 
 	// Setup mock: commits succeed but branch lookup fails with non-detached error
-	mockGit.On("GetCommitLog", 50).Return([]git.CommitInfo{
+	mockGit.On("GetCommitLog", 50).Return([]domaingit.CommitInfo{
 		{Hash: "abc1234", ShortHash: "abc1234", Subject: "Commit", Author: "Dev", Date: time.Now()},
 	}, nil)
 	mockGit.On("GetCurrentBranch").Return("", errors.New("unknown branch error"))
@@ -737,7 +738,7 @@ func TestModel_ShowAndLoad(t *testing.T) {
 func TestModel_LoadCommits_WithMocks(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
 
-	commits := []git.CommitInfo{
+	commits := []domaingit.CommitInfo{
 		{Hash: "abc1234", ShortHash: "abc1234", Subject: "Commit", Author: "Dev", Date: time.Now()},
 	}
 
@@ -765,7 +766,7 @@ func TestModel_FocusCycling(t *testing.T) {
 	m := New().SetSize(100, 50)
 	m.visible = true
 	m.workingDirFiles = []DiffFile{{NewPath: "test.go"}}
-	m.commits = []git.CommitInfo{{Hash: "abc1234", ShortHash: "abc1234", Subject: "Test", Author: "Dev", Date: time.Now()}}
+	m.commits = []domaingit.CommitInfo{{Hash: "abc1234", ShortHash: "abc1234", Subject: "Test", Author: "Dev", Date: time.Now()}}
 	m.focus = focusFileList
 
 	// Initial state
@@ -859,7 +860,7 @@ func TestModel_CommitNavigation(t *testing.T) {
 	m := New().SetSize(100, 50)
 	m.visible = true
 	m.focus = focusCommitPicker
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234", ShortHash: "abc1234", Subject: "First", Author: "Dev", Date: time.Now()},
 		{Hash: "def5678", ShortHash: "def5678", Subject: "Second", Author: "Dev", Date: time.Now()},
 		{Hash: "ghi9012", ShortHash: "ghi9012", Subject: "Third", Author: "Dev", Date: time.Now()},
@@ -915,7 +916,7 @@ func TestModel_EnterInCommitPicker_DrillsIntoCommitFiles(t *testing.T) {
 	m.visible = true
 	m.focus = focusCommitPicker
 	m.commitPaneMode = commitPaneModeList
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234567890", ShortHash: "abc1234", Subject: "First", Author: "Dev", Date: time.Now()},
 		{Hash: "def5678901234", ShortHash: "def5678", Subject: "Second", Author: "Dev", Date: time.Now()},
 	}
@@ -964,7 +965,7 @@ func TestModel_EnterInFileList_NoOp(t *testing.T) {
 	m := New().SetSize(100, 50)
 	m.visible = true
 	m.focus = focusFileList
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234", ShortHash: "abc1234", Subject: "First", Author: "Dev", Date: time.Now()},
 	}
 	m.selectedCommit = 0
@@ -1022,7 +1023,7 @@ func TestCommitSelection_Integration(t *testing.T) {
 	m.visible = true
 	m.focus = focusCommitPicker
 	m.commitPaneMode = commitPaneModeList
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "first_hash_1234567", ShortHash: "first12", Subject: "First commit", Author: "Dev", Date: time.Now()},
 		{Hash: "second_hash_234567", ShortHash: "second2", Subject: "Second commit", Author: "Dev", Date: time.Now()},
 		{Hash: "third_hash_3456789", ShortHash: "third34", Subject: "Third commit", Author: "Dev", Date: time.Now()},
@@ -1076,7 +1077,7 @@ func TestCommitSelection_TabThenNavigate(t *testing.T) {
 	m.visible = true
 	m.focus = focusFileList // Start at FileList
 	m.commitPaneMode = commitPaneModeList
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "hash_a123456789", ShortHash: "hash_a1", Subject: "Commit A", Author: "Dev", Date: time.Now()},
 		{Hash: "hash_b987654321", ShortHash: "hash_b9", Subject: "Commit B", Author: "Dev", Date: time.Now()},
 	}
@@ -1467,7 +1468,7 @@ func TestBuildHeaderTitle_WorktreeTakesPrecedence(t *testing.T) {
 func TestLoadBranches_ReturnsBranches(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
 
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "feature/auth", IsCurrent: false},
 		{Name: "bugfix-#123", IsCurrent: false},
@@ -1523,7 +1524,7 @@ func TestCommitsForBranchLoaded_UpdatesCommitsAndViewingBranch(t *testing.T) {
 	m.visible = true
 	m.currentBranch = "main"
 
-	commits := []git.CommitInfo{
+	commits := []domaingit.CommitInfo{
 		{Hash: "abc1234567890", ShortHash: "abc1234", Subject: "Commit 1", Author: "Dev", Date: time.Now()},
 		{Hash: "def5678901234", ShortHash: "def5678", Subject: "Commit 2", Author: "Dev", Date: time.Now()},
 	}
@@ -1553,7 +1554,7 @@ func TestCommitsForBranchLoaded_Error(t *testing.T) {
 func TestLoadCommitsForBranch_UsesGetCommitLogForRef(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
 
-	commits := []git.CommitInfo{
+	commits := []domaingit.CommitInfo{
 		{Hash: "abc1234", ShortHash: "abc1234", Subject: "Commit", Author: "Dev", Date: time.Now()},
 	}
 	mockGit.On("GetCommitLogForRef", "feature/test", 50).Return(commits, nil)
@@ -1594,7 +1595,7 @@ func TestLoadCommitsForBranch_NilExecutor(t *testing.T) {
 func TestLoadWorktrees_ReturnsWorktrees(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
 
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/project", Branch: "main"},
 		{Path: "/project-feature", Branch: "feature/auth"},
 		{Path: "/project-bugfix", Branch: "bugfix-#123"},
@@ -1649,14 +1650,14 @@ func TestHandleWorktreeSelected_UpdatesStateFields(t *testing.T) {
 	// Use factory constructor so handleWorktreeSelected works
 	factoryCalled := false
 	factoryPath := ""
-	m := NewWithGitExecutorFactory(func(path string) git.GitExecutor {
+	m := NewWithGitExecutorFactory(func(path string) appgit.GitExecutor {
 		factoryCalled = true
 		factoryPath = path
 		return nil // For this test, we just check factory invocation and state
 	}, "/original").SetSize(100, 50)
 	m.visible = true
 	m.viewingBranch = "develop" // Should be cleared
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/tmp", Branch: "main"},
 		{Path: "/tmp-other", Branch: "feature/auth"},
 	}
@@ -1674,11 +1675,11 @@ func TestHandleWorktreeSelected_UpdatesStateFields(t *testing.T) {
 // TestHandleWorktreeSelected_WorktreeNotInCache tests error when worktree not found in cache.
 func TestHandleWorktreeSelected_WorktreeNotInCache(t *testing.T) {
 	// Need factory for handleWorktreeSelected to not no-op
-	m := NewWithGitExecutorFactory(func(path string) git.GitExecutor {
+	m := NewWithGitExecutorFactory(func(path string) appgit.GitExecutor {
 		return nil
 	}, "/original").SetSize(100, 50)
 	m.visible = true
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/project", Branch: "main"},
 	}
 
@@ -1695,7 +1696,7 @@ func TestHandleWorktreeSelected_WorktreeNotInCache(t *testing.T) {
 func TestNewWithGitExecutorFactory_CreatesModelWithFactory(t *testing.T) {
 	factoryCalled := false
 	factoryPath := ""
-	factory := func(path string) git.GitExecutor {
+	factory := func(path string) appgit.GitExecutor {
 		factoryCalled = true
 		factoryPath = path
 		return mocks.NewMockGitExecutor(t)
@@ -1724,7 +1725,7 @@ func TestNewWithGitExecutorFactory_NilFactory(t *testing.T) {
 // TestNewWithGitExecutorFactory_EmptyPath tests that empty path doesn't call factory.
 func TestNewWithGitExecutorFactory_EmptyPath(t *testing.T) {
 	factoryCalled := false
-	factory := func(path string) git.GitExecutor {
+	factory := func(path string) appgit.GitExecutor {
 		factoryCalled = true
 		return mocks.NewMockGitExecutor(t)
 	}
@@ -1750,7 +1751,7 @@ func TestNewWithGitExecutorFactory_NilFactoryAndEmptyPath(t *testing.T) {
 
 // TestNewWithGitExecutorFactory_PreservesDefaultFields tests that other fields are initialized correctly.
 func TestNewWithGitExecutorFactory_PreservesDefaultFields(t *testing.T) {
-	m := NewWithGitExecutorFactory(func(path string) git.GitExecutor {
+	m := NewWithGitExecutorFactory(func(path string) appgit.GitExecutor {
 		return nil
 	}, "/path")
 
@@ -1763,7 +1764,7 @@ func TestNewWithGitExecutorFactory_PreservesDefaultFields(t *testing.T) {
 func TestHandleWorktreeSelected_NilFactory_GracefullyNoOps(t *testing.T) {
 	m := New().SetSize(100, 50) // No factory set
 	m.visible = true
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/tmp", Branch: "main"},
 	}
 	originalPath := m.currentWorktreePath
@@ -1779,7 +1780,7 @@ func TestHandleWorktreeSelected_NilFactory_GracefullyNoOps(t *testing.T) {
 func TestHandleWorktreeSelected_FactoryCreatesNewExecutor(t *testing.T) {
 	var executorCount int
 	var lastPath string
-	factory := func(path string) git.GitExecutor {
+	factory := func(path string) appgit.GitExecutor {
 		executorCount++
 		lastPath = path
 		return mocks.NewMockGitExecutor(t)
@@ -1787,7 +1788,7 @@ func TestHandleWorktreeSelected_FactoryCreatesNewExecutor(t *testing.T) {
 
 	m := NewWithGitExecutorFactory(factory, "/original").SetSize(100, 50)
 	m.visible = true
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/new-worktree", Branch: "feature"},
 	}
 
@@ -1824,7 +1825,7 @@ func TestBuildBreadcrumb_CommitPreview(t *testing.T) {
 	m := New().SetSize(100, 50)
 	m.focus = focusCommitPicker
 	m.commitPaneMode = commitPaneModeList
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{ShortHash: "abc1234", Subject: "Fix authentication bug"},
 	}
 	m.selectedCommit = 0
@@ -3276,7 +3277,7 @@ func setupModelForExecuteCommand() Model {
 	m.selectedWorkingDirNode = 0
 
 	// Set up commits
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234", ShortHash: "abc1234", Subject: "First commit", Author: "Dev", Date: time.Now()},
 		{Hash: "def5678", ShortHash: "def5678", Subject: "Second commit", Author: "Dev", Date: time.Now()},
 	}
@@ -3725,7 +3726,7 @@ func TestExecuteCommand_GoBack(t *testing.T) {
 		m.focus = focusCommitPicker
 		m.commitPaneMode = commitPaneModeFiles
 		m.commitFiles = []DiffFile{{NewPath: "file.go"}}
-		m.inspectedCommit = &git.CommitInfo{Hash: "abc"}
+		m.inspectedCommit = &domaingit.CommitInfo{Hash: "abc"}
 
 		newModel, cmd := m.executeCommand(cmdGoBack)
 
@@ -4626,7 +4627,7 @@ func TestView_Golden_CommitsPane_TabsDefault(t *testing.T) {
 	m.commitPaneMode = commitPaneModeList
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabCommits
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234def567890abc1234def567890abc12345", ShortHash: "abc1234", Subject: "Add user authentication", Author: "Alice", Date: fixedTime},
 		{Hash: "def5678abc901234def5678abc901234def56789", ShortHash: "def5678", Subject: "Fix login bug", Author: "Bob", Date: fixedTime.Add(-time.Hour)},
 		{Hash: "ghi9012def345678ghi9012def345678ghi90123", ShortHash: "ghi9012", Subject: "Update dependencies", Author: "Charlie", Date: fixedTime.Add(-2 * time.Hour)},
@@ -4645,7 +4646,7 @@ func TestView_Golden_CommitsPane_BranchesTab(t *testing.T) {
 	m.commitPaneMode = commitPaneModeList
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabBranches
-	m.branchList = []git.BranchInfo{
+	m.branchList = []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -4666,7 +4667,7 @@ func TestView_Golden_CommitsPane_WorktreesTab(t *testing.T) {
 	m.commitPaneMode = commitPaneModeList
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabWorktrees
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/path/to/main", Branch: "main", HEAD: "abc1234"},
 		{Path: "/path/to/feature-auth", Branch: "feature/auth", HEAD: "def5678"},
 		{Path: "/path/to/hotfix", Branch: "hotfix/urgent", HEAD: "ghi9012"},
@@ -4686,7 +4687,7 @@ func TestView_Golden_CommitsPane_BranchesTab_Selected(t *testing.T) {
 	m.commitPaneMode = commitPaneModeList
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabBranches
-	m.branchList = []git.BranchInfo{
+	m.branchList = []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -4706,7 +4707,7 @@ func TestView_Golden_CommitsPane_WorktreesTab_Selected(t *testing.T) {
 	m.commitPaneMode = commitPaneModeList
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabWorktrees
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/path/to/main", Branch: "main", HEAD: "abc1234"},
 		{Path: "/path/to/feature-auth", Branch: "feature/auth", HEAD: "def5678"},
 	}
@@ -4727,7 +4728,7 @@ func TestView_Golden_CommitsPane_TabsUnfocused(t *testing.T) {
 	m.commitPaneMode = commitPaneModeList
 	m.focus = focusFileList // Not focused on commits pane
 	m.activeCommitTab = commitsTabCommits
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234def567890abc1234def567890abc12345", ShortHash: "abc1234", Subject: "Add user authentication", Author: "Alice", Date: fixedTime},
 		{Hash: "def5678abc901234def5678abc901234def56789", ShortHash: "def5678", Subject: "Fix login bug", Author: "Bob", Date: fixedTime.Add(-time.Hour)},
 	}
@@ -4763,7 +4764,7 @@ func TestView_Golden_CommitPreview_WithScrollbar(t *testing.T) {
 	m.commitPaneMode = commitPaneModeList
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabCommits
-	m.commits = []git.CommitInfo{
+	m.commits = []domaingit.CommitInfo{
 		{Hash: "abc1234def567890abc1234def567890abc12345", ShortHash: "abc1234", Subject: "Add new feature", Author: "Alice", Date: fixedTime},
 	}
 	m.selectedCommit = 0
@@ -4926,11 +4927,11 @@ func TestTabNavigation_BracketsWhenFileListFocused_NoTabChange(t *testing.T) {
 func TestTabNavigation_LazyLoading(t *testing.T) {
 	// Create a mock git executor (with Maybe() expectations since we only check commands returned)
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.On("ListBranches").Maybe().Return([]git.BranchInfo{
+	mockGit.On("ListBranches").Maybe().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "feature/test", IsCurrent: false},
 	}, nil)
-	mockGit.On("ListWorktrees").Maybe().Return([]git.WorktreeInfo{
+	mockGit.On("ListWorktrees").Maybe().Return([]domaingit.WorktreeInfo{
 		{Path: "/path/to/main", Branch: "main"},
 	}, nil)
 
@@ -4967,7 +4968,7 @@ func TestTabNavigation_NoReloadWhenAlreadyLoaded(t *testing.T) {
 
 	// Mark branch list as already loaded
 	m.branchListLoaded = true
-	m.branchList = []git.BranchInfo{
+	m.branchList = []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 	}
 
@@ -5029,7 +5030,7 @@ func TestEnsureTabDataLoaded(t *testing.T) {
 
 	t.Run("branches tab triggers loading when not loaded", func(t *testing.T) {
 		mockGit := mocks.NewMockGitExecutor(t)
-		mockGit.On("ListBranches").Maybe().Return([]git.BranchInfo{}, nil)
+		mockGit.On("ListBranches").Maybe().Return([]domaingit.BranchInfo{}, nil)
 
 		m := New().SetSize(100, 50)
 		m.gitExecutor = mockGit
@@ -5051,7 +5052,7 @@ func TestEnsureTabDataLoaded(t *testing.T) {
 
 	t.Run("worktrees tab triggers loading when not loaded", func(t *testing.T) {
 		mockGit := mocks.NewMockGitExecutor(t)
-		mockGit.On("ListWorktrees").Maybe().Return([]git.WorktreeInfo{}, nil)
+		mockGit.On("ListWorktrees").Maybe().Return([]domaingit.WorktreeInfo{}, nil)
 
 		m := New().SetSize(100, 50)
 		m.gitExecutor = mockGit
@@ -5077,7 +5078,7 @@ func TestEnsureTabDataLoaded(t *testing.T) {
 // TestBranchSelection_FromTab verifies branch selection from Branches tab auto-switches to Commits tab.
 func TestBranchSelection_FromTab(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.On("GetCommitLogForRef", "develop", 50).Return([]git.CommitInfo{
+	mockGit.On("GetCommitLogForRef", "develop", 50).Return([]domaingit.CommitInfo{
 		{Hash: "abc1234", ShortHash: "abc1234", Subject: "Test commit"},
 	}, nil)
 
@@ -5086,7 +5087,7 @@ func TestBranchSelection_FromTab(t *testing.T) {
 	m.focus = focusCommitPicker
 	m.gitExecutor = mockGit
 	m.activeCommitTab = commitsTabBranches
-	m.branchList = []git.BranchInfo{
+	m.branchList = []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -5122,11 +5123,11 @@ func TestWorktreeSelection_FromTab(t *testing.T) {
 	m.visible = true
 	m.focus = focusCommitPicker
 	m.gitExecutor = mockGit
-	m.gitExecutorFactory = func(path string) git.GitExecutor {
+	m.gitExecutorFactory = func(path string) appgit.GitExecutor {
 		return mockGit
 	}
 	m.activeCommitTab = commitsTabWorktrees
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/main", Branch: "main", HEAD: "abc1234"},
 		{Path: tempDir, Branch: "feature/auth", HEAD: "def5678"}, // Valid path
 	}
@@ -5152,7 +5153,7 @@ func TestWorktreeSelection_FromTab_ValidationError(t *testing.T) {
 	m.focus = focusCommitPicker
 	m.gitExecutor = mockGit
 	m.activeCommitTab = commitsTabWorktrees
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/nonexistent/path", Branch: "main", HEAD: "abc1234"}, // Invalid path
 	}
 	m.selectedWorktree = 0
@@ -5179,7 +5180,7 @@ func TestTabNavigation_EmptyList(t *testing.T) {
 		m.visible = true
 		m.focus = focusCommitPicker
 		m.activeCommitTab = commitsTabBranches
-		m.branchList = []git.BranchInfo{} // Empty list
+		m.branchList = []domaingit.BranchInfo{} // Empty list
 		m.branchListLoaded = true
 
 		// Press Enter - should not crash or error
@@ -5195,7 +5196,7 @@ func TestTabNavigation_EmptyList(t *testing.T) {
 		m.visible = true
 		m.focus = focusCommitPicker
 		m.activeCommitTab = commitsTabWorktrees
-		m.worktreeList = []git.WorktreeInfo{} // Empty list
+		m.worktreeList = []domaingit.WorktreeInfo{} // Empty list
 		m.worktreeListLoaded = true
 
 		// Press Enter - should not crash or error
@@ -5211,7 +5212,7 @@ func TestTabNavigation_EmptyList(t *testing.T) {
 		m.visible = true
 		m.focus = focusCommitPicker
 		m.activeCommitTab = commitsTabBranches
-		m.branchList = []git.BranchInfo{} // Empty list
+		m.branchList = []domaingit.BranchInfo{} // Empty list
 		m.branchListLoaded = true
 		m.selectedBranch = 0
 
@@ -5229,7 +5230,7 @@ func TestTabNavigation_EmptyList(t *testing.T) {
 		m.visible = true
 		m.focus = focusCommitPicker
 		m.activeCommitTab = commitsTabWorktrees
-		m.worktreeList = []git.WorktreeInfo{} // Empty list
+		m.worktreeList = []domaingit.WorktreeInfo{} // Empty list
 		m.worktreeListLoaded = true
 		m.selectedWorktree = 0
 
@@ -5249,7 +5250,7 @@ func TestJKNavigation_BranchList(t *testing.T) {
 	m.visible = true
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabBranches
-	m.branchList = []git.BranchInfo{
+	m.branchList = []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -5286,7 +5287,7 @@ func TestJKNavigation_WorktreeList(t *testing.T) {
 	m.visible = true
 	m.focus = focusCommitPicker
 	m.activeCommitTab = commitsTabWorktrees
-	m.worktreeList = []git.WorktreeInfo{
+	m.worktreeList = []domaingit.WorktreeInfo{
 		{Path: "/path/to/main", Branch: "main", HEAD: "abc1234"},
 		{Path: "/path/to/develop", Branch: "develop", HEAD: "def5678"},
 		{Path: "/path/to/feature", Branch: "feature/auth", HEAD: "ghi9012"},
@@ -5323,7 +5324,7 @@ func TestBranchesLoadedMsg_SetsLoadedFlag(t *testing.T) {
 	m.visible = true
 	require.False(t, m.branchListLoaded, "branchListLoaded should be false initially")
 
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 	}
@@ -5340,7 +5341,7 @@ func TestWorktreesLoadedMsg_SetsLoadedFlag(t *testing.T) {
 	m.visible = true
 	require.False(t, m.worktreeListLoaded, "worktreeListLoaded should be false initially")
 
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/path/to/main", Branch: "main", HEAD: "abc1234"},
 		{Path: "/path/to/develop", Branch: "develop", HEAD: "def5678"},
 	}
@@ -5359,9 +5360,9 @@ func TestScrollStateManagement_Branches(t *testing.T) {
 	m.activeCommitTab = commitsTabBranches
 
 	// Create a list longer than visible height
-	var branches []git.BranchInfo
+	var branches []domaingit.BranchInfo
 	for i := 0; i < 20; i++ {
-		branches = append(branches, git.BranchInfo{Name: fmt.Sprintf("branch-%d", i), IsCurrent: i == 0})
+		branches = append(branches, domaingit.BranchInfo{Name: fmt.Sprintf("branch-%d", i), IsCurrent: i == 0})
 	}
 	m.branchList = branches
 	m.selectedBranch = 0
@@ -5386,9 +5387,9 @@ func TestScrollStateManagement_Worktrees(t *testing.T) {
 	m.activeCommitTab = commitsTabWorktrees
 
 	// Create a list longer than visible height
-	var worktrees []git.WorktreeInfo
+	var worktrees []domaingit.WorktreeInfo
 	for i := 0; i < 20; i++ {
-		worktrees = append(worktrees, git.WorktreeInfo{Path: fmt.Sprintf("/path/to/wt-%d", i), Branch: fmt.Sprintf("branch-%d", i)})
+		worktrees = append(worktrees, domaingit.WorktreeInfo{Path: fmt.Sprintf("/path/to/wt-%d", i), Branch: fmt.Sprintf("branch-%d", i)})
 	}
 	m.worktreeList = worktrees
 	m.selectedWorktree = 0

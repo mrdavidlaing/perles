@@ -1,30 +1,33 @@
-package beads
+package infrastructure
 
 import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
 
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
+	domain "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/log"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
-// Client provides access to beads data.
-type Client struct {
+// Compile-time check that SQLiteClient implements required interfaces.
+var (
+	_ appbeads.VersionReader = (*SQLiteClient)(nil)
+	_ appbeads.CommentReader = (*SQLiteClient)(nil)
+)
+
+// SQLiteClient provides read access to the beads SQLite database.
+type SQLiteClient struct {
 	db     *sql.DB
 	dbPath string
 }
 
-type BeadsClient interface {
-	Version() (string, error)
-	GetComments(issueID string) ([]Comment, error)
-}
-
-// NewClient creates a client connected to the beads database.
-// beadsDir should be the resolved .beads directory path (use paths.ResolveBeadsDir).
-func NewClient(beadsDir string) (*Client, error) {
+// NewSQLiteClient creates a client connected to the beads database.
+// beadsDir should be the resolved .beads directory path.
+func NewSQLiteClient(beadsDir string) (*SQLiteClient, error) {
 	dbPath := filepath.Join(beadsDir, "beads.db")
 	log.Debug(log.CatDB, "Opening database", "path", dbPath)
 	db, err := sql.Open("sqlite3", "file:"+dbPath+"?mode=ro")
@@ -32,33 +35,32 @@ func NewClient(beadsDir string) (*Client, error) {
 		log.ErrorErr(log.CatDB, "Failed to open database", err, "path", dbPath)
 		return nil, err
 	}
-	// Verify connection works
 	if err := db.Ping(); err != nil {
 		log.ErrorErr(log.CatDB, "Failed to ping database", err, "path", dbPath)
 		return nil, err
 	}
 	log.Info(log.CatDB, "Connected to database", "path", dbPath)
-	return &Client{db: db, dbPath: dbPath}, nil
+	return &SQLiteClient{db: db, dbPath: dbPath}, nil
 }
 
 // Close closes the database connection.
-func (c *Client) Close() error {
+func (c *SQLiteClient) Close() error {
 	return c.db.Close()
 }
 
 // DBPath returns the resolved path to the beads.db file.
-func (c *Client) DBPath() string {
+func (c *SQLiteClient) DBPath() string {
 	return c.dbPath
 }
 
 // DB returns the underlying database connection.
 // Used by BQL executor to run queries directly.
-func (c *Client) DB() *sql.DB {
+func (c *SQLiteClient) DB() *sql.DB {
 	return c.db
 }
 
 // Version returns the beads version from the database metadata table.
-func (c *Client) Version() (string, error) {
+func (c *SQLiteClient) Version() (string, error) {
 	var version string
 	err := c.db.QueryRow("SELECT value FROM metadata WHERE key = 'bd_version'").Scan(&version)
 	if err != nil {
@@ -68,7 +70,7 @@ func (c *Client) Version() (string, error) {
 }
 
 // GetComments fetches comments for an issue.
-func (c *Client) GetComments(issueID string) ([]Comment, error) {
+func (c *SQLiteClient) GetComments(issueID string) ([]domain.Comment, error) {
 	query := `
 		SELECT id, author, text, created_at
 		FROM comments
@@ -82,9 +84,9 @@ func (c *Client) GetComments(issueID string) ([]Comment, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	var comments []Comment
+	var comments []domain.Comment
 	for rows.Next() {
-		var comment Comment
+		var comment domain.Comment
 		if err := rows.Scan(&comment.ID, &comment.Author, &comment.Text, &comment.CreatedAt); err != nil {
 			log.ErrorErr(log.CatDB, "GetComments scan failed", err, "issueID", issueID)
 			return nil, err

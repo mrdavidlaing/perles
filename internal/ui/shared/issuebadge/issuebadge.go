@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/ui/styles"
 
 	"github.com/charmbracelet/lipgloss"

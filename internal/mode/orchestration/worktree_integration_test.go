@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/git"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 )
 
@@ -699,7 +699,7 @@ func TestWorktreeIntegration_ListWorktrees_Success(t *testing.T) {
 	// Test: ListWorktrees returns current worktrees
 	// Used for cleanup and exit messaging
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.EXPECT().ListWorktrees().Return([]git.WorktreeInfo{
+	mockGit.EXPECT().ListWorktrees().Return([]domaingit.WorktreeInfo{
 		{Path: "/home/user/myproject", Branch: "main", HEAD: "abc123"},
 		{Path: "/home/user/myproject-worktree-xyz", Branch: "perles-session-xyz", HEAD: "def456"},
 	}, nil)

@@ -10,7 +10,8 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zjrosen/perles/internal/beads"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
+	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	"github.com/zjrosen/perles/internal/orchestration/tracing"
 	"github.com/zjrosen/perles/internal/orchestration/v2/adapter"
@@ -195,7 +196,7 @@ func NewInfrastructure(cfg InfrastructureConfig) (*Infrastructure, error) {
 	turnEnforcer := handler.NewTurnCompletionTracker()
 
 	// Create BDTaskExecutor for syncing v2 state changes to BD tracker
-	beadsExec := beads.NewRealExecutor(cfg.WorkDir, cfg.BeadsDir)
+	beadsExec := infrabeads.NewBDExecutor(cfg.WorkDir, cfg.BeadsDir)
 
 	// Register all command handlers
 	registerHandlers(
@@ -320,7 +321,7 @@ func registerHandlers(
 	turnEnforcer handler.TurnCompletionEnforcer,
 	aiClient client.HeadlessClient,
 	extensions map[string]any,
-	beadsExec beads.BeadsExecutor,
+	beadsExec appbeads.IssueExecutor,
 	port int,
 	eventBus *pubsub.Broker[any],
 	workDir string,

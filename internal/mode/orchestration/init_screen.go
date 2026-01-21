@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/zjrosen/perles/internal/git"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/ui/shared/chainart"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )
@@ -351,7 +351,7 @@ func worktreeErrorMessage(err error) string {
 	}
 
 	// Check for sentinel errors first using errors.Is
-	if errors.Is(err, git.ErrInvalidBranchName) {
+	if errors.Is(err, domaingit.ErrInvalidBranchName) {
 		return "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot."
 	}
 

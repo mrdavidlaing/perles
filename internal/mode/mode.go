@@ -4,11 +4,11 @@ package mode
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/zjrosen/perles/internal/beads"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
 	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/sound"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
@@ -47,11 +47,17 @@ type Controller interface {
 	SetSize(width, height int) Controller
 }
 
+// BeadsClient combines version and comment reading for mode controllers.
+type BeadsClient interface {
+	appbeads.VersionReader
+	appbeads.CommentReader
+}
+
 // Services contains shared dependencies injected into mode controllers.
 type Services struct {
-	Client        beads.BeadsClient
+	Client        BeadsClient
 	Executor      bql.BQLExecutor
-	BeadsExecutor beads.BeadsExecutor // Executor for BD CLI commands (with proper BEADS_DIR)
+	BeadsExecutor appbeads.IssueExecutor // Executor for BD CLI commands (with proper BEADS_DIR)
 	Config        *config.Config
 	ConfigPath    string
 	DBPath        string
@@ -62,7 +68,7 @@ type Services struct {
 	Sounds        sound.SoundService
 	// GitExecutorFactory creates git executors for a given path.
 	// Used by orchestration mode to check uncommitted changes in worktrees.
-	GitExecutorFactory func(path string) git.GitExecutor
+	GitExecutorFactory func(path string) appgit.GitExecutor
 }
 
 // ShowToastMsg requests displaying a toast notification.

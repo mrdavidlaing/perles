@@ -14,7 +14,8 @@ import (
 
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/client"
@@ -1399,7 +1400,7 @@ func TestIntegration_UncommittedChanges_CleanWorktreeShowsQuitModal(t *testing.T
 		VimMode: true,
 		Services: mode.Services{
 			Flags: flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-			GitExecutorFactory: func(path string) git.GitExecutor {
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
 				require.Equal(t, "/tmp/test-worktree", path, "factory should receive worktree path")
 				return mockExecutor
 			},
@@ -1443,7 +1444,7 @@ func TestIntegration_UncommittedChanges_DirtyWorktreeShowsUncommittedModal(t *te
 		VimMode: true,
 		Services: mode.Services{
 			Flags: flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-			GitExecutorFactory: func(path string) git.GitExecutor {
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
 				return mockExecutor
 			},
 		},
@@ -1481,7 +1482,7 @@ func TestIntegration_UncommittedChanges_CancelReturnsToOrchestration(t *testing.
 		VimMode: true,
 		Services: mode.Services{
 			Flags: flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-			GitExecutorFactory: func(path string) git.GitExecutor {
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
 				return mockExecutor
 			},
 		},
@@ -1520,7 +1521,7 @@ func TestIntegration_UncommittedChanges_DiscardExits(t *testing.T) {
 		VimMode: true,
 		Services: mode.Services{
 			Flags: flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-			GitExecutorFactory: func(path string) git.GitExecutor {
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
 				return mockExecutor
 			},
 		},
@@ -1561,7 +1562,7 @@ func TestIntegration_UncommittedChanges_GitErrorAssumesDirty(t *testing.T) {
 		VimMode: true,
 		Services: mode.Services{
 			Flags: flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-			GitExecutorFactory: func(path string) git.GitExecutor {
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
 				return mockExecutor
 			},
 		},
@@ -1590,8 +1591,8 @@ func TestIntegration_UncommittedChanges_NoWorktreeShowsQuitModal(t *testing.T) {
 	m := New(Config{
 		VimMode: true,
 		Services: mode.Services{
-			GitExecutorFactory: func(path string) git.GitExecutor {
-				return git.NewRealExecutor(path)
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
+				return nil
 			},
 		},
 	})
@@ -1622,7 +1623,7 @@ func TestIntegration_UncommittedChanges_VerifiesWorktreePath(t *testing.T) {
 		VimMode: true,
 		Services: mode.Services{
 			Flags: flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-			GitExecutorFactory: func(path string) git.GitExecutor {
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
 				capturedPath = path
 				return mockExecutor
 			},
@@ -1655,7 +1656,7 @@ func TestIntegration_UncommittedChanges_CtrlCTriggersFlow(t *testing.T) {
 		VimMode: true,
 		Services: mode.Services{
 			Flags: flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-			GitExecutorFactory: func(path string) git.GitExecutor {
+			GitExecutorFactory: func(path string) appgit.GitExecutor {
 				return mockExecutor
 			},
 		},
@@ -4082,7 +4083,7 @@ func TestWorktreeModal_SubmitAlwaysShowsBranchModal(t *testing.T) {
 	// Set up mock git executor
 	mockGit := mocks.NewMockGitExecutor(t)
 	mockGit.EXPECT().GetCurrentBranch().Return("main", nil)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 	}, nil)
@@ -4366,7 +4367,7 @@ func TestBranchSelectModal_ValidationRejectsInvalidBranchName(t *testing.T) {
 	// Set up mock git executor with expectations for modal creation and validation
 	mockGit := mocks.NewMockGitExecutor(t)
 	mockGit.EXPECT().GetCurrentBranch().Return("main", nil)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{{Name: "main", IsCurrent: true}}, nil)
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{{Name: "main", IsCurrent: true}}, nil)
 	m.gitExecutor = mockGit
 
 	// Call showBranchSelectionModal to create the modal
@@ -4385,7 +4386,7 @@ func TestBranchSelectModal_ValidationRejectsExistingBranch(t *testing.T) {
 	// Set up mock git executor - only expectations for modal creation
 	mockGit := mocks.NewMockGitExecutor(t)
 	mockGit.EXPECT().GetCurrentBranch().Return("main", nil)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{{Name: "main", IsCurrent: true}}, nil)
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{{Name: "main", IsCurrent: true}}, nil)
 	m.gitExecutor = mockGit
 
 	// Call showBranchSelectionModal
@@ -4405,7 +4406,7 @@ func TestBranchSelectModal_ValidationAcceptsEmptyCustomBranch(t *testing.T) {
 	// Set up mock git executor - only expectations for modal creation
 	mockGit := mocks.NewMockGitExecutor(t)
 	mockGit.EXPECT().GetCurrentBranch().Return("main", nil)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{{Name: "main", IsCurrent: true}}, nil)
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{{Name: "main", IsCurrent: true}}, nil)
 	m.gitExecutor = mockGit
 
 	// Call showBranchSelectionModal

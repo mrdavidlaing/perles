@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zjrosen/perles/internal/config"
-	"github.com/zjrosen/perles/internal/git"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 )
 
 // newTestInitializer creates an Initializer in a specific state for testing.
@@ -811,14 +811,14 @@ func TestGetPhaseIndicatorAndStyle_Worktree_Completed(t *testing.T) {
 
 func TestWorktreeErrorMessage_InvalidBranchName_SentinelError(t *testing.T) {
 	// Test: ErrInvalidBranchName sentinel error is detected via errors.Is
-	err := git.ErrInvalidBranchName
+	err := domaingit.ErrInvalidBranchName
 	msg := worktreeErrorMessage(err)
 	require.Equal(t, "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot.", msg)
 }
 
 func TestWorktreeErrorMessage_InvalidBranchName_WrappedSentinelError(t *testing.T) {
 	// Test: Wrapped ErrInvalidBranchName is still detected via errors.Is
-	err := fmt.Errorf("failed to create worktree: %w", git.ErrInvalidBranchName)
+	err := fmt.Errorf("failed to create worktree: %w", domaingit.ErrInvalidBranchName)
 	msg := worktreeErrorMessage(err)
 	require.Equal(t, "Invalid branch name. Branch names cannot contain spaces, special characters (~^:?*[), or start with a dot.", msg)
 }

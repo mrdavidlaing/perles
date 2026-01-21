@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	appreg "github.com/zjrosen/perles/internal/application/registry"
-	"github.com/zjrosen/perles/internal/beads"
+	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
 	"github.com/zjrosen/perles/internal/presentation"
+	appreg "github.com/zjrosen/perles/internal/registry/application"
 )
 
 var (
@@ -56,8 +56,8 @@ func runWorkflowCreate(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	}
 
-	// Create BeadsExecutor with working directory context
-	executor := beads.NewRealExecutor("", "")
+	// Create BDExecutor with working directory context
+	executor := infrabeads.NewBDExecutor("", "")
 
 	// Create WorkflowCreator with dependencies
 	creator := appreg.NewWorkflowCreator(registryService, executor)

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/cachemanager"
 	"github.com/zjrosen/perles/internal/log"
 )

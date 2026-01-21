@@ -1,5 +1,4 @@
-// Package beads provides data access to the beads issue tracker.
-package beads
+package domain
 
 import "time"
 
@@ -68,20 +67,20 @@ type Issue struct {
 	ClosedAt           time.Time `json:"closed_at"`
 
 	// Agent fields (agent-as-bead pattern)
-	HookBead     string    `json:"hook_bead,omitempty"`    // Current work attached to agent's hook
-	RoleBead     string    `json:"role_bead,omitempty"`    // Reference to role definition bead
-	AgentState   string    `json:"agent_state,omitempty"`  // Agent-reported state (idle|running|stuck|stopped)
-	LastActivity time.Time `json:"last_activity,omitzero"` // Timestamp for timeout detection
-	RoleType     string    `json:"role_type,omitempty"`    // Agent role (polecat|crew|witness|refinery|mayor|deacon)
-	Rig          string    `json:"rig,omitempty"`          // Rig name (empty for town-level agents)
-	MolType      string    `json:"mol_type,omitempty"`     // Molecule type classification
+	HookBead     string    `json:"hook_bead,omitempty"`
+	RoleBead     string    `json:"role_bead,omitempty"`
+	AgentState   string    `json:"agent_state,omitempty"`
+	LastActivity time.Time `json:"last_activity,omitzero"`
+	RoleType     string    `json:"role_type,omitempty"`
+	Rig          string    `json:"rig,omitempty"`
+	MolType      string    `json:"mol_type,omitempty"`
 
 	// Dependency tracking
 	BlockedBy      []string `json:"blocked_by"`
 	Blocks         []string `json:"blocks"`
 	Children       []string `json:"children"`
-	DiscoveredFrom []string `json:"discovered_from"` // Issues this was discovered from
-	Discovered     []string `json:"discovered"`      // Issues discovered from this one
+	DiscoveredFrom []string `json:"discovered_from"`
+	Discovered     []string `json:"discovered"`
 	ParentID       string   `json:"parent_id"`
 
 	// Comments (populated on demand)
@@ -91,17 +90,8 @@ type Issue struct {
 	CommentCount int `json:"comment_count,omitempty"`
 }
 
-// Title implements list.Item interface.
-func (i Issue) Title() string {
-	return i.ID + " " + i.TitleText
-}
-
-// Description implements list.Item interface.
-func (i Issue) Description() string {
-	return string(i.Type) + " - P" + string(rune('0'+i.Priority))
-}
-
-// FilterValue implements list.Item for bubbles list component.
-func (i Issue) FilterValue() string {
-	return i.TitleText
+// CreateResult holds the result of a create operation.
+type CreateResult struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }

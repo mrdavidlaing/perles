@@ -1,25 +1,11 @@
-package git
+// Package git defines ports (interfaces) for git operations.
+package application
 
 import (
 	"context"
-	"time"
+
+	domain "github.com/zjrosen/perles/internal/git/domain"
 )
-
-// BranchInfo holds information about a git branch.
-type BranchInfo struct {
-	Name      string // Branch name (e.g., "main", "feature/auth")
-	IsCurrent bool   // True if this is the currently checked out branch
-}
-
-// CommitInfo holds information about a git commit.
-type CommitInfo struct {
-	Hash      string    // Full 40-char SHA
-	ShortHash string    // 7-char abbreviated hash
-	Subject   string    // First line of commit message
-	Author    string    // Author name
-	Date      time.Time // Commit timestamp
-	IsPushed  bool      // True if commit exists on the remote tracking branch
-}
 
 // GitExecutor defines the interface for git worktree operations.
 // This abstraction allows for easy testing with mock implementations.
@@ -32,8 +18,8 @@ type GitExecutor interface {
 	CreateWorktreeWithContext(ctx context.Context, path, newBranch, baseBranch string) error
 	RemoveWorktree(path string) error
 	PruneWorktrees() error
-	ListWorktrees() ([]WorktreeInfo, error)
-	ListBranches() ([]BranchInfo, error)
+	ListWorktrees() ([]domain.WorktreeInfo, error)
+	ListBranches() ([]domain.BranchInfo, error)
 	BranchExists(name string) bool
 	// ValidateBranchName validates a branch name using git check-ref-format --branch.
 	// Returns nil if valid, ErrInvalidBranchName if invalid.
@@ -69,20 +55,13 @@ type GitExecutor interface {
 	// Commit log operations
 	// GetCommitLog returns the most recent commits, up to the specified limit.
 	// Returns an empty slice for empty repositories.
-	GetCommitLog(limit int) ([]CommitInfo, error)
+	GetCommitLog(limit int) ([]domain.CommitInfo, error)
 	// GetCommitLogForRef returns commit history for a specific ref (branch, tag, etc.).
 	// If ref is empty, returns commits for HEAD (same behavior as GetCommitLog).
-	GetCommitLogForRef(ref string, limit int) ([]CommitInfo, error)
+	GetCommitLogForRef(ref string, limit int) ([]domain.CommitInfo, error)
 
 	// Remote operations
 	// GetRemoteURL returns the URL for the named remote (e.g., "origin").
 	// Returns empty string and nil error if remote doesn't exist.
 	GetRemoteURL(name string) (string, error)
-}
-
-// WorktreeInfo holds information about a git worktree.
-type WorktreeInfo struct {
-	Path   string
-	Branch string
-	HEAD   string
 }

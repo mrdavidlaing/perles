@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/git"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/keys"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/mode"
@@ -500,7 +500,7 @@ func TestNewWorkflowModal_EscapeClearsModal(t *testing.T) {
 func createMockGitExecutorWithBranches(t *testing.T) *mocks.MockGitExecutor {
 	t.Helper()
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: false},
 		{Name: "develop", IsCurrent: true},
 		{Name: "feature/auth", IsCurrent: false},
@@ -675,7 +675,7 @@ func TestNewWorkflowModal_ValidationRequiresBaseBranchWhenWorktreeEnabled(t *tes
 func TestNewWorkflowModal_ValidationRejectsInvalidBranchNames(t *testing.T) {
 	registry := createTestRegistry(t)
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 	}, nil)
 	mockGit.EXPECT().ValidateBranchName("invalid..branch").Return(errors.New("invalid ref format"))
@@ -699,7 +699,7 @@ func TestNewWorkflowModal_ValidationRejectsInvalidBranchNames(t *testing.T) {
 func TestNewWorkflowModal_ValidationAcceptsValidBranchName(t *testing.T) {
 	registry := createTestRegistry(t)
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 	}, nil)
 	mockGit.EXPECT().ValidateBranchName("feature/valid-branch").Return(nil)
@@ -755,7 +755,7 @@ func TestBuildBranchOptions_ListBranchesError(t *testing.T) {
 
 func TestBuildBranchOptions_EmptyBranchList(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{}, nil)
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{}, nil)
 
 	options, available := buildBranchOptions(mockGit)
 	require.Nil(t, options)
@@ -764,7 +764,7 @@ func TestBuildBranchOptions_EmptyBranchList(t *testing.T) {
 
 func TestBuildBranchOptions_ConvertsCorrectly(t *testing.T) {
 	mockGit := mocks.NewMockGitExecutor(t)
-	mockGit.EXPECT().ListBranches().Return([]git.BranchInfo{
+	mockGit.EXPECT().ListBranches().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: false},
 		{Name: "develop", IsCurrent: true},
 		{Name: "feature/test", IsCurrent: false},

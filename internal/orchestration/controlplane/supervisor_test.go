@@ -12,7 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 	v2 "github.com/zjrosen/perles/internal/orchestration/v2"
 	"github.com/zjrosen/perles/internal/orchestration/v2/adapter"
@@ -548,7 +549,7 @@ func TestSupervisor_Config_AcceptsGitExecutorFactory(t *testing.T) {
 
 	// Create a mock GitExecutor factory
 	factoryCalled := false
-	gitFactory := func(workDir string) git.GitExecutor {
+	gitFactory := func(workDir string) appgit.GitExecutor {
 		factoryCalled = true
 		return nil
 	}
@@ -667,7 +668,7 @@ func TestSupervisor_Start_CreatesWorktreeWhenEnabled(t *testing.T) {
 		AgentProvider:         mockProvider,
 		ListenerFactory:       &mockListenerFactory{},
 		InfrastructureFactory: mockFactory,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -717,7 +718,7 @@ func TestSupervisor_Start_SkipsWorktreeWhenDisabled(t *testing.T) {
 		AgentProvider:         mockProvider,
 		ListenerFactory:       &mockListenerFactory{},
 		InfrastructureFactory: mockFactory,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			factoryCalled = true
 			return mocks.NewMockGitExecutor(t)
 		},
@@ -760,7 +761,7 @@ func TestSupervisor_Start_UsesCustomBranchNameWhenSet(t *testing.T) {
 		AgentProvider:         mockProvider,
 		ListenerFactory:       &mockListenerFactory{},
 		InfrastructureFactory: mockFactory,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -807,7 +808,7 @@ func TestSupervisor_Start_AutoGeneratesBranchNameWhenEmpty(t *testing.T) {
 		AgentProvider:         mockProvider,
 		ListenerFactory:       &mockListenerFactory{},
 		InfrastructureFactory: mockFactory,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -856,7 +857,7 @@ func TestSupervisor_Start_SetsInstanceFieldsCorrectly(t *testing.T) {
 		AgentProvider:         mockProvider,
 		ListenerFactory:       &mockListenerFactory{},
 		InfrastructureFactory: mockFactory,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -905,7 +906,7 @@ func TestSupervisor_Start_CleansUpWorktreeOnSubsequentFailure(t *testing.T) {
 		AgentProvider:         mockProvider,
 		ListenerFactory:       &mockListenerFactory{},
 		InfrastructureFactory: mockFactory,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -949,7 +950,7 @@ func TestSupervisor_Start_HandlesErrBranchAlreadyCheckedOut(t *testing.T) {
 		PortAllocator:   NewPortAllocator(nil),
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -966,13 +967,13 @@ func TestSupervisor_Start_HandlesErrBranchAlreadyCheckedOut(t *testing.T) {
 	mockGitExecutor.EXPECT().DetermineWorktreePath(workflowID).Return(worktreePath, nil)
 	mockGitExecutor.EXPECT().CreateWorktreeWithContext(
 		mock.Anything, worktreePath, "existing-branch", "main",
-	).Return(fmt.Errorf("%w: already in use", git.ErrBranchAlreadyCheckedOut))
+	).Return(fmt.Errorf("%w: already in use", domaingit.ErrBranchAlreadyCheckedOut))
 
 	// Execute Start
 	err = supervisor.Start(context.Background(), inst)
 
 	require.Error(t, err)
-	require.ErrorIs(t, err, git.ErrBranchAlreadyCheckedOut)
+	require.ErrorIs(t, err, domaingit.ErrBranchAlreadyCheckedOut)
 	require.Contains(t, err.Error(), "already checked out in another worktree")
 	require.Contains(t, err.Error(), "existing-branch")
 	require.Equal(t, WorkflowPending, inst.State) // Should stay in Pending state
@@ -987,7 +988,7 @@ func TestSupervisor_Start_HandlesTimeoutCorrectly(t *testing.T) {
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
 		WorktreeTimeout: 100 * time.Millisecond, // Short timeout for test
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -1005,13 +1006,13 @@ func TestSupervisor_Start_HandlesTimeoutCorrectly(t *testing.T) {
 	mockGitExecutor.EXPECT().DetermineWorktreePath(workflowID).Return(worktreePath, nil)
 	mockGitExecutor.EXPECT().CreateWorktreeWithContext(
 		mock.Anything, worktreePath, expectedBranch, "main",
-	).Return(git.ErrWorktreeTimeout)
+	).Return(domaingit.ErrWorktreeTimeout)
 
 	// Execute Start
 	err = supervisor.Start(context.Background(), inst)
 
 	require.Error(t, err)
-	require.ErrorIs(t, err, git.ErrWorktreeTimeout)
+	require.ErrorIs(t, err, domaingit.ErrWorktreeTimeout)
 	require.Contains(t, err.Error(), "timed out")
 	require.Equal(t, WorkflowPending, inst.State) // Should stay in Pending state
 }
@@ -1026,7 +1027,7 @@ func TestSupervisor_Stop_ReturnsErrUncommittedChanges(t *testing.T) {
 		PortAllocator:   NewPortAllocator(nil),
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -1063,7 +1064,7 @@ func TestSupervisor_Stop_BypassesUncommittedCheckWhenForceTrue(t *testing.T) {
 		PortAllocator:   NewPortAllocator(nil),
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -1105,7 +1106,7 @@ func TestSupervisor_Stop_RemovesWorktreeWhenFlagEnabled(t *testing.T) {
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
 		Flags:           flagsRegistry,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -1147,7 +1148,7 @@ func TestSupervisor_Stop_PreservesWorktreeWhenFlagDisabled(t *testing.T) {
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
 		Flags:           flagsRegistry,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -1190,7 +1191,7 @@ func TestSupervisor_Stop_HandlesRemoveWorktreeErrorsGracefully(t *testing.T) {
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
 		Flags:           flagsRegistry,
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			return mockGitExecutor
 		},
 	}
@@ -1227,7 +1228,7 @@ func TestSupervisor_Stop_WorksNormallyWhenWorktreePathEmpty(t *testing.T) {
 		AgentProvider:   mockProvider,
 		ListenerFactory: &mockListenerFactory{},
 		Flags:           flags.New(map[string]bool{flags.FlagRemoveWorktree: true}),
-		GitExecutorFactory: func(workDir string) git.GitExecutor {
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
 			factoryCalled = true
 			return mocks.NewMockGitExecutor(t)
 		},

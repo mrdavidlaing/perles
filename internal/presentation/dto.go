@@ -1,7 +1,7 @@
 package presentation
 
 import (
-	"github.com/zjrosen/perles/internal/domain/registry"
+	"github.com/zjrosen/perles/internal/registry/domain"
 )
 
 // RegistrationDTO represents a workflow registration for presentation

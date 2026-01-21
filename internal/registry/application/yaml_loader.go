@@ -6,7 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/zjrosen/perles/internal/domain/registry"
+	"github.com/zjrosen/perles/internal/registry/domain"
 )
 
 // RegistryFile is the root structure for registry.yaml

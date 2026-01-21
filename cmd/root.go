@@ -12,13 +12,14 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/zjrosen/perles/internal/app"
-	appreg "github.com/zjrosen/perles/internal/application/registry"
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
+	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/cachemanager"
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/paths"
+	appreg "github.com/zjrosen/perles/internal/registry/application"
 	"github.com/zjrosen/perles/internal/templates"
 	"github.com/zjrosen/perles/internal/ui/nobeads"
 	"github.com/zjrosen/perles/internal/ui/outdated"
@@ -181,7 +182,7 @@ func runApp(cmd *cobra.Command, args []string) error {
 	cfg.ResolvedBeadsDir = paths.ResolveBeadsDir(dbPath)
 	log.Info(log.CatConfig, "resolved beads dir", "path", cfg.ResolvedBeadsDir)
 
-	client, err := beads.NewClient(cfg.ResolvedBeadsDir)
+	client, err := infrabeads.NewSQLiteClient(cfg.ResolvedBeadsDir)
 	if err != nil {
 		// Show friendly TUI empty state instead of CLI error
 		return runNoBeadsMode()

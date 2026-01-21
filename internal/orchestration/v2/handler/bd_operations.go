@@ -7,7 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zjrosen/perles/internal/beads"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
@@ -20,14 +21,14 @@ import (
 // It marks a BD task as completed by updating its status to "closed" and adding a completion comment.
 // It also deletes the in-memory task assignment if taskRepo is provided.
 type MarkTaskCompleteHandler struct {
-	bdExecutor beads.BeadsExecutor
+	bdExecutor appbeads.IssueExecutor
 	taskRepo   repository.TaskRepository
 }
 
 // NewMarkTaskCompleteHandler creates a new MarkTaskCompleteHandler.
 // Panics if bdExecutor is nil.
 // taskRepo can be nil for backward compatibility (graceful degradation).
-func NewMarkTaskCompleteHandler(bdExecutor beads.BeadsExecutor, taskRepo repository.TaskRepository) *MarkTaskCompleteHandler {
+func NewMarkTaskCompleteHandler(bdExecutor appbeads.IssueExecutor, taskRepo repository.TaskRepository) *MarkTaskCompleteHandler {
 	if bdExecutor == nil {
 		panic("bdExecutor is required for MarkTaskCompleteHandler")
 	}
@@ -79,12 +80,12 @@ type MarkTaskCompleteResult struct {
 // MarkTaskFailedHandler handles CmdMarkTaskFailed commands.
 // It adds a failure comment to the BD task with the provided reason.
 type MarkTaskFailedHandler struct {
-	bdExecutor beads.BeadsExecutor
+	bdExecutor appbeads.IssueExecutor
 }
 
 // NewMarkTaskFailedHandler creates a new MarkTaskFailedHandler.
 // Panics if bdExecutor is nil.
-func NewMarkTaskFailedHandler(bdExecutor beads.BeadsExecutor) *MarkTaskFailedHandler {
+func NewMarkTaskFailedHandler(bdExecutor appbeads.IssueExecutor) *MarkTaskFailedHandler {
 	if bdExecutor == nil {
 		panic("bdExecutor is required for MarkTaskFailedHandler")
 	}

@@ -12,7 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	infragit "github.com/zjrosen/perles/internal/git/infrastructure"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/mcp"
@@ -981,7 +981,7 @@ func (m Model) handleStartCoordinator() (Model, tea.Cmd) {
 
 	// Initialize GitExecutor if not set
 	if m.gitExecutor == nil {
-		m.gitExecutor = git.NewRealExecutor(m.workDir)
+		m.gitExecutor = infragit.NewRealExecutor(m.workDir)
 	}
 
 	// Check if worktrees are disabled in config - bypass prompt entirely

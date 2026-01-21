@@ -2,10 +2,16 @@ with-expecter: true
 dir: internal/mocks
 outpkg: mocks
 packages:
-  github.com/zjrosen/perles/internal/beads:
+  github.com/zjrosen/perles/internal/mode:
     interfaces:
       BeadsClient:
-      BeadsExecutor:
+  github.com/zjrosen/perles/internal/beads/application:
+    interfaces:
+      VersionReader:
+      CommentReader:
+      IssueReader:
+      IssueWriter:
+      IssueExecutor:
   github.com/zjrosen/perles/internal/bql:
     interfaces:
       BQLExecutor:
@@ -21,7 +27,7 @@ packages:
       AgentProvider:
       HeadlessClient:
       HeadlessProcess:
-  github.com/zjrosen/perles/internal/git:
+  github.com/zjrosen/perles/internal/git/application:
     interfaces:
       GitExecutor:
   github.com/zjrosen/perles/internal/sound:

@@ -1,7 +1,7 @@
 package shared
 
 import (
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/ui/shared/picker"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )

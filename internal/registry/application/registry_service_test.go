@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/domain/registry"
+	"github.com/zjrosen/perles/internal/registry/domain"
 )
 
 // createTestFS creates a MapFS for testing with a valid registry.yaml and templates

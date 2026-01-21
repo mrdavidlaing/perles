@@ -12,9 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zjrosen/perles/internal/beads"
+	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	"github.com/zjrosen/perles/internal/orchestration/mcp"
@@ -110,7 +111,7 @@ type SupervisorConfig struct {
 	// GitExecutorFactory creates GitExecutor instances for worktree operations.
 	// The factory receives the working directory path and returns a GitExecutor.
 	// If nil, worktree creation is disabled even when WorktreeEnabled is true.
-	GitExecutorFactory func(workDir string) git.GitExecutor
+	GitExecutorFactory func(workDir string) appgit.GitExecutor
 
 	// WorktreeTimeout is the timeout for worktree creation operations.
 	// If zero, defaults to DefaultWorktreeTimeout (30s).
@@ -129,7 +130,7 @@ type defaultSupervisor struct {
 	infrastructureFactory InfrastructureFactory
 	listenerFactory       ListenerFactory
 	workflowRegistry      *workflow.Registry
-	gitExecutorFactory    func(workDir string) git.GitExecutor
+	gitExecutorFactory    func(workDir string) appgit.GitExecutor
 	worktreeTimeout       time.Duration
 	flags                 *flags.Registry
 }
@@ -190,7 +191,7 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 		httpServer   *http.Server
 		listener     net.Listener
 		worktreePath string
-		gitExec      git.GitExecutor
+		gitExec      appgit.GitExecutor
 	)
 
 	// Cleanup function for error cases
@@ -256,13 +257,13 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 		if err != nil {
 			cancel()
 			// Wrap known error types for user-friendly messages
-			if errors.Is(err, git.ErrBranchAlreadyCheckedOut) {
+			if errors.Is(err, domaingit.ErrBranchAlreadyCheckedOut) {
 				return fmt.Errorf("creating worktree: branch '%s' is already checked out in another worktree: %w", branchName, err)
 			}
-			if errors.Is(err, git.ErrPathAlreadyExists) {
+			if errors.Is(err, domaingit.ErrPathAlreadyExists) {
 				return fmt.Errorf("creating worktree: path '%s' already exists: %w", path, err)
 			}
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, git.ErrWorktreeTimeout) {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, domaingit.ErrWorktreeTimeout) {
 				return fmt.Errorf("creating worktree: operation timed out after %v: %w", s.worktreeTimeout, err)
 			}
 			return fmt.Errorf("creating worktree: %w", err)
@@ -335,7 +336,7 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 	// Note: BeadsDir is empty here; the v2 infrastructure config handles BEADS_DIR for spawned processes
 	mcpCoordServer := mcp.NewCoordinatorServerWithV2Adapter(
 		aiClient, messageRepo, workDir, port, extensions,
-		beads.NewRealExecutor(workDir, ""), infra.Core.Adapter)
+		infrabeads.NewBDExecutor(workDir, ""), infra.Core.Adapter)
 
 	// Create worker server cache for /worker/ routes
 	workerServers := newWorkerServerCache(messageRepo, nil, infra.Core.Adapter, infra.Internal.TurnEnforcer)

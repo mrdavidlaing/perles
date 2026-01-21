@@ -13,7 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/tracing"
@@ -89,7 +89,7 @@ func TestAssignTaskHandler_Tracing_CreatesSpan(t *testing.T) {
 	tracer, exporter := setupTestTracer(t)
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().ShowIssue(mock.Anything).Return(&beads.Issue{ID: "task-123", Status: beads.StatusOpen}, nil)
 	bdExecutor.EXPECT().UpdateStatus(mock.Anything, mock.Anything).Return(nil)
 
@@ -134,7 +134,7 @@ func TestAssignTaskHandler_Tracing_RecordsEvents(t *testing.T) {
 	tracer, exporter := setupTestTracer(t)
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().ShowIssue(mock.Anything).Return(&beads.Issue{ID: "task-123", Status: beads.StatusOpen}, nil)
 	bdExecutor.EXPECT().UpdateStatus(mock.Anything, mock.Anything).Return(nil)
 
@@ -171,7 +171,7 @@ func TestAssignTaskHandler_Tracing_RecordsErrorOnFailure(t *testing.T) {
 	tracer, exporter := setupTestTracer(t)
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 
 	queueRepo := repository.NewMemoryQueueRepository(0)
 	handler := NewAssignTaskHandler(processRepo, taskRepo,
@@ -195,7 +195,7 @@ func TestAssignTaskHandler_Tracing_RecordsErrorOnFailure(t *testing.T) {
 func TestAssignTaskHandler_Tracing_WorksWithNilTracer(t *testing.T) {
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().ShowIssue(mock.Anything).Return(&beads.Issue{ID: "task-123", Status: beads.StatusOpen}, nil)
 	bdExecutor.EXPECT().UpdateStatus(mock.Anything, mock.Anything).Return(nil)
 
@@ -310,7 +310,7 @@ func TestReportVerdictHandler_Tracing_CreatesSpan(t *testing.T) {
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
 	queueRepo := repository.NewMemoryQueueRepository(0)
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().AddComment(mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	// Setup reviewer in reviewing phase
@@ -384,7 +384,7 @@ func TestReportVerdictHandler_Tracing_RecordsErrorOnFailure(t *testing.T) {
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
 	queueRepo := repository.NewMemoryQueueRepository(0)
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 
 	handler := NewReportVerdictHandler(processRepo, taskRepo, queueRepo,
 		WithReportVerdictBDExecutor(bdExecutor),
@@ -407,7 +407,7 @@ func TestReportVerdictHandler_Tracing_WorksWithNilTracer(t *testing.T) {
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
 	queueRepo := repository.NewMemoryQueueRepository(0)
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().AddComment(mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	// Setup reviewer in reviewing phase
@@ -574,7 +574,7 @@ func TestAssignTaskHandler_Tracing_SpanEndsOnSuccess(t *testing.T) {
 	tracer, exporter := setupTestTracer(t)
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().ShowIssue(mock.Anything).Return(&beads.Issue{ID: "task-123", Status: beads.StatusOpen}, nil)
 	bdExecutor.EXPECT().UpdateStatus(mock.Anything, mock.Anything).Return(nil)
 
@@ -659,7 +659,7 @@ func TestReportVerdictHandler_Tracing_SpanEndsOnSuccess(t *testing.T) {
 	processRepo := repository.NewMemoryProcessRepository()
 	taskRepo := repository.NewMemoryTaskRepository()
 	queueRepo := repository.NewMemoryQueueRepository(0)
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().AddComment(mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	reviewer := &repository.Process{

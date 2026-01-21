@@ -1,4 +1,4 @@
-package git
+package infrastructure
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domain "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,9 +51,9 @@ func TestRealExecutor_GetCurrentBranch(t *testing.T) {
 	executor := NewRealExecutor(cwd)
 	branch, err := executor.GetCurrentBranch()
 
-	// In CI (detached HEAD), we get ErrDetachedHead - that's valid
-	if errors.Is(err, ErrDetachedHead) {
-		t.Log("GetCurrentBranch() returned ErrDetachedHead (detached HEAD state, common in CI)")
+	// In CI (detached HEAD), we get domain.ErrDetachedHead - that's valid
+	if errors.Is(err, domain.ErrDetachedHead) {
+		t.Log("GetCurrentBranch() returned domain.ErrDetachedHead (detached HEAD state, common in CI)")
 		return
 	}
 
@@ -251,7 +253,7 @@ func TestParseWorktreeList(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  []WorktreeInfo
+		want  []domain.WorktreeInfo
 	}{
 		{
 			name: "single worktree",
@@ -260,7 +262,7 @@ HEAD abc123def456
 branch refs/heads/main
 
 `,
-			want: []WorktreeInfo{
+			want: []domain.WorktreeInfo{
 				{Path: "/path/to/repo", HEAD: "abc123def456", Branch: "main"},
 			},
 		},
@@ -275,7 +277,7 @@ HEAD def456abc789
 branch refs/heads/feature
 
 `,
-			want: []WorktreeInfo{
+			want: []domain.WorktreeInfo{
 				{Path: "/path/to/repo", HEAD: "abc123def456", Branch: "main"},
 				{Path: "/path/to/worktree", HEAD: "def456abc789", Branch: "feature"},
 			},
@@ -287,7 +289,7 @@ HEAD abc123def456
 detached
 
 `,
-			want: []WorktreeInfo{
+			want: []domain.WorktreeInfo{
 				{Path: "/path/to/repo", HEAD: "abc123def456", Branch: ""},
 			},
 		},
@@ -301,7 +303,7 @@ detached
 			input: `worktree /path/to/repo
 HEAD abc123def456
 branch refs/heads/main`,
-			want: []WorktreeInfo{
+			want: []domain.WorktreeInfo{
 				{Path: "/path/to/repo", HEAD: "abc123def456", Branch: "main"},
 			},
 		},
@@ -334,22 +336,22 @@ func TestParseGitError(t *testing.T) {
 		{
 			name:      "branch already checked out",
 			stderr:    "fatal: 'feature' is already checked out at '/path/to/worktree'",
-			wantError: ErrBranchAlreadyCheckedOut,
+			wantError: domain.ErrBranchAlreadyCheckedOut,
 		},
 		{
 			name:      "path already exists",
 			stderr:    "fatal: '/path/to/worktree' already exists",
-			wantError: ErrPathAlreadyExists,
+			wantError: domain.ErrPathAlreadyExists,
 		},
 		{
 			name:      "worktree locked",
 			stderr:    "fatal: '/path/to/worktree' is locked",
-			wantError: ErrWorktreeLocked,
+			wantError: domain.ErrWorktreeLocked,
 		},
 		{
 			name:      "not a git repository",
 			stderr:    "fatal: not a git repository (or any of the parent directories): .git",
-			wantError: ErrNotGitRepo,
+			wantError: domain.ErrNotGitRepo,
 		},
 		{
 			name:      "unknown error",
@@ -475,7 +477,7 @@ func TestRealExecutor_CreateWorktreeWithContext_Timeout(t *testing.T) {
 	// CreateWorktreeWithContext should fail with timeout error
 	err := executor.CreateWorktreeWithContext(ctx, worktreePath, branchName, "")
 	require.Error(t, err, "CreateWorktreeWithContext with expired context should error")
-	require.ErrorIs(t, err, ErrWorktreeTimeout, "Error should be ErrWorktreeTimeout")
+	require.ErrorIs(t, err, domain.ErrWorktreeTimeout, "Error should be domain.ErrWorktreeTimeout")
 
 	// Worktree should not have been created
 	_, statErr := os.Stat(worktreePath)
@@ -485,32 +487,32 @@ func TestRealExecutor_CreateWorktreeWithContext_Timeout(t *testing.T) {
 // TestErrWorktreeTimeout tests the timeout error type.
 func TestErrWorktreeTimeout(t *testing.T) {
 	// Verify the error is defined and usable
-	require.NotNil(t, ErrWorktreeTimeout)
-	require.Contains(t, ErrWorktreeTimeout.Error(), "timed out")
+	require.NotNil(t, domain.ErrWorktreeTimeout)
+	require.Contains(t, domain.ErrWorktreeTimeout.Error(), "timed out")
 }
 
 // TestRealExecutor_ErrorParsing_BranchConflict tests error detection for branch conflicts.
 func TestRealExecutor_ErrorParsing_BranchConflict(t *testing.T) {
 	// Test that the error is correctly wrapped
 	err := parseGitError("fatal: 'main' is already checked out at '/other/worktree'", errors.New("exit status 128"))
-	require.ErrorIs(t, err, ErrBranchAlreadyCheckedOut)
+	require.ErrorIs(t, err, domain.ErrBranchAlreadyCheckedOut)
 }
 
 // TestRealExecutor_ErrorParsing_PathExists tests error detection for path conflicts.
 func TestRealExecutor_ErrorParsing_PathExists(t *testing.T) {
 	err := parseGitError("fatal: '/path/to/worktree' already exists", errors.New("exit status 128"))
-	require.ErrorIs(t, err, ErrPathAlreadyExists)
+	require.ErrorIs(t, err, domain.ErrPathAlreadyExists)
 }
 
 // TestRealExecutor_ErrorParsing_Locked tests error detection for locked worktrees.
 func TestRealExecutor_ErrorParsing_Locked(t *testing.T) {
 	err := parseGitError("fatal: '/path/to/worktree' is locked", errors.New("exit status 128"))
-	require.ErrorIs(t, err, ErrWorktreeLocked)
+	require.ErrorIs(t, err, domain.ErrWorktreeLocked)
 }
 
-// TestInterfaceCompliance verifies RealExecutor implements GitExecutor.
+// TestInterfaceCompliance verifies RealExecutor implements appgit.GitExecutor.
 func TestInterfaceCompliance(t *testing.T) {
-	var _ GitExecutor = (*RealExecutor)(nil)
+	var _ appgit.GitExecutor = (*RealExecutor)(nil)
 }
 
 // TestUnsafeParentDirs tests the unsafe parent directory map.
@@ -642,14 +644,14 @@ func TestRealExecutor_GetDiff_NotGitRepo(t *testing.T) {
 
 	_, err := executor.GetDiff("HEAD")
 	require.Error(t, err, "GetDiff() outside git repo should error")
-	require.ErrorIs(t, err, ErrNotGitRepo, "GetDiff() should return ErrNotGitRepo")
+	require.ErrorIs(t, err, domain.ErrNotGitRepo, "GetDiff() should return domain.ErrNotGitRepo")
 }
 
 // TestErrDiffTimeout tests the timeout error type.
 func TestErrDiffTimeout(t *testing.T) {
 	// Just verify the error is defined and usable
-	require.NotNil(t, ErrDiffTimeout)
-	require.Contains(t, ErrDiffTimeout.Error(), "timed out")
+	require.NotNil(t, domain.ErrDiffTimeout)
+	require.Contains(t, domain.ErrDiffTimeout.Error(), "timed out")
 }
 
 // TestRunGitOutputWithContext_Timeout tests the timeout mechanism.
@@ -726,7 +728,7 @@ func TestRealExecutor_GetCommitLog_NotGitRepo(t *testing.T) {
 
 	_, err := executor.GetCommitLog(10)
 	require.Error(t, err, "GetCommitLog() outside git repo should error")
-	require.ErrorIs(t, err, ErrNotGitRepo, "GetCommitLog() should return ErrNotGitRepo")
+	require.ErrorIs(t, err, domain.ErrNotGitRepo, "GetCommitLog() should return domain.ErrNotGitRepo")
 }
 
 // TestRealExecutor_GetCommitLog_DetachedHead tests GetCommitLog in detached HEAD state.
@@ -759,12 +761,12 @@ func TestParseCommitLog(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  []CommitInfo
+		want  []domain.CommitInfo
 	}{
 		{
 			name:  "single commit",
 			input: "abc123def456789012345678901234567890abcd" + d + "abc123d" + d + "Fix auth bug" + d + "John Doe" + d + "2024-01-15T10:30:00-05:00\n",
-			want: []CommitInfo{
+			want: []domain.CommitInfo{
 				{
 					Hash:      "abc123def456789012345678901234567890abcd",
 					ShortHash: "abc123d",
@@ -778,7 +780,7 @@ func TestParseCommitLog(t *testing.T) {
 			name: "multiple commits",
 			input: "abc123def456789012345678901234567890abcd" + d + "abc123d" + d + "First commit" + d + "Alice" + d + "2024-01-15T10:30:00Z\n" +
 				"def456abc789012345678901234567890abcdef01" + d + "def456a" + d + "Second commit" + d + "Bob" + d + "2024-01-14T09:00:00Z\n",
-			want: []CommitInfo{
+			want: []domain.CommitInfo{
 				{
 					Hash:      "abc123def456789012345678901234567890abcd",
 					ShortHash: "abc123d",
@@ -803,7 +805,7 @@ func TestParseCommitLog(t *testing.T) {
 		{
 			name:  "commit with pipe in subject",
 			input: "abc123def456789012345678901234567890abcd" + d + "abc123d" + d + "Add foo | bar feature" + d + "Dev" + d + "2024-01-15T10:30:00Z\n",
-			want: []CommitInfo{
+			want: []domain.CommitInfo{
 				{
 					Hash:      "abc123def456789012345678901234567890abcd",
 					ShortHash: "abc123d",
@@ -821,7 +823,7 @@ func TestParseCommitLog(t *testing.T) {
 		{
 			name:  "no trailing newline",
 			input: "abc123def456789012345678901234567890abcd" + d + "abc123d" + d + "No newline" + d + "Dev" + d + "2024-01-15T10:30:00Z",
-			want: []CommitInfo{
+			want: []domain.CommitInfo{
 				{
 					Hash:      "abc123def456789012345678901234567890abcd",
 					ShortHash: "abc123d",
@@ -956,7 +958,7 @@ func TestRealExecutor_GetCommitLogForRef_NotGitRepo(t *testing.T) {
 
 	_, err := executor.GetCommitLogForRef("main", 10)
 	require.Error(t, err, "GetCommitLogForRef() outside git repo should error")
-	require.ErrorIs(t, err, ErrNotGitRepo, "GetCommitLogForRef() should return ErrNotGitRepo")
+	require.ErrorIs(t, err, domain.ErrNotGitRepo, "GetCommitLogForRef() should return domain.ErrNotGitRepo")
 }
 
 // TestRealExecutor_ValidateBranchName_Valid tests ValidateBranchName with valid branch names.
@@ -995,7 +997,7 @@ func TestRealExecutor_ValidateBranchName_InvalidSpaces(t *testing.T) {
 	executor := NewRealExecutor(cwd)
 
 	err = executor.ValidateBranchName("my branch")
-	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('my branch') should return ErrInvalidBranchName")
+	require.ErrorIs(t, err, domain.ErrInvalidBranchName, "ValidateBranchName('my branch') should return domain.ErrInvalidBranchName")
 }
 
 // TestRealExecutor_ValidateBranchName_InvalidTilde tests ValidateBranchName rejects names with tilde.
@@ -1006,7 +1008,7 @@ func TestRealExecutor_ValidateBranchName_InvalidTilde(t *testing.T) {
 	executor := NewRealExecutor(cwd)
 
 	err = executor.ValidateBranchName("feat~name")
-	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('feat~name') should return ErrInvalidBranchName")
+	require.ErrorIs(t, err, domain.ErrInvalidBranchName, "ValidateBranchName('feat~name') should return domain.ErrInvalidBranchName")
 }
 
 // TestRealExecutor_ValidateBranchName_InvalidCaret tests ValidateBranchName rejects names with caret.
@@ -1017,7 +1019,7 @@ func TestRealExecutor_ValidateBranchName_InvalidCaret(t *testing.T) {
 	executor := NewRealExecutor(cwd)
 
 	err = executor.ValidateBranchName("fix^123")
-	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('fix^123') should return ErrInvalidBranchName")
+	require.ErrorIs(t, err, domain.ErrInvalidBranchName, "ValidateBranchName('fix^123') should return domain.ErrInvalidBranchName")
 }
 
 // TestRealExecutor_ValidateBranchName_InvalidLeadingDot tests ValidateBranchName rejects names starting with dot.
@@ -1028,7 +1030,7 @@ func TestRealExecutor_ValidateBranchName_InvalidLeadingDot(t *testing.T) {
 	executor := NewRealExecutor(cwd)
 
 	err = executor.ValidateBranchName(".hidden")
-	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('.hidden') should return ErrInvalidBranchName")
+	require.ErrorIs(t, err, domain.ErrInvalidBranchName, "ValidateBranchName('.hidden') should return domain.ErrInvalidBranchName")
 }
 
 // TestRealExecutor_ValidateBranchName_InvalidLockSuffix tests ValidateBranchName rejects names ending with .lock.
@@ -1039,7 +1041,7 @@ func TestRealExecutor_ValidateBranchName_InvalidLockSuffix(t *testing.T) {
 	executor := NewRealExecutor(cwd)
 
 	err = executor.ValidateBranchName("name.lock")
-	require.ErrorIs(t, err, ErrInvalidBranchName, "ValidateBranchName('name.lock') should return ErrInvalidBranchName")
+	require.ErrorIs(t, err, domain.ErrInvalidBranchName, "ValidateBranchName('name.lock') should return domain.ErrInvalidBranchName")
 }
 
 // TestParseGitError_InvalidBranchName tests parseGitError correctly handles invalid branch name errors.
@@ -1047,5 +1049,5 @@ func TestParseGitError_InvalidBranchName(t *testing.T) {
 	originalErr := errors.New("exit status 128")
 
 	err := parseGitError("fatal: 'my branch' is not a valid branch name", originalErr)
-	require.ErrorIs(t, err, ErrInvalidBranchName, "parseGitError should return ErrInvalidBranchName for invalid branch name stderr")
+	require.ErrorIs(t, err, domain.ErrInvalidBranchName, "parseGitError should return domain.ErrInvalidBranchName for invalid branch name stderr")
 }

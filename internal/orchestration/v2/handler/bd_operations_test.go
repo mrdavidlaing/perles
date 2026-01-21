@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
@@ -19,7 +19,7 @@ import (
 // ===========================================================================
 
 func TestMarkTaskCompleteHandler_Success(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
 
@@ -33,7 +33,7 @@ func TestMarkTaskCompleteHandler_Success(t *testing.T) {
 }
 
 func TestMarkTaskCompleteHandler_ReturnsResult(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
 
@@ -50,7 +50,7 @@ func TestMarkTaskCompleteHandler_ReturnsResult(t *testing.T) {
 }
 
 func TestMarkTaskCompleteHandler_FailsOnUpdateStatusError(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().UpdateStatus(mock.Anything, mock.Anything).Return(errors.New("bd database locked"))
 
 	handler := NewMarkTaskCompleteHandler(bdExecutor, nil)
@@ -64,7 +64,7 @@ func TestMarkTaskCompleteHandler_FailsOnUpdateStatusError(t *testing.T) {
 }
 
 func TestMarkTaskCompleteHandler_FailsOnAddCommentError(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().UpdateStatus(mock.Anything, mock.Anything).Return(nil)
 	bdExecutor.EXPECT().AddComment(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("bd comment service unavailable"))
 
@@ -85,7 +85,7 @@ func TestMarkTaskCompleteHandler_PanicsIfBDExecutorNil(t *testing.T) {
 }
 
 func TestMarkTaskCompleteHandler_DeletesTaskFromRepository(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
 
@@ -116,7 +116,7 @@ func TestMarkTaskCompleteHandler_DeletesTaskFromRepository(t *testing.T) {
 }
 
 func TestMarkTaskCompleteHandler_SucceedsWhenTaskNotInRepo(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
 
@@ -134,7 +134,7 @@ func TestMarkTaskCompleteHandler_SucceedsWhenTaskNotInRepo(t *testing.T) {
 }
 
 func TestMarkTaskCompleteHandler_WorksWithNilTaskRepo(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
 
@@ -158,7 +158,7 @@ func TestMarkTaskCompleteHandler_WorksWithNilTaskRepo(t *testing.T) {
 // ===========================================================================
 
 func TestMarkTaskFailedHandler_Success(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	// MarkTaskFailed only calls AddComment, not UpdateStatus
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task failed: Build failed due to missing dependency").Return(nil)
 
@@ -172,7 +172,7 @@ func TestMarkTaskFailedHandler_Success(t *testing.T) {
 }
 
 func TestMarkTaskFailedHandler_ReturnsResult(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task failed: Tests failing").Return(nil)
 
 	handler := NewMarkTaskFailedHandler(bdExecutor)
@@ -189,7 +189,7 @@ func TestMarkTaskFailedHandler_ReturnsResult(t *testing.T) {
 }
 
 func TestMarkTaskFailedHandler_FailsOnAddCommentError(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	bdExecutor.EXPECT().AddComment(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("bd comment service unavailable"))
 
 	handler := NewMarkTaskFailedHandler(bdExecutor)
@@ -209,7 +209,7 @@ func TestMarkTaskFailedHandler_PanicsIfBDExecutorNil(t *testing.T) {
 }
 
 func TestMarkTaskFailedHandler_DoesNotUpdateStatus(t *testing.T) {
-	bdExecutor := mocks.NewMockBeadsExecutor(t)
+	bdExecutor := mocks.NewMockIssueExecutor(t)
 	// MarkTaskFailed only calls AddComment, not UpdateStatus - verify UpdateStatus is never called
 	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task failed: Some reason").Return(nil)
 

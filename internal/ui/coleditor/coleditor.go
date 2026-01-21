@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/keys"

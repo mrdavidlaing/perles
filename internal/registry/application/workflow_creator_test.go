@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/templates"
 )
@@ -17,17 +17,17 @@ func TestWorkflowCreator_Create(t *testing.T) {
 		name        string
 		feature     string
 		workflowKey string
-		setupMock   func(*mocks.MockBeadsExecutor)
+		setupMock   func(*mocks.MockIssueExecutor)
 		wantErr     bool
 		errContains string
 		wantTasks   int
-		checkResult func(*testing.T, *WorkflowResultDTO, *mocks.MockBeadsExecutor)
+		checkResult func(*testing.T, *WorkflowResultDTO, *mocks.MockIssueExecutor)
 	}{
 		{
 			name:        "success - research-proposal creates tasks",
 			feature:     "test-feature",
 			workflowKey: "research-proposal",
-			setupMock: func(m *mocks.MockBeadsExecutor) {
+			setupMock: func(m *mocks.MockIssueExecutor) {
 				m.EXPECT().CreateEpic(
 					"Plan: Test Feature",
 					mock.AnythingOfType("string"),
@@ -47,7 +47,7 @@ func TestWorkflowCreator_Create(t *testing.T) {
 				m.EXPECT().AddDependency(mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil).Maybe()
 			},
 			wantTasks: 16,
-			checkResult: func(t *testing.T, result *WorkflowResultDTO, _ *mocks.MockBeadsExecutor) {
+			checkResult: func(t *testing.T, result *WorkflowResultDTO, _ *mocks.MockIssueExecutor) {
 				require.Equal(t, "test-epic", result.Epic.ID)
 				require.Equal(t, "Plan: Test Feature", result.Epic.Title)
 				require.Equal(t, "test-feature", result.Epic.Feature)
@@ -58,7 +58,7 @@ func TestWorkflowCreator_Create(t *testing.T) {
 			name:        "error - workflow not found",
 			feature:     "test-feature",
 			workflowKey: "nonexistent",
-			setupMock:   func(_ *mocks.MockBeadsExecutor) {},
+			setupMock:   func(_ *mocks.MockIssueExecutor) {},
 			wantErr:     true,
 			errContains: "workflow not found",
 		},
@@ -66,7 +66,7 @@ func TestWorkflowCreator_Create(t *testing.T) {
 			name:        "error - bd create epic fails",
 			feature:     "test-feature",
 			workflowKey: "research-proposal",
-			setupMock: func(m *mocks.MockBeadsExecutor) {
+			setupMock: func(m *mocks.MockIssueExecutor) {
 				m.EXPECT().CreateEpic(
 					mock.AnythingOfType("string"),
 					mock.AnythingOfType("string"),
@@ -80,7 +80,7 @@ func TestWorkflowCreator_Create(t *testing.T) {
 			name:        "error - bd create task fails",
 			feature:     "test-feature",
 			workflowKey: "research-proposal",
-			setupMock: func(m *mocks.MockBeadsExecutor) {
+			setupMock: func(m *mocks.MockIssueExecutor) {
 				m.EXPECT().CreateEpic(
 					mock.AnythingOfType("string"),
 					mock.AnythingOfType("string"),
@@ -103,7 +103,7 @@ func TestWorkflowCreator_Create(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mock
-			mockExecutor := mocks.NewMockBeadsExecutor(t)
+			mockExecutor := mocks.NewMockIssueExecutor(t)
 			tt.setupMock(mockExecutor)
 
 			// Create service with real registry

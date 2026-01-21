@@ -16,7 +16,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/events"
@@ -72,7 +73,7 @@ type Model struct {
 	cancel      context.CancelFunc
 
 	// Git worktree support
-	gitExecutorFactory func(path string) git.GitExecutor
+	gitExecutorFactory func(path string) appgit.GitExecutor
 	workDir            string
 
 	// Dimensions
@@ -93,7 +94,7 @@ type Config struct {
 	Registry     *workflow.Registry
 	// GitExecutorFactory creates git executors for worktree operations.
 	// If nil, worktree options are disabled in the new workflow modal.
-	GitExecutorFactory func(path string) git.GitExecutor
+	GitExecutorFactory func(path string) appgit.GitExecutor
 	// WorkDir is the application root directory (where perles was invoked).
 	// Used to create git executors for the current working directory.
 	WorkDir string
@@ -450,9 +451,9 @@ func (m Model) handleStartWorkflowFailed(msg StartWorkflowFailedMsg) (mode.Contr
 	switch {
 	case errors.Is(msg.Err, controlplane.ErrUncommittedChanges):
 		errMsg = "Worktree has uncommitted changes. Commit or discard changes first."
-	case errors.Is(msg.Err, git.ErrBranchAlreadyCheckedOut):
+	case errors.Is(msg.Err, domaingit.ErrBranchAlreadyCheckedOut):
 		errMsg = "Branch is already checked out in another worktree."
-	case errors.Is(msg.Err, git.ErrPathAlreadyExists):
+	case errors.Is(msg.Err, domaingit.ErrPathAlreadyExists):
 		errMsg = "Worktree path already exists. Try a different branch name."
 	}
 
@@ -630,7 +631,7 @@ func (m Model) Workflows() []*controlplane.WorkflowInstance {
 // openNewWorkflowModal opens the new workflow creation modal.
 func (m Model) openNewWorkflowModal() (mode.Controller, tea.Cmd) {
 	// Create a GitExecutor if we have a factory and workDir
-	var gitExec git.GitExecutor
+	var gitExec appgit.GitExecutor
 	if m.gitExecutorFactory != nil && m.workDir != "" {
 		gitExec = m.gitExecutorFactory(m.workDir)
 	}

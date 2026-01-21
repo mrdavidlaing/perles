@@ -150,7 +150,7 @@ func NewTestCoordinatorServer(t *testing.T) *TestCoordinatorServerWrapper {
 		"/tmp/test",
 		8765,
 		nil,
-		mocks.NewMockBeadsExecutor(t),
+		mocks.NewMockIssueExecutor(t),
 	)
 
 	// Create shared worker repository

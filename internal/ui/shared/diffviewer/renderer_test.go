@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/stretchr/testify/require"
-	"github.com/zjrosen/perles/internal/git"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 )
 
@@ -1945,7 +1945,7 @@ func TestView_Golden_DirectoryDiff_MixedTypes(t *testing.T) {
 // =============================================================================
 
 // Helper to create a model with commit preview state set up for testing
-func setupModelWithPreviewCommit(t *testing.T, files []DiffFile, commit *git.CommitInfo) Model {
+func setupModelWithPreviewCommit(t *testing.T, files []DiffFile, commit *domaingit.CommitInfo) Model {
 	mockClock := mocks.NewMockClock(t)
 	// Set a fixed time for deterministic output
 	fixedTime := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
@@ -1955,7 +1955,7 @@ func setupModelWithPreviewCommit(t *testing.T, files []DiffFile, commit *git.Com
 	m.previewCommitFiles = files
 	m.previewCommitLoading = false
 	if commit != nil {
-		m.commits = []git.CommitInfo{*commit}
+		m.commits = []domaingit.CommitInfo{*commit}
 		m.selectedCommit = 0
 		m.previewCommitHash = commit.Hash // Must match selected commit for render to work
 	}
@@ -1967,7 +1967,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 	tests := []struct {
 		name     string
 		files    []DiffFile
-		commit   *git.CommitInfo
+		commit   *domaingit.CommitInfo
 		loading  bool
 		width    int
 		contains []string
@@ -1983,14 +1983,14 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 		{
 			name:     "empty commit - no files, not loading",
 			files:    []DiffFile{},
-			commit:   &git.CommitInfo{Hash: "abc123", Author: "Test", Subject: "Empty commit", Date: time.Now()},
+			commit:   &domaingit.CommitInfo{Hash: "abc123", Author: "Test", Subject: "Empty commit", Date: time.Now()},
 			width:    80,
 			contains: []string{"No changes to display"},
 		},
 		{
 			name:     "loading state",
 			files:    []DiffFile{},
-			commit:   &git.CommitInfo{Hash: "abc123", Author: "Test", Subject: "Loading", Date: time.Now()},
+			commit:   &domaingit.CommitInfo{Hash: "abc123", Author: "Test", Subject: "Loading", Date: time.Now()},
 			loading:  true,
 			width:    80,
 			contains: []string{"Loading"},
@@ -2015,7 +2015,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					},
 				},
 			},
-			commit: &git.CommitInfo{Hash: "file123", Author: "Test", Subject: "File commit", Date: time.Now()},
+			commit: &domaingit.CommitInfo{Hash: "file123", Author: "Test", Subject: "File commit", Date: time.Now()},
 			width:  80,
 			contains: []string{
 				"main.go",        // File header
@@ -2045,7 +2045,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					},
 				},
 			},
-			commit: &git.CommitInfo{
+			commit: &domaingit.CommitInfo{
 				Hash:    "abc1234567890def",
 				Author:  "Test Author",
 				Subject: "Add test function",
@@ -2108,7 +2108,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					},
 				},
 			},
-			commit: &git.CommitInfo{
+			commit: &domaingit.CommitInfo{
 				Hash:    "def456789abc",
 				Author:  "Multi File Author",
 				Subject: "Update multiple files",
@@ -2135,7 +2135,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					IsBinary: true,
 				},
 			},
-			commit: &git.CommitInfo{Hash: "binary123", Author: "Test", Subject: "Binary", Date: time.Now()},
+			commit: &domaingit.CommitInfo{Hash: "binary123", Author: "Test", Subject: "Binary", Date: time.Now()},
 			width:  80,
 			contains: []string{
 				"image.png",   // File header
@@ -2162,7 +2162,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					},
 				},
 			},
-			commit: &git.CommitInfo{Hash: "deleted123", Author: "Test", Subject: "Deleted", Date: time.Now()},
+			commit: &domaingit.CommitInfo{Hash: "deleted123", Author: "Test", Subject: "Deleted", Date: time.Now()},
 			width:  80,
 			contains: []string{
 				"removed_file.go", // Should use OldPath
@@ -2178,7 +2178,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					Hunks:   []DiffHunk{},
 				},
 			},
-			commit: &git.CommitInfo{Hash: "nohunks123", Author: "Test", Subject: "No hunks", Date: time.Now()},
+			commit: &domaingit.CommitInfo{Hash: "nohunks123", Author: "Test", Subject: "No hunks", Date: time.Now()},
 			width:  80,
 			contains: []string{
 				"empty_diff.go", // File header
@@ -2207,7 +2207,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					},
 				},
 			},
-			commit: &git.CommitInfo{Hash: "renamed123", Author: "Test", Subject: "Renamed", Date: time.Now()},
+			commit: &domaingit.CommitInfo{Hash: "renamed123", Author: "Test", Subject: "Renamed", Date: time.Now()},
 			width:  80,
 			contains: []string{
 				"new_name.go", // Uses NewPath for renamed files
@@ -2235,7 +2235,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					},
 				},
 			},
-			commit: &git.CommitInfo{Hash: "newfile123", Author: "Test", Subject: "New file", Date: time.Now()},
+			commit: &domaingit.CommitInfo{Hash: "newfile123", Author: "Test", Subject: "New file", Date: time.Now()},
 			width:  80,
 			contains: []string{
 				"new_file.go",
@@ -2293,7 +2293,7 @@ func TestRenderFullCommitDiffContent(t *testing.T) {
 					IsBinary: true,
 				},
 			},
-			commit: &git.CommitInfo{
+			commit: &domaingit.CommitInfo{
 				Hash:    "mixed123456",
 				Author:  "Mixed Author",
 				Subject: "Mixed changes commit",
@@ -2352,7 +2352,7 @@ func TestRenderFullCommitDiffContent_CommitHeaderRendering(t *testing.T) {
 			},
 		},
 	}
-	commit := &git.CommitInfo{
+	commit := &domaingit.CommitInfo{
 		Hash:    "1234567890abcdef1234567890abcdef12345678",
 		Author:  "John Doe <john@example.com>",
 		Subject: "feat: Add new feature with detailed description",
@@ -2400,7 +2400,7 @@ func TestRenderFullCommitDiffContent_FileHeaderRendering(t *testing.T) {
 			},
 		},
 	}
-	commit := &git.CommitInfo{Hash: "fileheader123", Author: "Test", Subject: "File headers", Date: time.Now()}
+	commit := &domaingit.CommitInfo{Hash: "fileheader123", Author: "Test", Subject: "File headers", Date: time.Now()}
 
 	m := setupModelWithPreviewCommit(t, files, commit)
 	result := m.renderFullCommitDiff(80, 50)
@@ -2416,7 +2416,7 @@ func TestRenderFullCommitDiffContent_FileHeaderRendering(t *testing.T) {
 // TestRenderFullCommitDiffContent_NoFilesShowsNoChanges tests that empty commit
 // shows empty state message
 func TestRenderFullCommitDiffContent_NoFilesShowsNoChanges(t *testing.T) {
-	commit := &git.CommitInfo{Hash: "empty123", Author: "Test", Subject: "Empty", Date: time.Now()}
+	commit := &domaingit.CommitInfo{Hash: "empty123", Author: "Test", Subject: "Empty", Date: time.Now()}
 	m := setupModelWithPreviewCommit(t, []DiffFile{}, commit)
 	result := m.renderFullCommitDiff(80, 50)
 
@@ -2427,7 +2427,7 @@ func TestRenderFullCommitDiffContent_NoFilesShowsNoChanges(t *testing.T) {
 // shows loading message
 func TestRenderFullCommitDiffContent_LoadingState(t *testing.T) {
 	m := New().SetSize(80, 50)
-	m.commits = []git.CommitInfo{{Hash: "loading123", Author: "Test", Subject: "Loading", Date: time.Now()}}
+	m.commits = []domaingit.CommitInfo{{Hash: "loading123", Author: "Test", Subject: "Loading", Date: time.Now()}}
 	m.selectedCommit = 0
 	m.previewCommitHash = "loading123"
 	m.previewCommitFiles = nil
@@ -2456,7 +2456,7 @@ func TestRenderFullCommitDiffContent_SelectedCommitOutOfBounds(t *testing.T) {
 
 	m := setupModelWithPreviewCommit(t, files, nil)
 	// Set up invalid selectedCommit index
-	m.commits = []git.CommitInfo{{Hash: "abc"}}
+	m.commits = []domaingit.CommitInfo{{Hash: "abc"}}
 	m.selectedCommit = 5 // Out of bounds
 
 	result := m.renderFullCommitDiff(80, 50)
@@ -2468,7 +2468,7 @@ func TestRenderFullCommitDiffContent_SelectedCommitOutOfBounds(t *testing.T) {
 // Golden tests for renderFullCommitDiffContent visual output
 
 func TestView_Golden_FullCommitDiff_Empty(t *testing.T) {
-	commit := &git.CommitInfo{Hash: "empty123", Author: "Test", Subject: "Empty", Date: time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)}
+	commit := &domaingit.CommitInfo{Hash: "empty123", Author: "Test", Subject: "Empty", Date: time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)}
 	m := setupModelWithPreviewCommit(t, []DiffFile{}, commit)
 	result := m.renderFullCommitDiff(80, 50)
 	teatest.RequireEqualOutput(t, []byte(result))
@@ -2476,7 +2476,7 @@ func TestView_Golden_FullCommitDiff_Empty(t *testing.T) {
 
 func TestView_Golden_FullCommitDiff_Loading(t *testing.T) {
 	m := New().SetSize(80, 50)
-	m.commits = []git.CommitInfo{{Hash: "loading123", Author: "Test", Subject: "Loading", Date: time.Now()}}
+	m.commits = []domaingit.CommitInfo{{Hash: "loading123", Author: "Test", Subject: "Loading", Date: time.Now()}}
 	m.selectedCommit = 0
 	m.previewCommitHash = "loading123"
 	m.previewCommitFiles = nil
@@ -2510,7 +2510,7 @@ func TestView_Golden_FullCommitDiff_SingleFileNoHeader(t *testing.T) {
 			},
 		},
 	}
-	commit := &git.CommitInfo{Hash: "single123", Author: "Test", Subject: "Single file", Date: time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)}
+	commit := &domaingit.CommitInfo{Hash: "single123", Author: "Test", Subject: "Single file", Date: time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)}
 	m := setupModelWithPreviewCommit(t, files, commit)
 	result := m.renderFullCommitDiff(80, 50)
 	teatest.RequireEqualOutput(t, []byte(result))
@@ -2537,7 +2537,7 @@ func TestView_Golden_FullCommitDiff_SingleFileWithHeader(t *testing.T) {
 			},
 		},
 	}
-	commit := &git.CommitInfo{
+	commit := &domaingit.CommitInfo{
 		Hash:    "abc123def456789",
 		Author:  "Test Author <test@example.com>",
 		Subject: "refactor: Update handler function",
@@ -2601,7 +2601,7 @@ func TestView_Golden_FullCommitDiff_MultipleFiles(t *testing.T) {
 			},
 		},
 	}
-	commit := &git.CommitInfo{
+	commit := &domaingit.CommitInfo{
 		Hash:    "def456789abc123",
 		Author:  "Developer <dev@example.com>",
 		Subject: "feat: Add utils package and update imports",
@@ -2619,7 +2619,7 @@ func TestView_Golden_FullCommitDiff_BinaryFile(t *testing.T) {
 			IsBinary: true,
 		},
 	}
-	commit := &git.CommitInfo{
+	commit := &domaingit.CommitInfo{
 		Hash:    "binary123",
 		Author:  "Designer",
 		Subject: "Add logo asset",
@@ -2691,7 +2691,7 @@ func TestView_Golden_FullCommitDiff_MixedTypes(t *testing.T) {
 			Hunks:      []DiffHunk{},
 		},
 	}
-	commit := &git.CommitInfo{
+	commit := &domaingit.CommitInfo{
 		Hash:    "mixed999abc",
 		Author:  "Multi Author",
 		Subject: "Mixed changes: add, modify, delete, binary, rename",
@@ -2707,7 +2707,7 @@ func TestView_Golden_FullCommitDiff_MixedTypes(t *testing.T) {
 // =============================================================================
 
 func TestRenderBranchListItem_BasicBranch(t *testing.T) {
-	branch := git.BranchInfo{Name: "feature/auth", IsCurrent: false}
+	branch := domaingit.BranchInfo{Name: "feature/auth", IsCurrent: false}
 	result := renderBranchListItem(branch, false, false, 40)
 
 	require.NotEmpty(t, result)
@@ -2717,7 +2717,7 @@ func TestRenderBranchListItem_BasicBranch(t *testing.T) {
 }
 
 func TestRenderBranchListItem_CurrentBranch(t *testing.T) {
-	branch := git.BranchInfo{Name: "main", IsCurrent: true}
+	branch := domaingit.BranchInfo{Name: "main", IsCurrent: true}
 	result := renderBranchListItem(branch, false, false, 40)
 
 	require.Contains(t, result, "main")
@@ -2725,7 +2725,7 @@ func TestRenderBranchListItem_CurrentBranch(t *testing.T) {
 }
 
 func TestRenderBranchListItem_SelectedBranch(t *testing.T) {
-	branch := git.BranchInfo{Name: "develop", IsCurrent: false}
+	branch := domaingit.BranchInfo{Name: "develop", IsCurrent: false}
 	result := renderBranchListItem(branch, true, false, 40)
 
 	require.Contains(t, result, "develop")
@@ -2733,7 +2733,7 @@ func TestRenderBranchListItem_SelectedBranch(t *testing.T) {
 }
 
 func TestRenderBranchListItem_SelectedAndFocused(t *testing.T) {
-	branch := git.BranchInfo{Name: "main", IsCurrent: true}
+	branch := domaingit.BranchInfo{Name: "main", IsCurrent: true}
 	result := renderBranchListItem(branch, true, true, 50)
 
 	require.Contains(t, result, "main")
@@ -2742,7 +2742,7 @@ func TestRenderBranchListItem_SelectedAndFocused(t *testing.T) {
 }
 
 func TestRenderBranchListItem_Truncation(t *testing.T) {
-	branch := git.BranchInfo{Name: "feature/very-long-branch-name-that-should-be-truncated", IsCurrent: false}
+	branch := domaingit.BranchInfo{Name: "feature/very-long-branch-name-that-should-be-truncated", IsCurrent: false}
 	result := renderBranchListItem(branch, false, false, 20)
 
 	// Should not exceed width
@@ -2750,19 +2750,19 @@ func TestRenderBranchListItem_Truncation(t *testing.T) {
 }
 
 func TestRenderBranchListItem_ZeroWidth(t *testing.T) {
-	branch := git.BranchInfo{Name: "main", IsCurrent: false}
+	branch := domaingit.BranchInfo{Name: "main", IsCurrent: false}
 	result := renderBranchListItem(branch, false, false, 0)
 
 	require.Empty(t, result)
 }
 
 func TestRenderBranchList_EmptyList(t *testing.T) {
-	result := renderBranchList([]git.BranchInfo{}, 0, 0, 40, 10, true)
+	result := renderBranchList([]domaingit.BranchInfo{}, 0, 0, 40, 10, true)
 	require.Contains(t, result, "No branches")
 }
 
 func TestRenderBranchList_SingleBranch(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 	}
 	result := renderBranchList(branches, 0, 0, 40, 10, true)
@@ -2772,7 +2772,7 @@ func TestRenderBranchList_SingleBranch(t *testing.T) {
 }
 
 func TestRenderBranchList_MultipleBranches(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -2785,7 +2785,7 @@ func TestRenderBranchList_MultipleBranches(t *testing.T) {
 }
 
 func TestRenderBranchList_ScrollState(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "branch-1", IsCurrent: false},
 		{Name: "branch-2", IsCurrent: false},
 		{Name: "branch-3", IsCurrent: false},
@@ -2802,7 +2802,7 @@ func TestRenderBranchList_ScrollState(t *testing.T) {
 }
 
 func TestRenderBranchList_ZeroDimensions(t *testing.T) {
-	branches := []git.BranchInfo{{Name: "main", IsCurrent: true}}
+	branches := []domaingit.BranchInfo{{Name: "main", IsCurrent: true}}
 
 	// Zero width
 	result := renderBranchList(branches, 0, 0, 0, 10, true)
@@ -2814,7 +2814,7 @@ func TestRenderBranchList_ZeroDimensions(t *testing.T) {
 }
 
 func TestRenderBranchList_HeightPadding(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 	}
 	result := renderBranchList(branches, 0, 0, 40, 5, true)
@@ -2827,12 +2827,12 @@ func TestRenderBranchList_HeightPadding(t *testing.T) {
 // Golden tests for renderBranchList
 
 func TestView_Golden_BranchList_Empty(t *testing.T) {
-	result := renderBranchList([]git.BranchInfo{}, 0, 0, 40, 10, true)
+	result := renderBranchList([]domaingit.BranchInfo{}, 0, 0, 40, 10, true)
 	teatest.RequireEqualOutput(t, []byte(result))
 }
 
 func TestView_Golden_BranchList_SingleCurrent(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 	}
 	result := renderBranchList(branches, 0, 0, 40, 10, true)
@@ -2840,7 +2840,7 @@ func TestView_Golden_BranchList_SingleCurrent(t *testing.T) {
 }
 
 func TestView_Golden_BranchList_Multiple(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -2852,7 +2852,7 @@ func TestView_Golden_BranchList_Multiple(t *testing.T) {
 }
 
 func TestView_Golden_BranchList_SelectedFocused(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -2863,7 +2863,7 @@ func TestView_Golden_BranchList_SelectedFocused(t *testing.T) {
 }
 
 func TestView_Golden_BranchList_SelectedUnfocused(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 		{Name: "feature/auth", IsCurrent: false},
@@ -2874,7 +2874,7 @@ func TestView_Golden_BranchList_SelectedUnfocused(t *testing.T) {
 }
 
 func TestView_Golden_BranchList_CurrentSelected(t *testing.T) {
-	branches := []git.BranchInfo{
+	branches := []domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 	}
@@ -2888,7 +2888,7 @@ func TestView_Golden_BranchList_CurrentSelected(t *testing.T) {
 // =============================================================================
 
 func TestRenderWorktreeListItem_BasicWorktree(t *testing.T) {
-	worktree := git.WorktreeInfo{Path: "/path/to/my-worktree", Branch: "feature/auth", HEAD: "abc123"}
+	worktree := domaingit.WorktreeInfo{Path: "/path/to/my-worktree", Branch: "feature/auth", HEAD: "abc123"}
 	result := renderWorktreeListItem(worktree, false, false, 50)
 
 	require.NotEmpty(t, result)
@@ -2899,7 +2899,7 @@ func TestRenderWorktreeListItem_BasicWorktree(t *testing.T) {
 }
 
 func TestRenderWorktreeListItem_SelectedWorktree(t *testing.T) {
-	worktree := git.WorktreeInfo{Path: "/path/to/my-worktree", Branch: "main", HEAD: "def456"}
+	worktree := domaingit.WorktreeInfo{Path: "/path/to/my-worktree", Branch: "main", HEAD: "def456"}
 	result := renderWorktreeListItem(worktree, true, false, 50)
 
 	require.Contains(t, result, "my-worktree")
@@ -2907,7 +2907,7 @@ func TestRenderWorktreeListItem_SelectedWorktree(t *testing.T) {
 }
 
 func TestRenderWorktreeListItem_SelectedAndFocused(t *testing.T) {
-	worktree := git.WorktreeInfo{Path: "/path/to/worktree", Branch: "develop", HEAD: "ghi789"}
+	worktree := domaingit.WorktreeInfo{Path: "/path/to/worktree", Branch: "develop", HEAD: "ghi789"}
 	result := renderWorktreeListItem(worktree, true, true, 50)
 
 	require.Contains(t, result, "worktree")
@@ -2916,7 +2916,7 @@ func TestRenderWorktreeListItem_SelectedAndFocused(t *testing.T) {
 }
 
 func TestRenderWorktreeListItem_NoBranch(t *testing.T) {
-	worktree := git.WorktreeInfo{Path: "/path/to/detached", Branch: "", HEAD: "abc123"}
+	worktree := domaingit.WorktreeInfo{Path: "/path/to/detached", Branch: "", HEAD: "abc123"}
 	result := renderWorktreeListItem(worktree, false, false, 50)
 
 	require.Contains(t, result, "detached")
@@ -2925,7 +2925,7 @@ func TestRenderWorktreeListItem_NoBranch(t *testing.T) {
 }
 
 func TestRenderWorktreeListItem_Truncation(t *testing.T) {
-	worktree := git.WorktreeInfo{Path: "/very/long/path/to/my-very-long-worktree-name", Branch: "feature/auth", HEAD: "abc123"}
+	worktree := domaingit.WorktreeInfo{Path: "/very/long/path/to/my-very-long-worktree-name", Branch: "feature/auth", HEAD: "abc123"}
 	result := renderWorktreeListItem(worktree, false, false, 30)
 
 	// Should not exceed width
@@ -2933,19 +2933,19 @@ func TestRenderWorktreeListItem_Truncation(t *testing.T) {
 }
 
 func TestRenderWorktreeListItem_ZeroWidth(t *testing.T) {
-	worktree := git.WorktreeInfo{Path: "/path/to/wt", Branch: "main", HEAD: "abc123"}
+	worktree := domaingit.WorktreeInfo{Path: "/path/to/wt", Branch: "main", HEAD: "abc123"}
 	result := renderWorktreeListItem(worktree, false, false, 0)
 
 	require.Empty(t, result)
 }
 
 func TestRenderWorktreeList_EmptyList(t *testing.T) {
-	result := renderWorktreeList([]git.WorktreeInfo{}, 0, 0, 50, 10, true)
+	result := renderWorktreeList([]domaingit.WorktreeInfo{}, 0, 0, 50, 10, true)
 	require.Contains(t, result, "No worktrees")
 }
 
 func TestRenderWorktreeList_SingleWorktree(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/home/user/project", Branch: "main", HEAD: "abc123"},
 	}
 	result := renderWorktreeList(worktrees, 0, 0, 50, 10, true)
@@ -2955,7 +2955,7 @@ func TestRenderWorktreeList_SingleWorktree(t *testing.T) {
 }
 
 func TestRenderWorktreeList_MultipleWorktrees(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/home/user/project", Branch: "main", HEAD: "abc123"},
 		{Path: "/home/user/project-feature", Branch: "feature/auth", HEAD: "def456"},
 		{Path: "/home/user/project-bugfix", Branch: "bugfix/issue-42", HEAD: "ghi789"},
@@ -2971,7 +2971,7 @@ func TestRenderWorktreeList_MultipleWorktrees(t *testing.T) {
 }
 
 func TestRenderWorktreeList_ScrollState(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/wt/wt-1", Branch: "branch-1", HEAD: "a"},
 		{Path: "/wt/wt-2", Branch: "branch-2", HEAD: "b"},
 		{Path: "/wt/wt-3", Branch: "branch-3", HEAD: "c"},
@@ -2988,7 +2988,7 @@ func TestRenderWorktreeList_ScrollState(t *testing.T) {
 }
 
 func TestRenderWorktreeList_ZeroDimensions(t *testing.T) {
-	worktrees := []git.WorktreeInfo{{Path: "/path/wt", Branch: "main", HEAD: "abc"}}
+	worktrees := []domaingit.WorktreeInfo{{Path: "/path/wt", Branch: "main", HEAD: "abc"}}
 
 	// Zero width
 	result := renderWorktreeList(worktrees, 0, 0, 0, 10, true)
@@ -3000,7 +3000,7 @@ func TestRenderWorktreeList_ZeroDimensions(t *testing.T) {
 }
 
 func TestRenderWorktreeList_HeightPadding(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/path/wt", Branch: "main", HEAD: "abc"},
 	}
 	result := renderWorktreeList(worktrees, 0, 0, 50, 5, true)
@@ -3013,12 +3013,12 @@ func TestRenderWorktreeList_HeightPadding(t *testing.T) {
 // Golden tests for renderWorktreeList
 
 func TestView_Golden_WorktreeList_Empty(t *testing.T) {
-	result := renderWorktreeList([]git.WorktreeInfo{}, 0, 0, 50, 10, true)
+	result := renderWorktreeList([]domaingit.WorktreeInfo{}, 0, 0, 50, 10, true)
 	teatest.RequireEqualOutput(t, []byte(result))
 }
 
 func TestView_Golden_WorktreeList_Single(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/home/user/project", Branch: "main", HEAD: "abc123def"},
 	}
 	result := renderWorktreeList(worktrees, 0, 0, 50, 10, true)
@@ -3026,7 +3026,7 @@ func TestView_Golden_WorktreeList_Single(t *testing.T) {
 }
 
 func TestView_Golden_WorktreeList_Multiple(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/home/user/project", Branch: "main", HEAD: "abc123"},
 		{Path: "/home/user/project-feature", Branch: "feature/auth", HEAD: "def456"},
 		{Path: "/home/user/project-bugfix", Branch: "bugfix/issue-42", HEAD: "ghi789"},
@@ -3036,7 +3036,7 @@ func TestView_Golden_WorktreeList_Multiple(t *testing.T) {
 }
 
 func TestView_Golden_WorktreeList_SelectedFocused(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/home/user/project", Branch: "main", HEAD: "abc123"},
 		{Path: "/home/user/project-feature", Branch: "feature/auth", HEAD: "def456"},
 		{Path: "/home/user/project-bugfix", Branch: "bugfix/issue-42", HEAD: "ghi789"},
@@ -3047,7 +3047,7 @@ func TestView_Golden_WorktreeList_SelectedFocused(t *testing.T) {
 }
 
 func TestView_Golden_WorktreeList_SelectedUnfocused(t *testing.T) {
-	worktrees := []git.WorktreeInfo{
+	worktrees := []domaingit.WorktreeInfo{
 		{Path: "/home/user/project", Branch: "main", HEAD: "abc123"},
 		{Path: "/home/user/project-feature", Branch: "feature/auth", HEAD: "def456"},
 		{Path: "/home/user/project-bugfix", Branch: "bugfix/issue-42", HEAD: "ghi789"},

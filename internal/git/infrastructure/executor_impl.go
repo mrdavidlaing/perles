@@ -1,4 +1,4 @@
-package git
+package infrastructure
 
 import (
 	"bufio"
@@ -13,37 +13,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
-// Git-specific errors for worktree operations.
-var (
-	// ErrBranchAlreadyCheckedOut indicates the branch is checked out in another worktree.
-	ErrBranchAlreadyCheckedOut = errors.New("branch already checked out in another worktree")
-
-	// ErrPathAlreadyExists indicates the worktree path already exists.
-	ErrPathAlreadyExists = errors.New("worktree path already exists")
-
-	// ErrWorktreeLocked indicates the worktree is locked.
-	ErrWorktreeLocked = errors.New("worktree is locked")
-
-	// ErrNotGitRepo indicates the directory is not a git repository.
-	ErrNotGitRepo = errors.New("not a git repository")
-
-	// ErrUnsafeParentDirectory indicates the parent directory is restricted.
-	ErrUnsafeParentDirectory = errors.New("unsafe parent directory")
-
-	// ErrDetachedHead indicates HEAD is not pointing to a branch (detached HEAD state).
-	ErrDetachedHead = errors.New("detached HEAD state")
-
-	// ErrInvalidBranchName indicates the branch name format is invalid per git check-ref-format.
-	ErrInvalidBranchName = errors.New("invalid branch name format")
-
-	// ErrWorktreeTimeout is returned when a git worktree operation times out.
-	ErrWorktreeTimeout = errors.New("git worktree timed out")
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domain "github.com/zjrosen/perles/internal/git/domain"
 )
 
 // Compile-time check that RealExecutor implements GitExecutor.
-var _ GitExecutor = (*RealExecutor)(nil)
+var _ appgit.GitExecutor = (*RealExecutor)(nil)
 
 // RealExecutor implements GitExecutor by executing actual git commands.
 type RealExecutor struct {
@@ -92,27 +68,27 @@ func parseGitError(stderr string, originalErr error) error {
 	// Branch already checked out: fatal: '<branch>' is already checked out
 	if strings.Contains(stderrLower, "is already checked out") ||
 		strings.Contains(stderrLower, "already checked out at") {
-		return fmt.Errorf("%w: %s", ErrBranchAlreadyCheckedOut, stderr)
+		return fmt.Errorf("%w: %s", domain.ErrBranchAlreadyCheckedOut, stderr)
 	}
 
 	// Path already exists: fatal: '<path>' already exists
 	if strings.Contains(stderrLower, "already exists") {
-		return fmt.Errorf("%w: %s", ErrPathAlreadyExists, stderr)
+		return fmt.Errorf("%w: %s", domain.ErrPathAlreadyExists, stderr)
 	}
 
 	// Locked worktree: fatal: '<path>' is locked
 	if strings.Contains(stderrLower, "is locked") {
-		return fmt.Errorf("%w: %s", ErrWorktreeLocked, stderr)
+		return fmt.Errorf("%w: %s", domain.ErrWorktreeLocked, stderr)
 	}
 
 	// Not a git repository
 	if strings.Contains(stderrLower, "not a git repository") {
-		return fmt.Errorf("%w: %s", ErrNotGitRepo, stderr)
+		return fmt.Errorf("%w: %s", domain.ErrNotGitRepo, stderr)
 	}
 
 	// Invalid branch name
 	if strings.Contains(stderrLower, "is not a valid branch name") {
-		return fmt.Errorf("%w: %s", ErrInvalidBranchName, stderr)
+		return fmt.Errorf("%w: %s", domain.ErrInvalidBranchName, stderr)
 	}
 
 	return fmt.Errorf("git error: %s: %w", stderr, originalErr)
@@ -177,7 +153,7 @@ func (e *RealExecutor) IsDetachedHead() (bool, error) {
 }
 
 // GetCurrentBranch returns the name of the current branch.
-// Returns ErrDetachedHead if HEAD is not pointing to a branch (common in CI).
+// Returns domain.ErrDetachedHead if HEAD is not pointing to a branch (common in CI).
 func (e *RealExecutor) GetCurrentBranch() (string, error) {
 	// First try git branch --show-current (git 2.22+)
 	// This returns empty string in detached HEAD state (no error)
@@ -191,7 +167,7 @@ func (e *RealExecutor) GetCurrentBranch() (string, error) {
 	if err != nil {
 		// Check if we're in detached HEAD state
 		if strings.Contains(err.Error(), "not a symbolic ref") {
-			return "", ErrDetachedHead
+			return "", domain.ErrDetachedHead
 		}
 		return "", fmt.Errorf("failed to get current branch: %w", err)
 	}
@@ -232,7 +208,7 @@ func (e *RealExecutor) GetMainBranch() (string, error) {
 func (e *RealExecutor) IsOnMainBranch() (bool, error) {
 	currentBranch, err := e.GetCurrentBranch()
 	if err != nil {
-		if errors.Is(err, ErrDetachedHead) {
+		if errors.Is(err, domain.ErrDetachedHead) {
 			return false, nil
 		}
 		return false, err
@@ -337,7 +313,7 @@ func isWritable(dir string) bool {
 // CreateWorktreeWithContext creates a new worktree at the specified path with context support.
 // If branch is empty, creates a new branch based on HEAD.
 // The context can be used to cancel/timeout the operation.
-// Returns ErrWorktreeTimeout if the context deadline is exceeded.
+// Returns domain.ErrWorktreeTimeout if the context deadline is exceeded.
 func (e *RealExecutor) CreateWorktreeWithContext(ctx context.Context, path, newBranch, baseBranch string) error {
 	// git worktree add -b <new-branch> <path> [<start-point>]
 	// -b creates a new branch; baseBranch is the starting point
@@ -353,7 +329,7 @@ func (e *RealExecutor) CreateWorktreeWithContext(ctx context.Context, path, newB
 	if err != nil {
 		// Check if the error is due to context timeout/cancellation
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("%w: git %s", ErrWorktreeTimeout, strings.Join(args, " "))
+			return fmt.Errorf("%w: git %s", domain.ErrWorktreeTimeout, strings.Join(args, " "))
 		}
 		return err
 	}
@@ -377,7 +353,7 @@ func (e *RealExecutor) PruneWorktrees() error {
 }
 
 // ListWorktrees returns information about all worktrees.
-func (e *RealExecutor) ListWorktrees() ([]WorktreeInfo, error) {
+func (e *RealExecutor) ListWorktrees() ([]domain.WorktreeInfo, error) {
 	output, err := e.runGitOutput("worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, err
@@ -393,9 +369,9 @@ func (e *RealExecutor) ListWorktrees() ([]WorktreeInfo, error) {
 //	HEAD <sha>
 //	branch refs/heads/branch-name
 //	<blank line>
-func parseWorktreeList(output string) []WorktreeInfo {
-	var worktrees []WorktreeInfo
-	var current WorktreeInfo
+func parseWorktreeList(output string) []domain.WorktreeInfo {
+	var worktrees []domain.WorktreeInfo
+	var current domain.WorktreeInfo
 
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
@@ -406,7 +382,7 @@ func parseWorktreeList(output string) []WorktreeInfo {
 			if current.Path != "" {
 				worktrees = append(worktrees, current)
 			}
-			current = WorktreeInfo{}
+			current = domain.WorktreeInfo{}
 			continue
 		}
 
@@ -440,7 +416,7 @@ func parseWorktreeList(output string) []WorktreeInfo {
 }
 
 // ListBranches returns all local branches, sorted with current branch first then alphabetically.
-func (e *RealExecutor) ListBranches() ([]BranchInfo, error) {
+func (e *RealExecutor) ListBranches() ([]domain.BranchInfo, error) {
 	// git branch --format outputs each branch with consistent formatting
 	// %(refname:short) gives the short branch name
 	// %(HEAD) gives '*' if current, ' ' otherwise
@@ -453,8 +429,8 @@ func (e *RealExecutor) ListBranches() ([]BranchInfo, error) {
 		return nil, nil
 	}
 
-	var branches []BranchInfo
-	var currentBranch *BranchInfo
+	var branches []domain.BranchInfo
+	var currentBranch *domain.BranchInfo
 
 	for line := range strings.SplitSeq(output, "\n") {
 		if line == "" {
@@ -478,7 +454,7 @@ func (e *RealExecutor) ListBranches() ([]BranchInfo, error) {
 			name = line
 		}
 
-		branch := BranchInfo{
+		branch := domain.BranchInfo{
 			Name:      name,
 			IsCurrent: isCurrent,
 		}
@@ -497,7 +473,7 @@ func (e *RealExecutor) ListBranches() ([]BranchInfo, error) {
 
 	// Put current branch first
 	if currentBranch != nil {
-		branches = append([]BranchInfo{*currentBranch}, branches...)
+		branches = append([]domain.BranchInfo{*currentBranch}, branches...)
 	}
 
 	return branches, nil
@@ -510,17 +486,14 @@ func (e *RealExecutor) BranchExists(name string) bool {
 }
 
 // ValidateBranchName validates a branch name using git check-ref-format --branch.
-// Returns nil if valid, ErrInvalidBranchName if invalid.
+// Returns nil if valid, domain.ErrInvalidBranchName if invalid.
 func (e *RealExecutor) ValidateBranchName(name string) error {
 	err := e.runGit("check-ref-format", "--branch", name)
 	if err != nil {
-		return ErrInvalidBranchName
+		return domain.ErrInvalidBranchName
 	}
 	return nil
 }
-
-// ErrDiffTimeout is returned when a git diff operation times out.
-var ErrDiffTimeout = errors.New("git diff timed out")
 
 // diffTimeout is the maximum time allowed for diff operations to prevent hanging.
 const diffTimeout = 5 * time.Second
@@ -540,7 +513,7 @@ func (e *RealExecutor) runGitOutputWithContext(ctx context.Context, args ...stri
 	if err := cmd.Run(); err != nil {
 		// Check if the error is due to context timeout/cancellation
 		if ctx.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("%w: git %s", ErrDiffTimeout, strings.Join(args, " "))
+			return "", fmt.Errorf("%w: git %s", domain.ErrDiffTimeout, strings.Join(args, " "))
 		}
 
 		stderrStr := strings.TrimSpace(stderr.String())
@@ -648,7 +621,7 @@ const commitLogDelimiter = "\x1e"
 // Uses a 5-second timeout to prevent hanging on large repos.
 // Returns an empty slice for empty repositories.
 // Also detects which commits have been pushed to the remote tracking branch.
-func (e *RealExecutor) GetCommitLog(limit int) ([]CommitInfo, error) {
+func (e *RealExecutor) GetCommitLog(limit int) ([]domain.CommitInfo, error) {
 	return e.GetCommitLogForRef("", limit)
 }
 
@@ -657,7 +630,7 @@ func (e *RealExecutor) GetCommitLog(limit int) ([]CommitInfo, error) {
 // Uses a 5-second timeout to prevent hanging on large repos.
 // Returns an empty slice for empty repositories.
 // Also detects which commits have been pushed to the remote tracking branch.
-func (e *RealExecutor) GetCommitLogForRef(ref string, limit int) ([]CommitInfo, error) {
+func (e *RealExecutor) GetCommitLogForRef(ref string, limit int) ([]domain.CommitInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), diffTimeout)
 	defer cancel()
 
@@ -727,8 +700,8 @@ func (e *RealExecutor) getPushedCommitHashes(ctx context.Context) map[string]str
 }
 
 // parseCommitLog parses the output of git log --format='%H<RS>%h<RS>%s<RS>%an<RS>%aI'.
-func parseCommitLog(output string) []CommitInfo {
-	var commits []CommitInfo
+func parseCommitLog(output string) []domain.CommitInfo {
+	var commits []domain.CommitInfo
 
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
@@ -756,7 +729,7 @@ func parseCommitLog(output string) []CommitInfo {
 			date = time.Time{}
 		}
 
-		commits = append(commits, CommitInfo{
+		commits = append(commits, domain.CommitInfo{
 			Hash:      hash,
 			ShortHash: shortHash,
 			Subject:   subject,

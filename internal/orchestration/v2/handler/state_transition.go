@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/zjrosen/perles/internal/beads"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/tracing"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
@@ -62,7 +62,7 @@ type ReportCompleteHandler struct {
 	processRepo repository.ProcessRepository
 	taskRepo    repository.TaskRepository
 	queueRepo   repository.QueueRepository
-	bdExecutor  beads.BeadsExecutor
+	bdExecutor  appbeads.IssueExecutor
 }
 
 // ReportCompleteHandlerOption configures ReportCompleteHandler.
@@ -70,7 +70,7 @@ type ReportCompleteHandlerOption func(*ReportCompleteHandler)
 
 // WithReportCompleteBDExecutor sets the BD executor for task comments.
 // Note: bdExecutor is required and must not be nil.
-func WithReportCompleteBDExecutor(executor beads.BeadsExecutor) ReportCompleteHandlerOption {
+func WithReportCompleteBDExecutor(executor appbeads.IssueExecutor) ReportCompleteHandlerOption {
 	return func(h *ReportCompleteHandler) {
 		h.bdExecutor = executor
 	}
@@ -220,7 +220,7 @@ type ReportVerdictHandler struct {
 	processRepo  repository.ProcessRepository
 	taskRepo     repository.TaskRepository
 	queueRepo    repository.QueueRepository
-	bdExecutor   beads.BeadsExecutor
+	bdExecutor   appbeads.IssueExecutor
 	tracer       trace.Tracer
 	soundService sound.SoundService
 }
@@ -230,7 +230,7 @@ type ReportVerdictHandlerOption func(*ReportVerdictHandler)
 
 // WithReportVerdictBDExecutor sets the BD executor for task comments.
 // Note: bdExecutor is required and must not be nil.
-func WithReportVerdictBDExecutor(executor beads.BeadsExecutor) ReportVerdictHandlerOption {
+func WithReportVerdictBDExecutor(executor appbeads.IssueExecutor) ReportVerdictHandlerOption {
 	return func(h *ReportVerdictHandler) {
 		h.bdExecutor = executor
 	}

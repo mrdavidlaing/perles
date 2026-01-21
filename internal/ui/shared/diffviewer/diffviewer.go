@@ -12,7 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/keys"
 	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/ui/shared/overlay"
@@ -83,7 +84,7 @@ type HideDiffViewerMsg struct{}
 
 // CommitsLoadedMsg carries parsed commit history back to the model.
 type CommitsLoadedMsg struct {
-	Commits []git.CommitInfo
+	Commits []domaingit.CommitInfo
 	Branch  string
 	Err     error
 }
@@ -110,19 +111,19 @@ type CommitPreviewLoadedMsg struct {
 
 // WorktreesLoadedMsg carries the list of available worktrees.
 type WorktreesLoadedMsg struct {
-	Worktrees []git.WorktreeInfo
+	Worktrees []domaingit.WorktreeInfo
 	Err       error
 }
 
 // BranchesLoadedMsg carries the list of available branches.
 type BranchesLoadedMsg struct {
-	Branches []git.BranchInfo
+	Branches []domaingit.BranchInfo
 	Err      error
 }
 
 // CommitsForBranchLoadedMsg carries commits loaded for a specific branch.
 type CommitsForBranchLoadedMsg struct {
-	Commits []git.CommitInfo
+	Commits []domaingit.CommitInfo
 	Branch  string // Branch name the commits are from
 	Err     error
 }
@@ -159,17 +160,17 @@ type Model struct {
 	err error
 
 	// Commit picker state
-	commits                  []git.CommitInfo // Loaded commit history
-	selectedCommit           int              // Index into commits slice
-	commitScrollTop          int              // First visible commit for scrolling
-	currentBranch            string           // Branch name for header display (e.g., "main")
-	lastLeftFocus            focusPane        // Track last focused left pane for h key restoration
-	commitPaneMode           commitPaneMode   // Current mode: list of commits or files in a commit
-	commitFiles              []DiffFile       // Files changed in the selected commit (when in FilesMode)
-	commitFilesTree          *FileTree        // Tree structure for commit files
-	selectedCommitFileNode   int              // Currently selected node index in visible tree
-	commitFilesTreeScrollTop int              // First visible node for scrolling in commit files tree
-	inspectedCommit          *git.CommitInfo  // The commit being inspected (when in FilesMode)
+	commits                  []domaingit.CommitInfo // Loaded commit history
+	selectedCommit           int                    // Index into commits slice
+	commitScrollTop          int                    // First visible commit for scrolling
+	currentBranch            string                 // Branch name for header display (e.g., "main")
+	lastLeftFocus            focusPane              // Track last focused left pane for h key restoration
+	commitPaneMode           commitPaneMode         // Current mode: list of commits or files in a commit
+	commitFiles              []DiffFile             // Files changed in the selected commit (when in FilesMode)
+	commitFilesTree          *FileTree              // Tree structure for commit files
+	selectedCommitFileNode   int                    // Currently selected node index in visible tree
+	commitFilesTreeScrollTop int                    // First visible node for scrolling in commit files tree
+	inspectedCommit          *domaingit.CommitInfo  // The commit being inspected (when in FilesMode)
 
 	// Commit preview state (for showing full commit diff when commit is highlighted in ListMode)
 	previewCommitFiles   []DiffFile // All files changed in the highlighted commit
@@ -192,16 +193,16 @@ type Model struct {
 	focus focusPane
 
 	// Dependencies (passed in)
-	gitExecutor git.GitExecutor
+	gitExecutor appgit.GitExecutor
 	clock       shared.Clock     // Clock for relative timestamp rendering
 	clipboard   shared.Clipboard // Clipboard for copy operations
 
 	// Git context switching state
-	gitExecutorFactory    func(string) git.GitExecutor // Factory for creating executors
-	originalWorkDir       string                       // Original working directory path
-	currentWorktreePath   string                       // Path of the currently selected worktree (empty = original)
-	currentWorktreeBranch string                       // Branch in the current worktree
-	viewingBranch         string                       // Branch whose commits are displayed (empty = HEAD)
+	gitExecutorFactory    func(string) appgit.GitExecutor // Factory for creating executors
+	originalWorkDir       string                          // Original working directory path
+	currentWorktreePath   string                          // Path of the currently selected worktree (empty = original)
+	currentWorktreeBranch string                          // Branch in the current worktree
+	viewingBranch         string                          // Branch whose commits are displayed (empty = HEAD)
 
 	// Modal visibility flags
 	showHelpOverlay bool
@@ -213,16 +214,16 @@ type Model struct {
 	activeCommitTab commitsTabIndex // Currently active tab (0=Commits, 1=Branches, 2=Worktrees)
 
 	// Branch list state (for Branches tab display)
-	branchList       []git.BranchInfo // Loaded branches for tab display
-	selectedBranch   int              // Index into branchList slice
-	branchScrollTop  int              // First visible branch for scrolling
-	branchListLoaded bool             // Whether branches have been loaded
+	branchList       []domaingit.BranchInfo // Loaded branches for tab display
+	selectedBranch   int                    // Index into branchList slice
+	branchScrollTop  int                    // First visible branch for scrolling
+	branchListLoaded bool                   // Whether branches have been loaded
 
 	// Worktree list state (for Worktrees tab display)
-	worktreeList       []git.WorktreeInfo // Loaded worktrees for tab display
-	selectedWorktree   int                // Index into worktreeList slice
-	worktreeScrollTop  int                // First visible worktree for scrolling
-	worktreeListLoaded bool               // Whether worktrees have been loaded
+	worktreeList       []domaingit.WorktreeInfo // Loaded worktrees for tab display
+	selectedWorktree   int                      // Index into worktreeList slice
+	worktreeScrollTop  int                      // First visible worktree for scrolling
+	worktreeListLoaded bool                     // Whether worktrees have been loaded
 
 	// Word-level diff cache (file path -> word diff results)
 	wordDiffCache map[string]*fileWordDiff
@@ -253,7 +254,7 @@ func New() Model {
 }
 
 // NewWithGitExecutor creates a new diff viewer model with a git executor.
-func NewWithGitExecutor(ge git.GitExecutor) Model {
+func NewWithGitExecutor(ge appgit.GitExecutor) Model {
 	return Model{
 		visible:           false,
 		focus:             focusFileList,
@@ -278,7 +279,7 @@ func NewWithGitExecutor(ge git.GitExecutor) Model {
 // This enables worktree switching by creating new executors for different paths.
 // The factory function is called to create new git executors when switching worktrees.
 // If factory is non-nil and initialPath is non-empty, creates an initial executor.
-func NewWithGitExecutorFactory(factory func(string) git.GitExecutor, initialPath string) Model {
+func NewWithGitExecutorFactory(factory func(string) appgit.GitExecutor, initialPath string) Model {
 	m := New()
 	m.gitExecutorFactory = factory
 	m.originalWorkDir = initialPath
@@ -1684,7 +1685,7 @@ func (m Model) SetSize(width, height int) Model {
 }
 
 // SetGitExecutor sets the git executor for diff operations.
-func (m Model) SetGitExecutor(ge git.GitExecutor) Model {
+func (m Model) SetGitExecutor(ge appgit.GitExecutor) Model {
 	m.gitExecutor = ge
 	return m
 }
@@ -1708,7 +1709,7 @@ func (m Model) LoadCommits() tea.Cmd {
 		branch, err := m.gitExecutor.GetCurrentBranch()
 		if err != nil {
 			// Handle detached HEAD gracefully - use "HEAD" as branch name
-			if errors.Is(err, git.ErrDetachedHead) {
+			if errors.Is(err, domaingit.ErrDetachedHead) {
 				branch = "HEAD"
 			} else {
 				return CommitsLoadedMsg{Err: err}
@@ -2072,7 +2073,7 @@ func (m Model) renderFullCommitDiff(width, height int) string {
 }
 
 // renderCommitHeader renders the commit metadata header (similar to git log -p output).
-func (m Model) renderCommitHeader(commit git.CommitInfo, width int) string {
+func (m Model) renderCommitHeader(commit domaingit.CommitInfo, width int) string {
 	hashStyle := lipgloss.NewStyle().Foreground(styles.DiffHunkColor).Bold(true)
 	authorStyle := lipgloss.NewStyle().Foreground(styles.TextSecondaryColor)
 	dateStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)
@@ -2197,7 +2198,7 @@ func (m Model) handleWorktreeSelected(wtPath string) (Model, tea.Cmd) {
 	}
 
 	// Find matching WorktreeInfo from worktreeList
-	var selectedWorktree *git.WorktreeInfo
+	var selectedWorktree *domaingit.WorktreeInfo
 	for _, wt := range m.worktreeList {
 		if wt.Path == wtPath {
 			selectedWorktree = &wt

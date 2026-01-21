@@ -11,7 +11,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
@@ -1443,7 +1444,7 @@ func TestModel_Config_AcceptsGitExecutorFactory(t *testing.T) {
 	mockCP.On("Subscribe", mock.Anything).Return((<-chan controlplane.ControlPlaneEvent)(eventCh), func() {}).Maybe()
 
 	// Create a factory function
-	factory := func(path string) git.GitExecutor {
+	factory := func(path string) appgit.GitExecutor {
 		return mocks.NewMockGitExecutor(t)
 	}
 
@@ -1471,13 +1472,13 @@ func TestModel_PassesGitExecutorToNewWorkflowModal(t *testing.T) {
 
 	// Create a mock git executor that returns branches
 	mockGitExecutor := mocks.NewMockGitExecutor(t)
-	mockGitExecutor.EXPECT().ListBranches().Return([]git.BranchInfo{
+	mockGitExecutor.EXPECT().ListBranches().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
 	}, nil).Maybe()
 
 	factoryCalled := false
-	factory := func(path string) git.GitExecutor {
+	factory := func(path string) appgit.GitExecutor {
 		factoryCalled = true
 		require.Equal(t, "/test/workdir", path)
 		return mockGitExecutor
@@ -1563,7 +1564,7 @@ func TestModel_HandleStartWorkflowFailed_ErrBranchAlreadyCheckedOut(t *testing.T
 
 	msg := StartWorkflowFailedMsg{
 		WorkflowID: "wf-1",
-		Err:        fmt.Errorf("worktree create failed: %w", git.ErrBranchAlreadyCheckedOut),
+		Err:        fmt.Errorf("worktree create failed: %w", domaingit.ErrBranchAlreadyCheckedOut),
 	}
 
 	result, cmd := m.Update(msg)
@@ -1582,7 +1583,7 @@ func TestModel_HandleStartWorkflowFailed_ErrPathAlreadyExists(t *testing.T) {
 
 	msg := StartWorkflowFailedMsg{
 		WorkflowID: "wf-1",
-		Err:        fmt.Errorf("worktree create failed: %w", git.ErrPathAlreadyExists),
+		Err:        fmt.Errorf("worktree create failed: %w", domaingit.ErrPathAlreadyExists),
 	}
 
 	result, cmd := m.Update(msg)

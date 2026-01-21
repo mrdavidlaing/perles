@@ -7,7 +7,8 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/zjrosen/perles/internal/beads"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	"github.com/zjrosen/perles/internal/orchestration/message"
@@ -23,9 +24,9 @@ type CoordinatorServer struct {
 	client        client.HeadlessClient
 	msgRepo       repository.MessageRepository // Message repository for read/write operations
 	workDir       string
-	port          int                 // HTTP server port for MCP config generation
-	extensions    map[string]any      // Provider-specific extensions (model, mode, etc.)
-	beadsExecutor beads.BeadsExecutor // BD command executor
+	port          int                    // HTTP server port for MCP config generation
+	extensions    map[string]any         // Provider-specific extensions (model, mode, etc.)
+	beadsExecutor appbeads.IssueExecutor // BD command executor
 
 	// dedup tracks recent messages to prevent duplicate sends to workers
 	dedup *MessageDeduplicator
@@ -49,7 +50,7 @@ func NewCoordinatorServer(
 	workDir string,
 	port int,
 	extensions map[string]any,
-	beadsExec beads.BeadsExecutor,
+	beadsExec appbeads.IssueExecutor,
 ) *CoordinatorServer {
 	return NewCoordinatorServerWithV2Adapter(aiClient, msgRepo, workDir, port, extensions, beadsExec, nil)
 }
@@ -63,7 +64,7 @@ func NewCoordinatorServerWithV2Adapter(
 	workDir string,
 	port int,
 	extensions map[string]any,
-	beadsExec beads.BeadsExecutor,
+	beadsExec appbeads.IssueExecutor,
 	v2Adapter *adapter.V2Adapter,
 ) *CoordinatorServer {
 	cs := &CoordinatorServer{

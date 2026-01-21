@@ -16,7 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/zjrosen/perles/internal/beads"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	"github.com/zjrosen/perles/internal/orchestration/events"
@@ -46,7 +47,7 @@ type testV2Stack struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	mockSpawner  *mockProcessSpawner
-	mockBD       *mocks.MockBeadsExecutor
+	mockBD       *mocks.MockIssueExecutor
 	spawnedCount atomic.Int64
 }
 
@@ -78,7 +79,7 @@ func newTestV2Stack(t *testing.T) *testV2Stack {
 	}
 
 	// Create mock BD executor with permissive expectations
-	mockBD := mocks.NewMockBeadsExecutor(t)
+	mockBD := mocks.NewMockIssueExecutor(t)
 	setupPermissiveBDMock(mockBD)
 
 	// Create process registry for handlers
@@ -127,7 +128,7 @@ func (s *testV2Stack) registerHandlers(
 	queueRepo *repository.MemoryQueueRepository,
 	registry *process.ProcessRegistry,
 	spawner handler.ProcessSpawner,
-	bdExecutor beads.BeadsExecutor,
+	bdExecutor appbeads.IssueExecutor,
 ) {
 	// Process Lifecycle handlers (3)
 	cmdProcessor.RegisterHandler(command.CmdSpawnProcess,
@@ -855,7 +856,7 @@ type bdComment struct {
 // setupPermissiveBDMock configures a MockBeadsExecutor to accept any calls.
 // This is useful for integration tests where we want to verify calls were made
 // without strict expectation ordering.
-func setupPermissiveBDMock(m *mocks.MockBeadsExecutor) {
+func setupPermissiveBDMock(m *mocks.MockIssueExecutor) {
 	m.EXPECT().UpdateStatus(mock.Anything, mock.Anything).Return(nil).Maybe()
 	m.EXPECT().UpdatePriority(mock.Anything, mock.Anything).Return(nil).Maybe()
 	m.EXPECT().UpdateType(mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -868,7 +869,7 @@ func setupPermissiveBDMock(m *mocks.MockBeadsExecutor) {
 }
 
 // getStatusUpdates extracts all UpdateStatus calls from the mock.
-func getStatusUpdates(m *mocks.MockBeadsExecutor) []bdStatusUpdate {
+func getStatusUpdates(m *mocks.MockIssueExecutor) []bdStatusUpdate {
 	var updates []bdStatusUpdate
 	for _, call := range m.Calls {
 		if call.Method == "UpdateStatus" {
@@ -882,7 +883,7 @@ func getStatusUpdates(m *mocks.MockBeadsExecutor) []bdStatusUpdate {
 }
 
 // getComments extracts all AddComment calls from the mock.
-func getComments(m *mocks.MockBeadsExecutor) []bdComment {
+func getComments(m *mocks.MockIssueExecutor) []bdComment {
 	var comments []bdComment
 	for _, call := range m.Calls {
 		if call.Method == "AddComment" {
@@ -986,7 +987,7 @@ func (m *mockMessageRepository) getMessages() []mockLogMessage {
 type testV2StackWithWiring struct {
 	*testV2Stack
 	mockDeliverer  *mockMessageDeliverer
-	mockBDExecutor *mocks.MockBeadsExecutor
+	mockBDExecutor *mocks.MockIssueExecutor
 	mockMsgRepo    *mockMessageRepository
 }
 
@@ -1014,7 +1015,7 @@ func newTestV2StackWithWiring(t *testing.T) *testV2StackWithWiring {
 
 	// Create mocks for wiring verification
 	mockDeliverer := newMockMessageDeliverer()
-	mockBDExec := mocks.NewMockBeadsExecutor(t)
+	mockBDExec := mocks.NewMockIssueExecutor(t)
 	setupPermissiveBDMock(mockBDExec)
 	mockMsgRepo := newMockMessageRepository()
 
@@ -1072,7 +1073,7 @@ func registerHandlersWithWiring(
 	stack *testV2Stack,
 	registry *process.ProcessRegistry,
 	deliverer *mockMessageDeliverer,
-	bdExec *mocks.MockBeadsExecutor,
+	bdExec *mocks.MockIssueExecutor,
 ) {
 	t.Helper()
 
@@ -2097,7 +2098,7 @@ func newTestV2StackWithSessionRefNotifier(t *testing.T) *testV2StackWithSessionR
 	}
 
 	// Create mock BD executor with permissive expectations
-	mockBD := mocks.NewMockBeadsExecutor(t)
+	mockBD := mocks.NewMockIssueExecutor(t)
 	setupPermissiveBDMock(mockBD)
 
 	// Create process registry for handlers
@@ -2148,7 +2149,7 @@ func newTestV2StackWithSessionRefNotifier(t *testing.T) *testV2StackWithSessionR
 func registerHandlersWithSessionRefNotifier(
 	stack *testV2Stack,
 	registry *process.ProcessRegistry,
-	bdExec *mocks.MockBeadsExecutor,
+	bdExec *mocks.MockIssueExecutor,
 	notifier *mockSessionRefNotifierForIntegration,
 ) {
 	processRepo := stack.processRepo

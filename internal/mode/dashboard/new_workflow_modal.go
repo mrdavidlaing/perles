@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
@@ -19,7 +19,7 @@ type NewWorkflowModal struct {
 	form            formmodal.Model
 	registry        *workflow.Registry
 	controlPlane    controlplane.ControlPlane
-	gitExecutor     git.GitExecutor
+	gitExecutor     appgit.GitExecutor
 	worktreeEnabled bool // track if worktree options are available
 }
 
@@ -34,7 +34,7 @@ type CancelNewWorkflowMsg struct{}
 
 // NewNewWorkflowModal creates a new workflow creation modal.
 // gitExecutor is optional - if nil or if ListBranches() fails, worktree options are disabled.
-func NewNewWorkflowModal(registry *workflow.Registry, cp controlplane.ControlPlane, gitExecutor git.GitExecutor) *NewWorkflowModal {
+func NewNewWorkflowModal(registry *workflow.Registry, cp controlplane.ControlPlane, gitExecutor appgit.GitExecutor) *NewWorkflowModal {
 	m := &NewWorkflowModal{
 		registry:     registry,
 		controlPlane: cp,
@@ -134,7 +134,7 @@ func NewNewWorkflowModal(registry *workflow.Registry, cp controlplane.ControlPla
 
 // buildBranchOptions converts git branches to list options.
 // Returns the options and a boolean indicating if worktree support is available.
-func buildBranchOptions(gitExecutor git.GitExecutor) ([]formmodal.ListOption, bool) {
+func buildBranchOptions(gitExecutor appgit.GitExecutor) ([]formmodal.ListOption, bool) {
 	if gitExecutor == nil {
 		return nil, false
 	}

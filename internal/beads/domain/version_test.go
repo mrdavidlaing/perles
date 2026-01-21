@@ -1,10 +1,7 @@
-package beads
+package domain
 
 import (
-	"database/sql"
 	"testing"
-
-	"github.com/zjrosen/perles/internal/testutil"
 
 	"github.com/stretchr/testify/require"
 )
@@ -66,45 +63,4 @@ func TestCheckVersion(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestClient_Version(t *testing.T) {
-	db := testutil.NewTestDB(t)
-	defer func() { _ = db.Close() }()
-
-	// Add metadata table (not in standard test schema)
-	_, err := db.Exec(`CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)`)
-	require.NoError(t, err)
-
-	t.Run("returns version when present", func(t *testing.T) {
-		_, err := db.Exec(`INSERT OR REPLACE INTO metadata (key, value) VALUES ('bd_version', '0.31.0')`)
-		require.NoError(t, err)
-
-		client := &Client{db: db}
-		version, err := client.Version()
-		require.NoError(t, err)
-		require.Equal(t, "0.31.0", version)
-	})
-
-	t.Run("returns error when bd_version missing", func(t *testing.T) {
-		_, err := db.Exec(`DELETE FROM metadata WHERE key = 'bd_version'`)
-		require.NoError(t, err)
-
-		client := &Client{db: db}
-		_, err = client.Version()
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "reading bd_version from metadata")
-	})
-}
-
-func TestClient_Version_NoMetadataTable(t *testing.T) {
-	// Create a minimal database without metadata table
-	db, err := sql.Open("sqlite3", ":memory:")
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	client := &Client{db: db}
-	_, err = client.Version()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "reading bd_version from metadata")
 }

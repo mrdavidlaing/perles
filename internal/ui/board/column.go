@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/ui/shared/issuebadge"
@@ -110,10 +110,11 @@ func itemRenderedLines(issue beads.Issue, width int) int {
 
 // Render renders an issue item with priority colors and type indicator.
 func (d issueDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
-	issue, ok := item.(beads.Issue)
+	issueItem, ok := item.(IssueItem)
 	if !ok {
 		return
 	}
+	issue := *issueItem.Issue
 
 	isSelected := index == m.Index() && d.focused != nil && *d.focused
 	line := renderIssueLine(issue, isSelected)
@@ -312,8 +313,8 @@ func (c Column) SetFocused(focused bool) BoardColumn {
 func (c Column) SetItems(issues []beads.Issue) Column {
 	c.items = issues
 	items := make([]list.Item, len(issues))
-	for i, issue := range issues {
-		items[i] = issue
+	for i := range issues {
+		items[i] = IssueItem{Issue: &issues[i]}
 	}
 	c.list.SetItems(items)
 	c.updatePerPage()
@@ -371,8 +372,8 @@ func (c Column) SetShowCounts(show bool) BoardColumn {
 // SelectedItem returns the currently selected issue.
 func (c Column) SelectedItem() *beads.Issue {
 	if item := c.list.SelectedItem(); item != nil {
-		issue := item.(beads.Issue)
-		return &issue
+		issueItem := item.(IssueItem)
+		return issueItem.Issue
 	}
 	return nil
 }

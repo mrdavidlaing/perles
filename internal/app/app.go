@@ -10,12 +10,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/zjrosen/perles/internal/beads"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
+	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/cachemanager"
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
+	infragit "github.com/zjrosen/perles/internal/git/infrastructure"
 	"github.com/zjrosen/perles/internal/keys"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/mode"
@@ -96,7 +98,7 @@ type Model struct {
 // configPath is the path to the config file for saving column changes.
 // debugMode enables the log overlay (Ctrl+X toggle).
 func NewWithConfig(
-	client *beads.Client,
+	client *infrabeads.SQLiteClient,
 	cfg config.Config,
 	bqlCache cachemanager.CacheManager[string, []beads.Issue],
 	depGraphCache cachemanager.CacheManager[string, *bql.DependencyGraph],
@@ -146,13 +148,13 @@ func NewWithConfig(
 		DBPath:        dbPath,
 		WorkDir:       workDir,
 		Executor:      bql.NewExecutor(client.DB(), bqlCache, depGraphCache),
-		BeadsExecutor: beads.NewRealExecutor(workDir, cfg.ResolvedBeadsDir),
+		BeadsExecutor: infrabeads.NewBDExecutor(workDir, cfg.ResolvedBeadsDir),
 		Clipboard:     shared.SystemClipboard{},
 		Clock:         shared.RealClock{},
 		Flags:         flagService,
 		Sounds:        sound.NewSystemSoundService(cfg.Sound.Events),
-		GitExecutorFactory: func(path string) git.GitExecutor {
-			return git.NewRealExecutor(path)
+		GitExecutorFactory: func(path string) appgit.GitExecutor {
+			return infragit.NewRealExecutor(path)
 		},
 	}
 
@@ -166,8 +168,8 @@ func NewWithConfig(
 	// Create diff viewer with git executor factory for workDir
 	// Uses factory pattern to enable worktree switching
 	dv := diffviewer.NewWithGitExecutorFactory(
-		func(path string) git.GitExecutor {
-			return git.NewRealExecutor(path)
+		func(path string) appgit.GitExecutor {
+			return infragit.NewRealExecutor(path)
 		},
 		workDir,
 	).SetClipboard(services.Clipboard)

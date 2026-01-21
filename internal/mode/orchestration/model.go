@@ -21,7 +21,7 @@ import (
 
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/flags"
-	"github.com/zjrosen/perles/internal/git"
+	appgit "github.com/zjrosen/perles/internal/git/application"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/client"
@@ -177,15 +177,15 @@ type Model struct {
 	pendingRefresh bool // True when waiting for handoff before refresh
 
 	// Worktree modal state
-	worktreeModal           *modal.Model                      // Worktree prompt modal ("Use Git Worktree?")
-	branchSelectModal       *formmodal.Model                  // Branch selection modal (when not on main)
-	worktreeDecisionMade    bool                              // True after user has made worktree decision
-	gitExecutor             git.GitExecutor                   // Git executor for worktree operations
-	worktreeBaseBranch      string                            // Branch to base worktree on (set by branch modal)
-	worktreeCustomBranch    string                            // Optional custom branch name from user input (set by branch modal)
-	worktreeBranch          string                            // Auto-generated branch name (set after worktree creation)
-	worktreePath            string                            // Path to the worktree directory (set after creation)
-	worktreeExecutorFactory func(path string) git.GitExecutor // Factory for creating worktree-scoped executor (injected via Config)
+	worktreeModal           *modal.Model                         // Worktree prompt modal ("Use Git Worktree?")
+	branchSelectModal       *formmodal.Model                     // Branch selection modal (when not on main)
+	worktreeDecisionMade    bool                                 // True after user has made worktree decision
+	gitExecutor             appgit.GitExecutor                   // Git executor for worktree operations
+	worktreeBaseBranch      string                               // Branch to base worktree on (set by branch modal)
+	worktreeCustomBranch    string                               // Optional custom branch name from user input (set by branch modal)
+	worktreeBranch          string                               // Auto-generated branch name (set after worktree creation)
+	worktreePath            string                               // Path to the worktree directory (set after creation)
+	worktreeExecutorFactory func(path string) appgit.GitExecutor // Factory for creating worktree-scoped executor (injected via Config)
 
 	// Exit state
 	exitMessage string // Message to display when exiting (e.g., worktree cleanup info)
