@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -22,6 +23,27 @@ type NewWorkflowModal struct {
 	gitExecutor     appgit.GitExecutor
 	workflowCreator *appreg.WorkflowCreator
 	worktreeEnabled bool // track if worktree options are available
+
+	// Spinner animation state (for loading indicator)
+	spinnerFrame int
+}
+
+// spinnerFrames defines the braille spinner animation sequence.
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// spinnerTickMsg advances the spinner frame during submission.
+type spinnerTickMsg struct{}
+
+// spinnerTick returns a command that sends spinnerTickMsg after 80ms.
+func spinnerTick() tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(time.Time) tea.Msg {
+		return spinnerTickMsg{}
+	})
+}
+
+// startSubmitMsg signals the modal to begin async workflow creation.
+type startSubmitMsg struct {
+	values map[string]any
 }
 
 // CreateWorkflowMsg is sent when a workflow is created successfully.
@@ -241,71 +263,78 @@ type ErrorMsg struct {
 	Err error
 }
 
-// onSubmit creates the workflow from form values.
-// If WorkflowCreator is available, it first creates an epic and tasks in beads,
-// then builds the coordinator prompt from epic_driven.md + epic ID + user goal.
+// onSubmit is called when the form is validated and ready for submission.
+// Returns a message to trigger async workflow creation (to avoid blocking UI).
 func (m *NewWorkflowModal) onSubmit(values map[string]any) tea.Msg {
-	templateID := values["template"].(string)
-	name := values["name"].(string)
-	goal := values["goal"].(string)
+	// Return a message that will trigger async creation
+	return startSubmitMsg{values: values}
+}
 
-	var epicID string
-	var initialPrompt string
+// createWorkflowAsync performs the actual workflow creation.
+// This runs as a tea.Cmd to avoid blocking the UI.
+func (m *NewWorkflowModal) createWorkflowAsync(values map[string]any) tea.Cmd {
+	return func() tea.Msg {
+		templateID := values["template"].(string)
+		name := values["name"].(string)
+		goal := values["goal"].(string)
 
-	// If WorkflowCreator is available, create epic + tasks in beads first
-	if m.workflowCreator != nil {
-		// Use name as feature slug, or derive from templateID if empty
-		feature := name
-		if feature == "" {
-			feature = templateID
+		var epicID string
+		var initialPrompt string
+
+		// If WorkflowCreator is available, create epic + tasks in beads first
+		if m.workflowCreator != nil {
+			// Use name as feature slug, or derive from templateID if empty
+			feature := name
+			if feature == "" {
+				feature = templateID
+			}
+
+			result, err := m.workflowCreator.Create(feature, templateID)
+			if err != nil {
+				return ErrorMsg{Err: fmt.Errorf("create epic: %w", err)}
+			}
+
+			epicID = result.Epic.ID
+
+			// Build coordinator prompt: epic_driven.md + epic ID section + user goal
+			initialPrompt = m.buildCoordinatorPrompt(epicID, goal)
+		} else {
+			// No WorkflowCreator, use goal directly as InitialGoal
+			initialPrompt = goal
 		}
 
-		result, err := m.workflowCreator.Create(feature, templateID)
+		// Build WorkflowSpec
+		spec := controlplane.WorkflowSpec{
+			TemplateID:  templateID,
+			InitialGoal: initialPrompt,
+			Name:        name,
+			EpicID:      epicID,
+		}
+
+		// Set worktree fields if worktree options are available
+		if m.worktreeEnabled {
+			useWorktree, _ := values["use_worktree"].(string)
+			if useWorktree == "true" {
+				spec.WorktreeEnabled = true
+				spec.WorktreeBaseBranch, _ = values["base_branch"].(string)
+				spec.WorktreeBranchName, _ = values["custom_branch"].(string)
+			}
+		}
+
+		// Create the workflow
+		if m.controlPlane == nil {
+			return CreateWorkflowMsg{Name: spec.Name}
+		}
+
+		workflowID, err := m.controlPlane.Create(context.Background(), spec)
 		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("create epic: %w", err)}
+			return ErrorMsg{Err: fmt.Errorf("create workflow: %w", err)}
 		}
 
-		epicID = result.Epic.ID
-
-		// Build coordinator prompt: epic_driven.md + epic ID section + user goal
-		initialPrompt = m.buildCoordinatorPrompt(epicID, goal)
-	} else {
-		// No WorkflowCreator, use goal directly as InitialGoal
-		initialPrompt = goal
-	}
-
-	// Build WorkflowSpec
-	spec := controlplane.WorkflowSpec{
-		TemplateID:  templateID,
-		InitialGoal: initialPrompt,
-		Name:        name,
-		EpicID:      epicID,
-	}
-
-	// Set worktree fields if worktree options are available
-	if m.worktreeEnabled {
-		useWorktree, _ := values["use_worktree"].(string)
-		if useWorktree == "true" {
-			spec.WorktreeEnabled = true
-			spec.WorktreeBaseBranch, _ = values["base_branch"].(string)
-			spec.WorktreeBranchName, _ = values["custom_branch"].(string)
+		return CreateWorkflowMsg{
+			WorkflowID: workflowID,
+			Name:       spec.Name,
 		}
-	}
-
-	// Create the workflow
-	if m.controlPlane == nil {
-		return CreateWorkflowMsg{Name: spec.Name}
-	}
-
-	workflowID, err := m.controlPlane.Create(context.Background(), spec)
-	if err != nil {
-		// Return error as message (modal will display validation error)
-		return CreateWorkflowMsg{Name: spec.Name}
-	}
-
-	return CreateWorkflowMsg{
-		WorkflowID: workflowID,
-		Name:       spec.Name,
 	}
 }
 
@@ -368,6 +397,33 @@ func (m *NewWorkflowModal) Init() tea.Cmd {
 
 // Update handles messages for the modal.
 func (m *NewWorkflowModal) Update(msg tea.Msg) (*NewWorkflowModal, tea.Cmd) {
+	switch msg := msg.(type) {
+	case startSubmitMsg:
+		// Start async workflow creation with loading indicator
+		m.spinnerFrame = 0
+		m.form = m.form.SetLoading(spinnerFrames[0] + " Creating workflow...")
+		return m, tea.Batch(spinnerTick(), m.createWorkflowAsync(msg.values))
+
+	case spinnerTickMsg:
+		// Advance spinner animation while loading
+		if m.form.IsLoading() {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+			m.form = m.form.SetLoading(spinnerFrames[m.spinnerFrame] + " Creating workflow...")
+			return m, spinnerTick()
+		}
+		return m, nil
+
+	case ErrorMsg:
+		// Clear loading state on error
+		m.form = m.form.SetLoading("")
+		return m, nil
+
+	case CreateWorkflowMsg:
+		// Clear loading state on success (message will bubble up)
+		m.form = m.form.SetLoading("")
+		return m, nil
+	}
+
 	var cmd tea.Cmd
 	m.form, cmd = m.form.Update(msg)
 	return m, cmd

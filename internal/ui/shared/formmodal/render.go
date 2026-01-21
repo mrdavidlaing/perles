@@ -90,9 +90,14 @@ func (m Model) View() string {
 		content.WriteString("\n\n")
 	}
 
-	// Buttons
-	buttonsView := m.renderButtons()
-	content.WriteString(contentPadding.Render(" " + buttonsView))
+	// Buttons or loading indicator
+	if m.loadingText != "" {
+		loadingView := m.renderLoading(contentWidth)
+		content.WriteString(contentPadding.Render(" " + loadingView))
+	} else {
+		buttonsView := m.renderButtons()
+		content.WriteString(contentPadding.Render(" " + buttonsView))
+	}
 	content.WriteString("\n")
 
 	// Wrap in bordered box
@@ -363,6 +368,17 @@ func (m Model) renderButtons() string {
 	cancelBtn := cancelStyle.Render(cancelLabel)
 
 	return submitBtn + "  " + cancelBtn
+}
+
+// renderLoading renders the loading indicator centered in the available width.
+func (m Model) renderLoading(contentWidth int) string {
+	spinnerStyle := lipgloss.NewStyle().Foreground(styles.SpinnerColor)
+	text := spinnerStyle.Render(m.loadingText)
+	textWidth := lipgloss.Width(text)
+
+	// Center the text within contentWidth
+	leftPadding := max(0, (contentWidth-textWidth)/2)
+	return strings.Repeat(" ", leftPadding) + text
 }
 
 // Overlay renders the modal on top of a background view.

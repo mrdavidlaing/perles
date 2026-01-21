@@ -80,6 +80,66 @@ func createTestRegistryService(t *testing.T) *appreg.RegistryService {
 	return registry
 }
 
+// simulateAsyncSubmit simulates the full async form submission flow:
+// 1. onSubmit returns startSubmitMsg
+// 2. Update handles startSubmitMsg and starts async creation
+// 3. Execute the returned command to get the final result (CreateWorkflowMsg or ErrorMsg)
+func simulateAsyncSubmit(t *testing.T, modal *NewWorkflowModal, values map[string]any) tea.Msg {
+	t.Helper()
+
+	// Step 1: onSubmit returns startSubmitMsg
+	msg := modal.onSubmit(values)
+	submitMsg, ok := msg.(startSubmitMsg)
+	require.True(t, ok, "onSubmit should return startSubmitMsg, got %T", msg)
+
+	// Step 2: Update handles startSubmitMsg and returns async command
+	modal, cmd := modal.Update(submitMsg)
+	require.True(t, modal.form.IsLoading(), "modal should be in loading state")
+
+	// Step 3: Execute the batch command to find the async creation command
+	// tea.Batch returns multiple commands, we need the one that does actual work
+	if cmd == nil {
+		t.Fatal("Update should return a command for async creation")
+	}
+
+	// Execute commands until we get a CreateWorkflowMsg or ErrorMsg
+	// The batch contains spinnerTick and createWorkflowAsync
+	msgs := extractBatchMessages(cmd)
+	for _, m := range msgs {
+		switch m.(type) {
+		case CreateWorkflowMsg, ErrorMsg:
+			return m
+		}
+	}
+
+	t.Fatal("Did not receive CreateWorkflowMsg or ErrorMsg from async submission")
+	return nil
+}
+
+// extractBatchMessages executes a batch command and extracts all resulting messages.
+func extractBatchMessages(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+
+	msg := cmd()
+	if msg == nil {
+		return nil
+	}
+
+	// Check if this is a batch result (tea.BatchMsg)
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var results []tea.Msg
+		for _, c := range batch {
+			results = append(results, extractBatchMessages(c)...)
+		}
+		return results
+	}
+
+	// Not a batch, just return the message
+	return []tea.Msg{msg}
+}
+
 // createTestModelWithRegistryService creates a dashboard model with a mock ControlPlane and registry service.
 func createTestModelWithRegistryService(t *testing.T, workflows []*controlplane.WorkflowInstance) (Model, *mockControlPlane, *appreg.RegistryService) {
 	t.Helper()
@@ -170,53 +230,14 @@ func TestNewWorkflowModal_ValidationRejectsEmptyTemplate(t *testing.T) {
 	require.Contains(t, err.Error(), "template is required")
 }
 
-func TestNewWorkflowModal_ValidationRejectsInvalidMaxWorkers(t *testing.T) {
-	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
-
-	values := map[string]any{
-		"template":     "quick-plan",
-		"name":         "",
-		"goal":         "Test goal",
-		"priority":     "normal",
-		"max_workers":  "invalid",
-		"token_budget": "",
-	}
-
-	err := modal.validate(values)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "max workers must be a positive number")
-}
-
-func TestNewWorkflowModal_ValidationRejectsInvalidTokenBudget(t *testing.T) {
-	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
-
-	values := map[string]any{
-		"template":     "quick-plan",
-		"name":         "",
-		"goal":         "Test goal",
-		"priority":     "normal",
-		"max_workers":  "",
-		"token_budget": "-100",
-	}
-
-	err := modal.validate(values)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "token budget must be a positive number")
-}
-
 func TestNewWorkflowModal_ValidationAcceptsValidInput(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
 
 	values := map[string]any{
-		"template":     "quick-plan",
-		"name":         "My Workflow",
-		"goal":         "Test goal",
-		"priority":     "normal",
-		"max_workers":  "4",
-		"token_budget": "10000",
+		"template": "quick-plan",
+		"name":     "My Workflow",
+		"goal":     "Test goal",
 	}
 
 	err := modal.validate(values)
@@ -259,7 +280,7 @@ func TestNewWorkflowModal_CreateCallsControlPlane(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	modal := NewNewWorkflowModal(registryService, mockCP, nil, nil)
 
-	// Simulate form submission
+	// Simulate form submission (now async)
 	values := map[string]any{
 		"template":     "quick-plan",
 		"name":         "",
@@ -269,7 +290,7 @@ func TestNewWorkflowModal_CreateCallsControlPlane(t *testing.T) {
 		"token_budget": "",
 	}
 
-	msg := modal.onSubmit(values)
+	msg := simulateAsyncSubmit(t, modal, values)
 	createMsg, ok := msg.(CreateWorkflowMsg)
 	require.True(t, ok)
 	require.Equal(t, controlplane.WorkflowID("new-workflow-id"), createMsg.WorkflowID)
@@ -640,7 +661,7 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeEnabledCorrectly(t *testing.T) {
 		"custom_branch": "my-feature",
 	}
 
-	msg := modal.onSubmit(values)
+	msg := simulateAsyncSubmit(t, modal, values)
 	createMsg, ok := msg.(CreateWorkflowMsg)
 	require.True(t, ok)
 	require.Equal(t, controlplane.WorkflowID("new-workflow-id"), createMsg.WorkflowID)
@@ -668,7 +689,7 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeBaseBranchFromSearchSelect(t *test
 		"custom_branch": "",
 	}
 
-	msg := modal.onSubmit(values)
+	msg := simulateAsyncSubmit(t, modal, values)
 	createMsg, ok := msg.(CreateWorkflowMsg)
 	require.True(t, ok)
 	require.Equal(t, controlplane.WorkflowID("new-workflow-id"), createMsg.WorkflowID)
@@ -696,7 +717,7 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeBranchNameFromTextField(t *testing
 		"custom_branch": "perles-custom-branch",
 	}
 
-	msg := modal.onSubmit(values)
+	msg := simulateAsyncSubmit(t, modal, values)
 	createMsg, ok := msg.(CreateWorkflowMsg)
 	require.True(t, ok)
 	require.Equal(t, controlplane.WorkflowID("new-workflow-id"), createMsg.WorkflowID)
@@ -888,7 +909,7 @@ func TestNewWorkflowModal_OnSubmitCallsWorkflowCreator_LegacyPathWithoutCreator(
 		"goal":     "Test my feature",
 	}
 
-	msg := modal.onSubmit(values)
+	msg := simulateAsyncSubmit(t, modal, values)
 	createMsg, ok := msg.(CreateWorkflowMsg)
 	require.True(t, ok)
 	require.Equal(t, controlplane.WorkflowID("new-workflow-id"), createMsg.WorkflowID)
@@ -983,7 +1004,7 @@ func TestNewWorkflowModal_EpicIDPassedToWorkflowSpec(t *testing.T) {
 		"goal":     "Test goal",
 	}
 
-	msg := modal.onSubmit(values)
+	msg := simulateAsyncSubmit(t, modal, values)
 	createMsg, ok := msg.(CreateWorkflowMsg)
 	require.True(t, ok)
 	require.Equal(t, controlplane.WorkflowID("workflow-123"), createMsg.WorkflowID)

@@ -302,6 +302,18 @@ func TestDashboard_View_Golden_NewWorkflowModal(t *testing.T) {
 	teatest.RequireEqualOutput(t, []byte(view))
 }
 
+func TestNewWorkflowModal_View_Golden_LoadingSpinner(t *testing.T) {
+	registryService := createTestRegistryService(t)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal = modal.SetSize(100, 40)
+
+	// Set modal to loading state with fixed spinner frame for reproducible output
+	modal.form = modal.form.SetLoading("⠋ Creating workflow...")
+
+	view := modal.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
 func TestDashboard_View_Golden_WithFilter(t *testing.T) {
 	workflows := []*controlplane.WorkflowInstance{
 		createTestWorkflowWithDetails(

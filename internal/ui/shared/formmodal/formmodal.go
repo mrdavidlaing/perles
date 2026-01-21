@@ -58,6 +58,9 @@ type Model struct {
 
 	// Validation error
 	validationError string
+
+	// loadingText, if non-empty, shows a loading indicator instead of buttons.
+	loadingText string
 }
 
 // New creates a new form modal with the given configuration.
@@ -162,6 +165,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.colorPicker, cmd = m.colorPicker.Update(msg)
 		return m, cmd
+	}
+
+	// Ignore keyboard input when loading
+	if m.loadingText != "" {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return m, nil
+		}
 	}
 
 	switch msg := msg.(type) {
@@ -660,6 +670,19 @@ func (m Model) SetSize(w, h int) Model {
 	m.width = w
 	m.height = h
 	return m
+}
+
+// SetLoading sets the loading state of the form.
+// When text is non-empty, the form displays a loading indicator instead of buttons
+// and ignores keyboard input. Pass empty string to clear loading state.
+func (m Model) SetLoading(text string) Model {
+	m.loadingText = text
+	return m
+}
+
+// IsLoading returns true if the form is in loading state.
+func (m Model) IsLoading() bool {
+	return m.loadingText != ""
 }
 
 // listContains checks if the editable list already contains a value.
