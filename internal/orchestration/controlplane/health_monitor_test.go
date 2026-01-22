@@ -580,7 +580,7 @@ func TestHealthMonitor_EventBus_StatusChangeToWorkingIsProgress(t *testing.T) {
 	monitor.Stop()
 }
 
-func TestHealthMonitor_EventBus_WorkflowCompleteIsProgress(t *testing.T) {
+func TestHealthMonitor_EventBus_WorkflowCompleteUntracksWorkflow(t *testing.T) {
 	clock := newMockClock(time.Now())
 	eventBus := pubsub.NewBroker[ControlPlaneEvent]()
 	defer eventBus.Close()
@@ -595,8 +595,9 @@ func TestHealthMonitor_EventBus_WorkflowCompleteIsProgress(t *testing.T) {
 	workflowID := WorkflowID("workflow-1")
 	monitor.TrackWorkflow(workflowID)
 
-	initialStatus, _ := monitor.GetStatus(workflowID)
-	initialProgressAt := initialStatus.LastProgressAt
+	// Verify workflow is tracked
+	_, found := monitor.GetStatus(workflowID)
+	require.True(t, found, "workflow should be tracked initially")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -605,23 +606,22 @@ func TestHealthMonitor_EventBus_WorkflowCompleteIsProgress(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
 
-	clock.Advance(1 * time.Second)
-
-	// Workflow complete is progress
-	processEvent2 := events.ProcessEvent{
+	// Workflow complete should untrack the workflow (not just record progress)
+	processEvent := events.ProcessEvent{
 		Type:      events.ProcessWorkflowComplete,
 		ProcessID: string(workflowID),
 		Role:      events.RoleCoordinator,
 	}
-	cpEvent2 := ControlPlaneEvent{
+	cpEvent := ControlPlaneEvent{
 		WorkflowID: workflowID,
-		Payload:    processEvent2,
+		Payload:    processEvent,
 	}
-	eventBus.Publish(pubsub.UpdatedEvent, cpEvent2)
+	eventBus.Publish(pubsub.UpdatedEvent, cpEvent)
 	time.Sleep(20 * time.Millisecond)
 
-	status, _ := monitor.GetStatus(workflowID)
-	require.True(t, status.LastProgressAt.After(initialProgressAt))
+	// Workflow should be untracked after completion
+	_, found = monitor.GetStatus(workflowID)
+	require.False(t, found, "completed workflow should be untracked")
 
 	monitor.Stop()
 }
@@ -674,11 +674,11 @@ func TestIsProgressEvent(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "workflow complete is progress",
+			name: "workflow complete is not progress (handled separately to untrack)",
 			event: events.ProcessEvent{
 				Type: events.ProcessWorkflowComplete,
 			},
-			expected: true,
+			expected: false,
 		},
 		{
 			name: "phase transition is progress",

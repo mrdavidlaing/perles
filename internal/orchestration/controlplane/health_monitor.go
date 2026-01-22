@@ -435,6 +435,12 @@ func (m *defaultHealthMonitor) processEvent(event pubsub.Event[ControlPlaneEvent
 		workflowID = WorkflowID(processEvent.ProcessID)
 	}
 
+	// Stop tracking completed workflows - they don't need health monitoring
+	if processEvent.Type == events.ProcessWorkflowComplete {
+		m.UntrackWorkflow(workflowID)
+		return
+	}
+
 	// Classify the event
 	if isProgressEvent(processEvent) {
 		m.RecordProgress(workflowID)
@@ -446,6 +452,7 @@ func (m *defaultHealthMonitor) processEvent(event pubsub.Event[ControlPlaneEvent
 
 // isProgressEvent determines if an event represents forward progress.
 // Progress events indicate meaningful workflow advancement (not just activity).
+// Note: ProcessWorkflowComplete is handled separately (untracks workflow).
 func isProgressEvent(event events.ProcessEvent) bool {
 	// Any phase transition is progress (workers only)
 	if event.Phase != nil {
@@ -457,8 +464,6 @@ func isProgressEvent(event events.ProcessEvent) bool {
 		// Status transitions to/from working represent progress
 		return event.Status == events.ProcessStatusWorking ||
 			event.Status == events.ProcessStatusReady
-	case events.ProcessWorkflowComplete:
-		return true
 	default:
 		return false
 	}
