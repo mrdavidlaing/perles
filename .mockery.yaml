@@ -33,3 +33,9 @@ packages:
   github.com/zjrosen/perles/internal/sound:
     interfaces:
       SoundService:
+  github.com/zjrosen/perles/internal/orchestration/controlplane:
+    config:
+      dir: internal/orchestration/controlplane/mocks
+      outpkg: mocks
+    interfaces:
+      ControlPlane:

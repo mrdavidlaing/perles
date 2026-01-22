@@ -130,6 +130,10 @@ type SupervisorConfig struct {
 	// SoundService provides audio feedback for orchestration events.
 	// Optional - if nil, uses NoopSoundService (no audio).
 	SoundService sound.SoundService
+
+	// BeadsDir is the resolved path to the beads database directory.
+	// When set, spawned processes receive BEADS_DIR environment variable.
+	BeadsDir string
 }
 
 // defaultSupervisor is the default implementation of Supervisor.
@@ -144,6 +148,7 @@ type defaultSupervisor struct {
 	flags                 *flags.Registry
 	sessionFactory        *session.Factory
 	soundService          sound.SoundService
+	beadsDir              string
 }
 
 // NewSupervisor creates a new Supervisor with the given configuration.
@@ -185,6 +190,7 @@ func NewSupervisor(cfg SupervisorConfig) (Supervisor, error) {
 		flags:                 cfg.Flags,
 		sessionFactory:        cfg.SessionFactory,
 		soundService:          cfg.SoundService,
+		beadsDir:              cfg.BeadsDir,
 	}, nil
 }
 
@@ -196,8 +202,12 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 			ErrInvalidState, inst.State, WorkflowPending)
 	}
 
-	// Create a cancellable context for this workflow's lifecycle
-	workflowCtx, cancel := context.WithCancel(ctx)
+	// Create a cancellable context for this workflow's lifecycle.
+	// IMPORTANT: Use context.Background() instead of ctx to ensure the workflow
+	// continues running after the API request completes. The passed ctx may be
+	// an HTTP request context that gets cancelled when the request returns.
+	// The workflow's lifecycle is managed via the cancel function stored in inst.Cancel.
+	workflowCtx, cancel := context.WithCancel(context.Background())
 
 	// Track resources for cleanup on error
 	var (
@@ -333,6 +343,7 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 		Port:                    port,
 		AgentProvider:           s.agentProvider,
 		WorkDir:                 workDir,
+		BeadsDir:                s.beadsDir,
 		MessageRepo:             messageRepo,
 		SessionID:               inst.ID.String(),
 		SessionDir:              sess.Dir,
@@ -398,8 +409,9 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 	log.Debug(log.CatOrch, "MCP HTTP server started", "subsystem", "supervisor", "port", port, "workflowID", inst.ID)
 
 	// Step 8: Spawn coordinator
+	// Use workflowCtx (detached from request context) so the process lives beyond the API request
 	spawnCmd := command.NewSpawnProcessCommand(command.SourceInternal, repository.RoleCoordinator)
-	result, err := infra.Core.Processor.SubmitAndWait(ctx, spawnCmd)
+	result, err := infra.Core.Processor.SubmitAndWait(workflowCtx, spawnCmd)
 	if err != nil {
 		cleanup()
 		return fmt.Errorf("spawning coordinator: %w", err)
@@ -423,7 +435,7 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 		fullPrompt := s.buildCoordinatorPrompt(inst)
 
 		sendCmd := command.NewSendToProcessCommand(command.SourceInternal, coordID, fullPrompt)
-		sendResult, err := infra.Core.Processor.SubmitAndWait(ctx, sendCmd)
+		sendResult, err := infra.Core.Processor.SubmitAndWait(workflowCtx, sendCmd)
 		if err != nil {
 			cleanup()
 			return fmt.Errorf("sending initial goal to coordinator: %w", err)

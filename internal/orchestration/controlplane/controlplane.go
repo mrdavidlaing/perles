@@ -355,26 +355,14 @@ func (cp *defaultControlPlane) Shutdown(ctx context.Context) error {
 	})
 
 	for _, inst := range activeWorkflows {
-		// Check if context is already cancelled - if so, force stop
-		force := ctx.Err() != nil
-
+		// Always force stop during shutdown - we're terminating everything anyway.
+		// This avoids waiting for graceful process draining which can be slow.
 		stopErr := cp.Stop(ctx, inst.ID, StopOptions{
 			Reason: "ControlPlane shutdown",
-			Force:  force,
+			Force:  true,
 		})
 		if stopErr != nil {
-			// If graceful stop failed and context not cancelled, try force
-			if !force && ctx.Err() == nil {
-				forceErr := cp.Stop(ctx, inst.ID, StopOptions{
-					Reason: "ControlPlane shutdown (forced)",
-					Force:  true,
-				})
-				if forceErr != nil {
-					errs = append(errs, fmt.Errorf("workflow %s: %w", inst.ID, forceErr))
-				}
-			} else {
-				errs = append(errs, fmt.Errorf("workflow %s: %w", inst.ID, stopErr))
-			}
+			errs = append(errs, fmt.Errorf("workflow %s: %w", inst.ID, stopErr))
 		}
 	}
 
