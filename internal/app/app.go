@@ -1202,6 +1202,7 @@ func (m *Model) createControlPlane() controlplane.ControlPlane {
 		GitExecutorFactory: m.services.GitExecutorFactory,
 		Flags:              m.services.Flags,
 		SessionFactory:     sessionFactory,
+		SoundService:       m.services.Sounds,
 	})
 	if err != nil {
 		log.Error(log.CatMode, "Failed to create Supervisor", "error", err)

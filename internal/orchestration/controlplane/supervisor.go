@@ -26,6 +26,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/handler"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
+	"github.com/zjrosen/perles/internal/sound"
 )
 
 // ErrInvalidState is returned when a workflow is in an invalid state for the operation.
@@ -183,6 +184,7 @@ func NewSupervisor(cfg SupervisorConfig) (Supervisor, error) {
 		worktreeTimeout:       worktreeTimeout,
 		flags:                 cfg.Flags,
 		sessionFactory:        cfg.SessionFactory,
+		soundService:          cfg.SoundService,
 	}, nil
 }
 
@@ -336,6 +338,7 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 		SessionDir:              sess.Dir,
 		SessionRefNotifier:      sess,
 		SessionMetadataProvider: sess,
+		SoundService:            s.soundService,
 	}
 
 	// Step 5: Create Infrastructure
