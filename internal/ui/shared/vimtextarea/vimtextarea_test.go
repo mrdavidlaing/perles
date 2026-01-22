@@ -3370,3 +3370,186 @@ func TestVisualLineMode_c_ChangesLines(t *testing.T) {
 	// Line should be deleted, ready for new content
 	assert.Equal(t, 2, len(m.content))
 }
+
+// ============================================================================
+// Split Escape Sequence / CSI Bracket Cleanup Tests
+// ============================================================================
+// These tests cover the timer-based cleanup mechanism for handling split
+// SGR mouse escape sequences. When bubbletea fails to fully parse mouse
+// sequences, we get '[' followed by '<NN;NN;NNM' as separate events.
+
+func TestIsOrphanedCSIBracket(t *testing.T) {
+	tests := []struct {
+		name     string
+		runes    []rune
+		expected bool
+	}{
+		{"single bracket", []rune("["), true},
+		{"bracket with more", []rune("[a"), false},
+		{"other single char", []rune("a"), false},
+		{"empty", []rune{}, false},
+		{"multiple brackets", []rune("[["), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isOrphanedCSIBracket(tt.runes)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestSplitEscapeSequence_BracketInsertedAndTracked(t *testing.T) {
+	m := New(Config{VimEnabled: false})
+	m.Focus()
+
+	// Insert a bracket
+	m, _ = m.handleCharacterInput([]rune("["))
+
+	// Bracket should be inserted
+	assert.Equal(t, "[", m.Value())
+	// And tracked for potential cleanup
+	assert.True(t, m.lastBracketInserted)
+}
+
+func TestSplitEscapeSequence_BracketFollowedByNormalText(t *testing.T) {
+	m := New(Config{VimEnabled: false})
+	m.Focus()
+
+	// Insert a bracket
+	m, _ = m.handleCharacterInput([]rune("["))
+	assert.Equal(t, "[", m.Value())
+
+	// Then normal text - bracket tracking should be cleared
+	m, _ = m.handleCharacterInput([]rune("a"))
+	assert.Equal(t, "[a", m.Value())
+	assert.False(t, m.lastBracketInserted)
+}
+
+func TestSplitEscapeSequence_BracketFollowedByMouseSequence_RemovesBracket(t *testing.T) {
+	m := New(Config{VimEnabled: false})
+	m.Focus()
+
+	// Insert a bracket (simulates orphaned CSI from split escape sequence)
+	m, _ = m.handleCharacterInput([]rune("["))
+	assert.Equal(t, "[", m.Value())
+	assert.True(t, m.lastBracketInserted)
+
+	// Immediately followed by mouse sequence (within cleanup window)
+	// This simulates what happens when bubbletea splits an SGR mouse sequence
+	m, _ = m.handleCharacterInput([]rune("<65;60;6M"))
+
+	// The bracket should have been removed
+	assert.Equal(t, "", m.Value())
+	assert.False(t, m.lastBracketInserted)
+}
+
+func TestSplitEscapeSequence_MultipleBracketsFromScroll(t *testing.T) {
+	m := New(Config{VimEnabled: false})
+	m.Focus()
+
+	// Simulate rapid scroll events that would produce multiple [<seq> pairs
+	for i := 0; i < 5; i++ {
+		m, _ = m.handleCharacterInput([]rune("["))
+		m, _ = m.handleCharacterInput([]rune("<65;60;6M"))
+	}
+
+	// All brackets should have been cleaned up
+	assert.Equal(t, "", m.Value())
+}
+
+func TestSplitEscapeSequence_LegitimateConsecutiveBrackets(t *testing.T) {
+	m := New(Config{VimEnabled: false})
+	m.Focus()
+
+	// First bracket
+	m, _ = m.handleCharacterInput([]rune("["))
+	// Second bracket - should cause first to be kept since it wasn't followed by mouse seq
+	m, _ = m.handleCharacterInput([]rune("["))
+	// Third bracket
+	m, _ = m.handleCharacterInput([]rune("["))
+	// Some text to finalize
+	m, _ = m.handleCharacterInput([]rune("a"))
+
+	// All brackets should be present
+	assert.Equal(t, "[[[a", m.Value())
+}
+
+func TestSplitEscapeSequence_RemoveLastBracket(t *testing.T) {
+	m := New(Config{VimEnabled: false})
+	m.Focus()
+
+	// Set up content with a bracket at a known position
+	m.SetValue("hello")
+	m.cursorRow = 0
+	m.cursorCol = 5
+
+	// Insert a bracket
+	m, _ = m.handleCharacterInput([]rune("["))
+	assert.Equal(t, "hello[", m.Value())
+
+	// Manually call removeLastBracket
+	m = m.removeLastBracket()
+
+	assert.Equal(t, "hello", m.Value())
+}
+
+func TestSplitEscapeSequence_RemoveLastBracket_MidLine(t *testing.T) {
+	m := New(Config{VimEnabled: false})
+	m.Focus()
+
+	// Set up: "hel|lo" with cursor at position 3
+	m.SetValue("hello")
+	m.cursorRow = 0
+	m.cursorCol = 3
+
+	// Insert a bracket at position 3
+	m, _ = m.handleCharacterInput([]rune("["))
+	assert.Equal(t, "hel[lo", m.Value())
+	assert.Equal(t, 4, m.cursorCol) // Cursor moved after insert
+
+	// Remove the bracket
+	m = m.removeLastBracket()
+
+	assert.Equal(t, "hello", m.Value())
+	assert.Equal(t, 3, m.cursorCol) // Cursor adjusted back
+}
+
+func TestSplitEscapeSequence_ReplaceModeFiltersMouseSequence(t *testing.T) {
+	m := New(Config{VimEnabled: true, DefaultMode: ModeNormal})
+	m.SetValue("hello")
+	m.Focus()
+
+	// Enter replace mode
+	m, _ = m.Update(keyMsg('R'))
+	require.Equal(t, ModeReplace, m.Mode())
+
+	// Simulate receiving a mouse escape sequence
+	m, _ = m.handleReplaceModeInput([]rune("<65;60;6M"))
+
+	// Content should be unchanged - mouse sequence was filtered
+	assert.Equal(t, "hello", m.Value())
+}
+
+func TestSplitEscapeSequence_ReplaceModeCleansBracket(t *testing.T) {
+	m := New(Config{VimEnabled: true, DefaultMode: ModeNormal})
+	m.SetValue("hello")
+	m.Focus()
+
+	// Enter replace mode
+	m, _ = m.Update(keyMsg('R'))
+	require.Equal(t, ModeReplace, m.Mode())
+
+	// Insert a bracket (simulates orphaned CSI)
+	m, _ = m.handleReplaceModeInput([]rune("["))
+	// In replace mode, '[' overwrites 'h'
+	assert.Equal(t, "[ello", m.Value())
+	assert.True(t, m.lastBracketInserted)
+
+	// Immediately followed by mouse sequence
+	m, _ = m.handleReplaceModeInput([]rune("<65;60;6M"))
+
+	// The bracket should have been undone, restoring 'h'
+	assert.Equal(t, "hello", m.Value())
+	assert.False(t, m.lastBracketInserted)
+}

@@ -188,6 +188,17 @@ func (h *CommandHistory) Clear() {
 	h.undoIndex = -1
 }
 
+// PopLast removes the most recent command from history without undoing it.
+// This is used when we need to retroactively remove a command that shouldn't
+// have been recorded (e.g., a '[' that turned out to be part of an escape sequence).
+func (h *CommandHistory) PopLast() {
+	if h.undoIndex < 0 {
+		return
+	}
+	h.commands = h.commands[:h.undoIndex]
+	h.undoIndex--
+}
+
 // ============================================================================
 // CommandRegistry
 // ============================================================================

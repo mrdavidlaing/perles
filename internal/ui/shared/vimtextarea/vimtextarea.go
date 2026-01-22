@@ -32,6 +32,14 @@ func isMouseEscapeSequence(runes []rune) bool {
 	return mouseEscapePattern.MatchString(string(runes))
 }
 
+// isOrphanedCSIBracket checks if a single '[' rune is likely an orphaned CSI introducer
+// from a split escape sequence. When bubbletea doesn't fully parse SGR mouse sequences,
+// the ESC is consumed but '[' arrives as a separate KeyRunes event, followed by the
+// rest of the sequence (e.g., "<65;60;6M"). We filter these orphaned brackets.
+func isOrphanedCSIBracket(runes []rune) bool {
+	return len(runes) == 1 && runes[0] == '['
+}
+
 // YankHighlightDuration is the time the yank highlight is shown before fading.
 const YankHighlightDuration = 200 * time.Millisecond
 
@@ -128,6 +136,14 @@ type Model struct {
 
 	// Scrolling
 	scrollOffset int // First visible line
+
+	// Escape sequence filtering state
+	// When we receive a lone '[', we insert it immediately but track when it was inserted.
+	// If a mouse sequence (e.g., "<65;60;6M") arrives within a short window, we remove the '['.
+	// This gives instant feedback for legitimate '[' typing while cleaning up scroll artifacts.
+	lastBracketInsertTime time.Time // When we last inserted a '[' that might be from a split escape
+	lastBracketPosition   Position  // Where that '[' was inserted (for removal)
+	lastBracketInserted   bool      // Whether we have a recent '[' that might need removal
 }
 
 // SubmitMsg is sent when the user submits content (Enter).
@@ -291,17 +307,53 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m.executeAndRespond(cmd, mode)
 }
 
+// csiCleanupWindow is the time window during which a mouse sequence can "undo" a recently inserted '['.
+// Split escape sequences from scrolling arrive within milliseconds of each other.
+// Normal human typing of '[' followed by '<' would take much longer.
+const csiCleanupWindow = 50 * time.Millisecond
+
 // handleCharacterInput handles printable character input in Insert mode.
 func (m Model) handleCharacterInput(runes []rune) (Model, tea.Cmd) {
 	if len(runes) == 0 {
 		return m, nil
 	}
 
-	// Filter out SGR mouse tracking escape sequences that weren't parsed by bubbletea.
-	// These look like "[<65;87;15M" or "<65;87;15M" (scroll events, button events, etc.)
-	// The CSI sequence is ESC [ < Pb ; Px ; Py M/m where Pb is button, Px/Py are coords.
+	// Handle escape sequence filtering.
+	// When bubbletea doesn't fully parse SGR mouse sequences, we get:
+	//   1. '[' as a separate KeyRunes event (orphaned CSI introducer)
+	//   2. '<65;60;6M' as the next KeyRunes event (the actual mouse data)
+	//
+	// Strategy: Insert '[' immediately for responsive typing, but if a mouse
+	// sequence arrives within 50ms, remove the '[' retroactively.
+
+	// Check if this is a mouse escape sequence
 	if isMouseEscapeSequence(runes) {
+		// Check if we recently inserted a '[' that was part of this split sequence
+		if m.lastBracketInserted && time.Since(m.lastBracketInsertTime) < csiCleanupWindow {
+			// Remove the recently inserted '[' - it was part of the escape sequence
+			m = m.removeLastBracket()
+			m.lastBracketInserted = false
+			return m, m.onChangeCmd()
+		}
+		// Mouse sequence without recent '[' - just filter it
 		return m, nil
+	}
+
+	// Clear the bracket tracking if enough time has passed
+	if m.lastBracketInserted && time.Since(m.lastBracketInsertTime) >= csiCleanupWindow {
+		m.lastBracketInserted = false
+	}
+
+	// Check if this is a lone '[' - track it for potential cleanup
+	if isOrphanedCSIBracket(runes) {
+		// Record position before insertion
+		m.lastBracketPosition = Position{Row: m.cursorRow, Col: m.cursorCol}
+		m.lastBracketInsertTime = time.Now()
+		m.lastBracketInserted = true
+		// Fall through to normal insertion
+	} else {
+		// Any other input clears the bracket tracking
+		m.lastBracketInserted = false
 	}
 
 	cmd := &InsertTextCommand{
@@ -316,6 +368,34 @@ func (m Model) handleCharacterInput(runes []rune) (Model, tea.Cmd) {
 	return m, teaCmd
 }
 
+// removeLastBracket removes the '[' that was inserted at lastBracketPosition.
+// This is called when we determine the '[' was part of a split escape sequence.
+func (m Model) removeLastBracket() Model {
+	pos := m.lastBracketPosition
+	if pos.Row >= len(m.content) {
+		return m
+	}
+	line := m.content[pos.Row]
+	lineLen := GraphemeCount(line)
+	if pos.Col >= lineLen {
+		return m
+	}
+	// Verify there's a '[' at the position
+	char := SliceByGraphemes(line, pos.Col, pos.Col+1)
+	if char != "[" {
+		return m
+	}
+	// Remove the character
+	m.content[pos.Row] = SliceByGraphemes(line, 0, pos.Col) + SliceByGraphemes(line, pos.Col+1, lineLen)
+	// Adjust cursor if needed
+	if m.cursorRow == pos.Row && m.cursorCol > pos.Col {
+		m.cursorCol--
+	}
+	// Pop the last command from history (the insert of '[')
+	m.history.PopLast()
+	return m
+}
+
 // handleReplaceModeInput handles printable character input in Replace mode.
 // Characters overwrite existing text or append at end of line.
 func (m Model) handleReplaceModeInput(runes []rune) (Model, tea.Cmd) {
@@ -323,9 +403,30 @@ func (m Model) handleReplaceModeInput(runes []rune) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Filter out SGR mouse tracking escape sequences
+	// Handle escape sequence filtering (same strategy as Insert mode)
 	if isMouseEscapeSequence(runes) {
+		if m.lastBracketInserted && time.Since(m.lastBracketInsertTime) < csiCleanupWindow {
+			// Remove the recently inserted '[' - it was part of the escape sequence
+			// In replace mode, we need to restore the original character
+			m = m.removeLastBracketReplace()
+			m.lastBracketInserted = false
+			return m, m.onChangeCmd()
+		}
 		return m, nil
+	}
+
+	// Clear the bracket tracking if enough time has passed
+	if m.lastBracketInserted && time.Since(m.lastBracketInsertTime) >= csiCleanupWindow {
+		m.lastBracketInserted = false
+	}
+
+	// Track lone '[' for potential cleanup
+	if isOrphanedCSIBracket(runes) {
+		m.lastBracketPosition = Position{Row: m.cursorRow, Col: m.cursorCol}
+		m.lastBracketInsertTime = time.Now()
+		m.lastBracketInserted = true
+	} else {
+		m.lastBracketInserted = false
 	}
 
 	// Process each rune as a separate replace command for proper undo granularity
@@ -341,6 +442,16 @@ func (m Model) handleReplaceModeInput(runes []rune) (Model, tea.Cmd) {
 		lastCmd = teaCmd
 	}
 	return m, lastCmd
+}
+
+// removeLastBracketReplace removes the '[' in Replace mode by undoing the last command.
+// Replace mode is more complex because we need to restore the original character.
+func (m Model) removeLastBracketReplace() Model {
+	// Use undo to restore the previous state
+	if m.history.CanUndo() {
+		_ = m.history.Undo(&m)
+	}
+	return m
 }
 
 // executeAndRespond executes a command and produces the appropriate response.
