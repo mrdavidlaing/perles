@@ -146,6 +146,16 @@ func (cp *defaultControlPlane) Create(ctx context.Context, spec WorkflowSpec) (W
 		return "", fmt.Errorf("storing workflow: %w", err)
 	}
 
+	// Emit workflow created event so subscribers (e.g., dashboard) can update
+	cp.eventBus.Publish(ControlPlaneEvent{
+		Type:         EventWorkflowCreated,
+		WorkflowID:   inst.ID,
+		WorkflowName: inst.Name,
+		TemplateID:   inst.TemplateID,
+		State:        inst.State,
+		Timestamp:    inst.CreatedAt,
+	})
+
 	return inst.ID, nil
 }
 

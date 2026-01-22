@@ -183,21 +183,32 @@ func (m Model) createWorkflowTableConfig() table.TableConfig {
 		},
 		ShowHeader:   true,
 		ShowBorder:   true,
-		EmptyMessage: "No workflows match the filter. Press Esc to clear.",
+		EmptyMessage: m.getEmptyMessage(),
 		BorderColor:  styles.BorderDefaultColor,
+		Title:        m.getTableTitle(),
 	}
+}
+
+// getEmptyMessage returns the appropriate empty state message.
+func (m Model) getEmptyMessage() string {
+	if m.filter.HasFilter() {
+		return "No workflows match the filter. Press Esc to clear."
+	}
+	return "No workflows yet. Press 'n' to create one, or use the API."
+}
+
+// getTableTitle returns the title for the workflow table including API port.
+func (m Model) getTableTitle() string {
+	if m.apiPort > 0 {
+		return fmt.Sprintf("Workflows · API ::%d", m.apiPort)
+	}
+	return "Workflows"
 }
 
 // renderView renders the complete dashboard view.
 func (m *Model) renderView() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
-	}
-
-	// Check for empty state - render centered text instead of bordered pane
-	filteredWorkflows := m.getFilteredWorkflows()
-	if len(filteredWorkflows) == 0 && !m.filter.HasFilter() {
-		return m.renderEmptyState()
 	}
 
 	// Footer section (action hints)
@@ -240,22 +251,13 @@ func (m Model) renderBorderedWorkflowTable(width, height int) string {
 	return tbl.ViewWithSelection(m.selectedIndex)
 }
 
-// renderEmptyState renders the empty state message centered on screen.
-func (m Model) renderEmptyState() string {
-	emptyStyle := lipgloss.NewStyle().
-		Foreground(colorDimmed)
-
-	text := emptyStyle.Render("No workflows yet. Press 'n' to create a new workflow.")
-
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, text)
-}
-
 // renderActionHints renders the quick action hints bar in a bordered pane.
 func (m Model) renderActionHints() string {
 	hintStyle := lipgloss.NewStyle().Foreground(colorDimmed)
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(colorHeader)
 
 	hints := []string{
+		fmt.Sprintf("%s start", keyStyle.Render("[s]")),
 		fmt.Sprintf("%s stop", keyStyle.Render("[x]")),
 		fmt.Sprintf("%s new", keyStyle.Render("[n]")),
 		fmt.Sprintf("%s help", keyStyle.Render("[?]")),

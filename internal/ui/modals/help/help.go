@@ -515,57 +515,24 @@ func (m Model) renderDashboardContent() string {
 	navCol.WriteString("\n")
 	navCol.WriteString(renderBinding(keys.Dashboard.Up))
 	navCol.WriteString(renderBinding(keys.Dashboard.Down))
-	navCol.WriteString(renderBinding(keys.Dashboard.Left))
-	navCol.WriteString(renderBinding(keys.Dashboard.Right))
-	navCol.WriteString(renderBinding(keys.Dashboard.Tab))
 	navCol.WriteString(renderBinding(keys.Dashboard.GotoTop))
 	navCol.WriteString(renderBinding(keys.Dashboard.GotoBottom))
-	navCol.WriteString(renderBinding(keys.Dashboard.Enter))
 
 	// Workflow Actions column
 	var actionsCol strings.Builder
 	actionsCol.WriteString(sectionStyle.Render("Workflow Actions"))
 	actionsCol.WriteString("\n")
+	actionsCol.WriteString(renderBinding(keys.Dashboard.Start))
 	actionsCol.WriteString(renderBinding(keys.Dashboard.Stop))
 	actionsCol.WriteString(renderBinding(keys.Dashboard.New))
-
-	// Filter & General column
-	var generalCol strings.Builder
-	generalCol.WriteString(sectionStyle.Render("Filter & General"))
-	generalCol.WriteString("\n")
-	generalCol.WriteString(renderBinding(keys.Dashboard.Filter))
-	generalCol.WriteString(renderBinding(keys.Dashboard.ClearFilter))
-	generalCol.WriteString(renderBinding(keys.Dashboard.Help))
-	generalCol.WriteString(renderBinding(keys.Dashboard.Quit))
-
-	// Status Indicators column
-	var statusCol strings.Builder
-	statusCol.WriteString(sectionStyle.Render("Status Indicators"))
-	statusCol.WriteString("\n")
-	statusCol.WriteString(renderKeyDesc("●", "running (green)"))
-	statusCol.WriteString(renderKeyDesc("◐", "paused (yellow)"))
-	statusCol.WriteString(renderKeyDesc("✓", "completed (green)"))
-	statusCol.WriteString(renderKeyDesc("✗", "failed (red)"))
-	statusCol.WriteString(renderKeyDesc("■", "stopped (gray)"))
-
-	// Health Indicators column
-	var healthCol strings.Builder
-	healthCol.WriteString(sectionStyle.Render("Health Indicators"))
-	healthCol.WriteString("\n")
-	healthCol.WriteString(renderKeyDesc("✓", "OK (green)"))
-	healthCol.WriteString(renderKeyDesc("⚠", "slow (yellow)"))
-	healthCol.WriteString(renderKeyDesc("✗", "stuck (red)"))
-	healthCol.WriteString(renderKeyDesc("↻", "recovering (yellow)"))
-	healthCol.WriteString(renderKeyDesc("-", "N/A (gray)"))
+	actionsCol.WriteString(renderBinding(keys.Dashboard.Help))
+	actionsCol.WriteString(renderBinding(keys.Dashboard.Quit))
 
 	// Join columns horizontally, aligned at top
 	columns := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		columnStyle.Render(navCol.String()),
-		columnStyle.Render(actionsCol.String()),
-		columnStyle.Render(generalCol.String()),
-		columnStyle.Render(statusCol.String()),
-		healthCol.String(),
+		actionsCol.String(),
 	)
 
 	// Calculate box width based on columns content

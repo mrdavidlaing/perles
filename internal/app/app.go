@@ -28,6 +28,7 @@ import (
 	"github.com/zjrosen/perles/internal/mode/search"
 	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
+	"github.com/zjrosen/perles/internal/orchestration/controlplane/api"
 	"github.com/zjrosen/perles/internal/orchestration/session"
 	v2 "github.com/zjrosen/perles/internal/orchestration/v2"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
@@ -98,6 +99,10 @@ type Model struct {
 	// DDD registry service for epic-driven workflows (template listing, validation, epic_driven.md)
 	registryService *appreg.RegistryService
 	workflowCreator *appreg.WorkflowCreator // Creates epics and tasks in beads
+
+	// API server for control plane (started when dashboard mode enters)
+	apiServer     *api.Server
+	apiServerPort int
 }
 
 // NewWithConfig creates a new application model with the provided configuration.
@@ -515,6 +520,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.controlPlane = m.createControlPlane()
 		}
 
+		// Start API server if not already running
+		if m.apiServer == nil && m.controlPlane != nil {
+			// Use configured port, or 0 for auto-assignment
+			port := m.services.Config.Orchestration.APIPort
+			addr := fmt.Sprintf("localhost:%d", port)
+
+			server, err := api.NewServer(api.ServerConfig{
+				Addr:            addr,
+				ControlPlane:    m.controlPlane,
+				WorkflowCreator: m.workflowCreator,
+				RegistryService: m.registryService,
+			})
+			if err != nil {
+				log.Error(log.CatOrch, "Failed to create API server", "error", err)
+			} else {
+				m.apiServer = server
+				m.apiServerPort = server.Port() // Get actual port (useful when port was 0)
+				go func() {
+					if err := m.apiServer.Start(); err != nil {
+						log.Error(log.CatOrch, "API server error", "error", err)
+					}
+				}()
+				log.Info(log.CatOrch, "API server started", "port", m.apiServerPort)
+			}
+		}
+
 		// Create dashboard model
 		m.dashboard = dashboard.New(dashboard.Config{
 			ControlPlane:       m.controlPlane,
@@ -523,6 +554,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			WorkflowCreator:    m.workflowCreator,
 			GitExecutorFactory: m.services.GitExecutorFactory,
 			WorkDir:            m.services.WorkDir,
+			APIPort:            m.apiServerPort,
 		}).SetSize(m.width, m.height).(dashboard.Model)
 
 		return m, m.dashboard.Init()
@@ -1167,6 +1199,15 @@ func (m *Model) Close() error {
 	if m.watcherHandle != nil {
 		if err := m.watcherHandle.Stop(); err != nil {
 			return err
+		}
+	}
+
+	// Stop API server if running
+	if m.apiServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.apiServer.Stop(ctx); err != nil {
+			log.Error(log.CatOrch, "Error stopping API server", "error", err)
 		}
 	}
 

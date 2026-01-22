@@ -60,7 +60,7 @@ var (
 func init() {
 	rootCmd.AddCommand(daemonCmd)
 
-	daemonCmd.Flags().StringVar(&daemonAddr, "addr", "localhost:19999", "Address to listen on")
+	daemonCmd.Flags().StringVar(&daemonAddr, "addr", "", "Address to listen on (overrides config)")
 }
 
 func runDaemon(_ *cobra.Command, _ []string) error {
@@ -127,13 +127,24 @@ func runDaemon(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("creating control plane: %w", err)
 	}
 
+	// Determine API server address
+	// Priority: --addr flag > config api_port > auto-assign (port 0)
+	addr := daemonAddr
+	if addr == "" {
+		port := cfg.Orchestration.APIPort
+		addr = fmt.Sprintf("localhost:%d", port)
+	}
+
 	// Create API server
-	server := api.NewServer(api.ServerConfig{
-		Addr:            daemonAddr,
+	server, err := api.NewServer(api.ServerConfig{
+		Addr:            addr,
 		ControlPlane:    cp,
 		WorkflowCreator: workflowCreator,
 		RegistryService: registryService,
 	})
+	if err != nil {
+		return fmt.Errorf("creating API server: %w", err)
+	}
 
 	// Handle shutdown signals
 	ctx, cancel := context.WithCancel(context.Background())
@@ -148,7 +159,7 @@ func runDaemon(_ *cobra.Command, _ []string) error {
 		errCh <- server.Start()
 	}()
 
-	fmt.Printf("Perles daemon started on %s\n", daemonAddr)
+	fmt.Printf("Perles daemon started on port %d\n", server.Port())
 	fmt.Println("Press Ctrl+C to stop")
 
 	// Wait for shutdown signal or error

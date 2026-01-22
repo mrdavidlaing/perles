@@ -508,6 +508,7 @@ var Dashboard = struct {
 	GotoTop     key.Binding
 	GotoBottom  key.Binding
 	Enter       key.Binding
+	Start       key.Binding
 	Stop        key.Binding
 	New         key.Binding
 	Filter      key.Binding
@@ -546,6 +547,10 @@ var Dashboard = struct {
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "view details"),
+	),
+	Start: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "start workflow"),
 	),
 	Stop: key.NewBinding(
 		key.WithKeys("x"),

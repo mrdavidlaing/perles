@@ -79,6 +79,9 @@ type Model struct {
 	gitExecutorFactory func(path string) appgit.GitExecutor
 	workDir            string
 
+	// API server port (for display in header)
+	apiPort int
+
 	// Dimensions
 	width  int
 	height int
@@ -106,6 +109,9 @@ type Config struct {
 	// WorkDir is the application root directory (where perles was invoked).
 	// Used to create git executors for the current working directory.
 	WorkDir string
+	// APIPort is the port the HTTP API server is running on.
+	// Shown in the dashboard header for external tool integration.
+	APIPort int
 }
 
 // New creates a new dashboard mode model with the given configuration.
@@ -128,6 +134,7 @@ func New(cfg Config) Model {
 		cancel:             cancel,
 		gitExecutorFactory: cfg.GitExecutorFactory,
 		workDir:            cfg.WorkDir,
+		apiPort:            cfg.APIPort,
 	}
 
 	// Initialize the workflow table with config

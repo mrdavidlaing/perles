@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -561,9 +562,11 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, code, message, d
 
 // Server wraps the Handler with an http.Server for lifecycle management.
 type Server struct {
-	handler *Handler
-	server  *http.Server
-	addr    string
+	handler  *Handler
+	server   *http.Server
+	listener net.Listener
+	addr     string
+	port     int // Actual port after binding (useful when using :0)
 }
 
 // ServerConfig configures the API server.
@@ -583,7 +586,9 @@ type ServerConfig struct {
 }
 
 // NewServer creates a new API server.
-func NewServer(cfg ServerConfig) *Server {
+// If Addr uses port 0 (e.g., "localhost:0" or ":0"), the OS will assign an available port.
+// Use Port() after Start() to get the actual port.
+func NewServer(cfg ServerConfig) (*Server, error) {
 	handler := NewHandlerWithConfig(HandlerConfig{
 		ControlPlane:    cfg.ControlPlane,
 		WorkflowCreator: cfg.WorkflowCreator,
@@ -600,27 +605,46 @@ func NewServer(cfg ServerConfig) *Server {
 		writeTimeout = 0 // No timeout for SSE
 	}
 
+	// Create listener first to get the actual port (important for :0)
+	listener, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on %s: %w", cfg.Addr, err)
+	}
+
+	// Extract actual port from listener address
+	port := 0
+	if tcpAddr, ok := listener.Addr().(*net.TCPAddr); ok {
+		port = tcpAddr.Port
+	}
+
 	return &Server{
-		handler: handler,
-		addr:    cfg.Addr,
+		handler:  handler,
+		addr:     cfg.Addr,
+		port:     port,
+		listener: listener,
 		server: &http.Server{
-			Addr:              cfg.Addr,
 			Handler:           handler.Routes(),
 			ReadTimeout:       readTimeout,
 			ReadHeaderTimeout: 10 * time.Second,
 			WriteTimeout:      writeTimeout,
 		},
-	}
+	}, nil
 }
 
 // Start starts the HTTP server. It blocks until the server is stopped or fails.
 func (s *Server) Start() error {
-	log.Info(log.CatOrch, "Starting API server", "addr", s.addr)
-	return s.server.ListenAndServe()
+	log.Info(log.CatOrch, "Starting API server", "addr", s.listener.Addr().String(), "port", s.port)
+	return s.server.Serve(s.listener)
 }
 
 // Stop gracefully shuts down the server.
 func (s *Server) Stop(ctx context.Context) error {
 	log.Info(log.CatOrch, "Stopping API server")
 	return s.server.Shutdown(ctx)
+}
+
+// Port returns the actual port the server is listening on.
+// This is useful when the server was configured with port 0 for auto-assignment.
+func (s *Server) Port() int {
+	return s.port
 }

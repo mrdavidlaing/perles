@@ -155,6 +155,7 @@ func DefaultTimeoutsConfig() TimeoutsConfig {
 type OrchestrationConfig struct {
 	Client           string               `mapstructure:"client"`            // "claude" (default), "amp", "codex", or "gemini"
 	DisableWorktrees bool                 `mapstructure:"disable_worktrees"` // Skip worktree prompt (default: false)
+	APIPort          int                  `mapstructure:"api_port"`          // HTTP API port (0 = auto-assign, default: 0)
 	Claude           ClaudeClientConfig   `mapstructure:"claude"`
 	Codex            CodexClientConfig    `mapstructure:"codex"`
 	Amp              AmpClientConfig      `mapstructure:"amp"`
