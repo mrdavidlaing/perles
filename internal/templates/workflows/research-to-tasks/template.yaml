@@ -9,6 +9,12 @@ registry:
     instructions: "v1-epic-instructions.md"
     labels:
       - "category:task-planning"
+    arguments:
+      - key: "research_path"
+        label: "Research Doc Path"
+        description: ""
+        type: "text"
+        required: true
     nodes:
       # Phase 1: Mediator creates plan document
       - key: "setup"

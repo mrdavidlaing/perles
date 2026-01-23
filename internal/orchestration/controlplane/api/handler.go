@@ -306,8 +306,7 @@ func (h *Handler) validateTemplateArgs(templateID string, args map[string]string
 // buildCoordinatorPrompt assembles the coordinator prompt from:
 // 1. Instructions template content (from registration's instructions field)
 // 2. Epic ID section (so coordinator can read detailed instructions via bd show)
-// 3. Argument values (formatted as a section)
-func (h *Handler) buildCoordinatorPrompt(templateID, epicID string, args map[string]string) string {
+func (h *Handler) buildCoordinatorPrompt(templateID, epicID string, _ map[string]string) string {
 	// Load instructions template if registry service is available
 	var instructionsContent string
 	if h.registryService != nil {
@@ -332,16 +331,6 @@ func (h *Handler) buildCoordinatorPrompt(templateID, epicID string, args map[str
 	if epicID != "" {
 		epicSection := fmt.Sprintf("# Epic\n\nThe epic for this workflow is `%s`. Run `bd show %s` to read the detailed work breakdown and instructions.", epicID, epicID)
 		parts = append(parts, epicSection)
-	}
-
-	// Build arguments section if any args are present
-	if len(args) > 0 {
-		var sb strings.Builder
-		sb.WriteString("# Arguments\n\n")
-		for key, val := range args {
-			sb.WriteString(fmt.Sprintf("- **%s**: %s\n", key, val))
-		}
-		parts = append(parts, sb.String())
 	}
 
 	return strings.Join(parts, "\n\n")

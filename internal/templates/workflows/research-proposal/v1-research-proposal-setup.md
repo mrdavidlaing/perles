@@ -4,6 +4,10 @@
 
 You are the Coordinator responsible for initiating the research proposal process.
 
+## Goal
+
+{{.Args.goal}}
+
 ## Objective
 
 Create the proposal directory and shared proposal document with problem statement and research questions for the team.

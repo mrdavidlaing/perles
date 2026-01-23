@@ -489,8 +489,7 @@ func (m *NewWorkflowModal) extractArgumentValues(templateKey string, values map[
 // buildCoordinatorPrompt assembles the coordinator prompt from:
 // 1. Instructions template content (from registration's instructions field)
 // 2. Epic ID section (so coordinator can read detailed instructions via bd show)
-// 3. Argument values (includes goal if defined as a template argument)
-func (m *NewWorkflowModal) buildCoordinatorPrompt(templateID, epicID string, args map[string]string) string {
+func (m *NewWorkflowModal) buildCoordinatorPrompt(templateID, epicID string, _ map[string]string) string {
 	// Load instructions template if registry service is available
 	var instructionsContent string
 	if m.registryService != nil {
@@ -505,17 +504,6 @@ func (m *NewWorkflowModal) buildCoordinatorPrompt(templateID, epicID string, arg
 		// If error loading template, continue without it
 	}
 
-	// Build argument section if any args are present
-	var argsSection string
-	if len(args) > 0 {
-		var sb strings.Builder
-		sb.WriteString("\n# Arguments\n\n")
-		for key, val := range args {
-			sb.WriteString(fmt.Sprintf("- **%s**: %s\n", key, val))
-		}
-		argsSection = sb.String()
-	}
-
 	// Build the full prompt
 	if instructionsContent != "" {
 		return fmt.Sprintf(`%s
@@ -526,8 +514,7 @@ func (m *NewWorkflowModal) buildCoordinatorPrompt(templateID, epicID string, arg
 
 Epic ID: %s
 
-Use `+"`bd show %s --json`"+` to read your detailed workflow instructions.
-%s`, instructionsContent, epicID, epicID, argsSection)
+Use `+"`bd show %s --json`"+` to read your detailed workflow instructions.`, instructionsContent, epicID, epicID)
 	}
 
 	// Fallback if no instructions template available
@@ -535,8 +522,7 @@ Use `+"`bd show %s --json`"+` to read your detailed workflow instructions.
 
 Epic ID: %s
 
-Use `+"`bd show %s --json`"+` to read your detailed workflow instructions.
-%s`, epicID, epicID, argsSection)
+Use `+"`bd show %s --json`"+` to read your detailed workflow instructions.`, epicID, epicID)
 }
 
 // SetSize sets the modal dimensions.

@@ -23,8 +23,9 @@ func TestHandler_Create(t *testing.T) {
 	mockCP := mocks.NewMockControlPlane(t)
 	mockCP.EXPECT().
 		Create(mock.Anything, mock.MatchedBy(func(spec controlplane.WorkflowSpec) bool {
-			// Without RegistryService, args are formatted into InitialGoal with "# Arguments\n\n" prefix
-			return spec.TemplateID == "cook" && spec.InitialGoal == "# Arguments\n\n- **goal**: Build feature X\n"
+			// Arguments are now rendered into epic template via {{.Args.key}},
+			// so they don't appear in InitialGoal. Without RegistryService, InitialGoal is empty.
+			return spec.TemplateID == "cook" && spec.InitialGoal == ""
 		})).
 		Return(controlplane.WorkflowID("wf-123"), nil).
 		Once()

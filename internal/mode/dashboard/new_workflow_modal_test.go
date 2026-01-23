@@ -919,7 +919,8 @@ func TestNewWorkflowModal_BuildCoordinatorPromptContainsAllSections(t *testing.T
 	registryService := createTestRegistryService(t)
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
 
-	// Test the prompt building with goal as an argument
+	// Test the prompt building - arguments are now rendered into epic template,
+	// so they should NOT appear in the coordinator prompt
 	args := map[string]string{"goal": "Build a cool feature"}
 	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123", args)
 
@@ -927,11 +928,11 @@ func TestNewWorkflowModal_BuildCoordinatorPromptContainsAllSections(t *testing.T
 	require.Contains(t, prompt, "perles-abc123")
 	// Verify prompt contains bd show command
 	require.Contains(t, prompt, "bd show perles-abc123 --json")
-	// Verify prompt contains goal in arguments section
-	require.Contains(t, prompt, "Build a cool feature")
 	// Verify prompt structure
 	require.Contains(t, prompt, "# Your Epic")
-	require.Contains(t, prompt, "# Arguments")
+	// Arguments should NOT be appended - they're rendered into the epic template via {{.Args.key}}
+	require.NotContains(t, prompt, "# Arguments")
+	require.NotContains(t, prompt, "Build a cool feature")
 }
 
 func TestNewWorkflowModal_OnSubmitReturnsErrorOnWorkflowCreatorFailure(t *testing.T) {
@@ -1016,11 +1017,12 @@ func TestBuildCoordinatorPrompt_UsesCustomInstructions(t *testing.T) {
 	// Verify prompt contains custom instructions content
 	require.Contains(t, prompt, "# Custom Instructions")
 	require.Contains(t, prompt, "This is a custom coordinator prompt")
-	// Verify prompt still contains epic ID and goal in arguments
+	// Verify prompt contains epic ID
 	require.Contains(t, prompt, "perles-abc123")
-	require.Contains(t, prompt, "Build a cool feature")
 	require.Contains(t, prompt, "# Your Epic")
-	require.Contains(t, prompt, "# Arguments")
+	// Arguments should NOT be appended - they're rendered into epic template via {{.Args.key}}
+	require.NotContains(t, prompt, "# Arguments")
+	require.NotContains(t, prompt, "Build a cool feature")
 }
 
 func TestNewRegistryService_FailsOnMissingInstructionsFile(t *testing.T) {
@@ -1065,9 +1067,10 @@ func TestBuildCoordinatorPrompt_HandlesNoInstructionsField(t *testing.T) {
 
 	// Verify prompt falls back to minimal prompt without instructions
 	require.Contains(t, prompt, "perles-abc123")
-	require.Contains(t, prompt, "Build a cool feature")
 	require.Contains(t, prompt, "# Your Epic")
-	require.Contains(t, prompt, "# Arguments")
+	// Arguments should NOT be appended - they're rendered into epic template via {{.Args.key}}
+	require.NotContains(t, prompt, "# Arguments")
+	require.NotContains(t, prompt, "Build a cool feature")
 }
 
 func TestNewWorkflowModal_ErrorMsgSetsFormError(t *testing.T) {
@@ -1260,7 +1263,7 @@ registry:
 	require.NoError(t, err)
 }
 
-func TestNewWorkflowModal_BuildCoordinatorPromptWithArgs(t *testing.T) {
+func TestNewWorkflowModal_BuildCoordinatorPromptDoesNotAppendArgs(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
 
@@ -1272,12 +1275,14 @@ func TestNewWorkflowModal_BuildCoordinatorPromptWithArgs(t *testing.T) {
 
 	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123", args)
 
-	// Verify prompt contains arguments section
-	require.Contains(t, prompt, "# Arguments")
-	require.Contains(t, prompt, "goal")
-	require.Contains(t, prompt, "Build feature")
-	require.Contains(t, prompt, "feature")
-	require.Contains(t, prompt, "auth-system")
-	require.Contains(t, prompt, "priority")
-	require.Contains(t, prompt, "high")
+	// Arguments are now rendered directly into the epic template via {{.Args.key}},
+	// so they should NOT be appended to the coordinator prompt
+	require.NotContains(t, prompt, "# Arguments")
+	require.NotContains(t, prompt, "Build feature")
+	require.NotContains(t, prompt, "auth-system")
+	require.NotContains(t, prompt, "high")
+
+	// But prompt should still contain epic reference
+	require.Contains(t, prompt, "perles-abc123")
+	require.Contains(t, prompt, "bd show perles-abc123 --json")
 }

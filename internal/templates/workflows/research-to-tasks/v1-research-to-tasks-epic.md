@@ -13,7 +13,10 @@ You are the **Coordinator** for a multi-agent research-to-tasks workflow. Your j
 
 ## Input Documents
 
-- **Research Document:** (provided by user when starting workflow)
+- **Research Document:** {{Args.research_path}}
+
+## Output Documents
+
 - **Plan Document:** `docs/proposals/{{ .Date }}--{{ .Name }}/plan.md`
 
 ## Critical Philosophy
