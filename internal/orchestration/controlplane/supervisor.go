@@ -24,6 +24,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/adapter"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/handler"
+	"github.com/zjrosen/perles/internal/orchestration/v2/prompt/roles"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/sound"
@@ -413,9 +414,16 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 	}()
 	log.Debug(log.CatOrch, "MCP HTTP server started", "subsystem", "supervisor", "port", port, "workflowID", inst.ID)
 
-	// Step 8: Spawn coordinator
-	// Use workflowCtx (detached from request context) so the process lives beyond the API request
-	spawnCmd := command.NewSpawnProcessCommand(command.SourceInternal, repository.RoleCoordinator)
+	// Step 9: Spawn coordinator
+	spawnCmd := command.NewSpawnProcessCommand(command.SourceInternal, repository.RoleCoordinator, command.WithWorkflowConfig(&roles.WorkflowConfig{
+		// TODO we need to figure out what we want to do here, currently
+		// the InitialPrompt being used should is really the system prompt and the initial prompt
+		// should simply being giving it an Epic ID to work on. We will have to likely update the
+		// WorkflowSpec to include a SystemPrompt and InitialPrompt and update the web and tui clients
+		// as well.
+		// SystemPromptOverride: "",
+		InitialPromptOverride: inst.InitialPrompt,
+	}))
 	result, err := infra.Core.Processor.SubmitAndWait(workflowCtx, spawnCmd)
 	if err != nil {
 		cleanup()
@@ -426,32 +434,7 @@ func (s *defaultSupervisor) Start(ctx context.Context, inst *WorkflowInstance) e
 		return fmt.Errorf("spawn coordinator failed: %w", result.Error)
 	}
 
-	// Step 9: Send initial goal to coordinator (with template content prepended)
-	if inst.InitialGoal != "" {
-		// Extract coordinator process ID from spawn result
-		coordID := "coordinator" // default fallback
-		if spawnResult, ok := result.Data.(interface{ GetProcessID() string }); ok {
-			if id := spawnResult.GetProcessID(); id != "" {
-				coordID = id
-			}
-		}
-
-		// Build the full prompt: template content + initial goal
-		fullPrompt := s.buildCoordinatorPrompt(inst)
-
-		sendCmd := command.NewSendToProcessCommand(command.SourceInternal, coordID, fullPrompt)
-		sendResult, err := infra.Core.Processor.SubmitAndWait(workflowCtx, sendCmd)
-		if err != nil {
-			cleanup()
-			return fmt.Errorf("sending initial goal to coordinator: %w", err)
-		}
-		if !sendResult.Success {
-			cleanup()
-			return fmt.Errorf("send initial goal failed: %w", sendResult.Error)
-		}
-	}
-
-	// Step 10: Update instance state to Running
+	// Step 9: Update instance state to Running
 	if err := inst.TransitionTo(WorkflowRunning); err != nil {
 		cleanup()
 		return fmt.Errorf("transitioning to Running: %w", err)
@@ -584,27 +567,6 @@ func getWorkDir(inst *WorkflowInstance) string {
 		return wd
 	}
 	return ""
-}
-
-// buildCoordinatorPrompt constructs the full prompt for the coordinator.
-// It prepends the workflow template content to the initial goal.
-func (s *defaultSupervisor) buildCoordinatorPrompt(inst *WorkflowInstance) string {
-	var templateContent string
-
-	// Look up template content from registry if available
-	if s.workflowRegistry != nil && inst.TemplateID != "" {
-		if wf, found := s.workflowRegistry.Get(inst.TemplateID); found {
-			templateContent = wf.Content
-		}
-	}
-
-	// If we have template content, prepend it to the goal
-	if templateContent != "" {
-		return templateContent + "\n\n---\n\n# User Goal\n\n" + inst.InitialGoal
-	}
-
-	// No template, just return the goal
-	return inst.InitialGoal
 }
 
 // workerServerCache manages worker MCP servers that share the same message store.

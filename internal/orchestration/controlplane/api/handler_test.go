@@ -24,8 +24,8 @@ func TestHandler_Create(t *testing.T) {
 	mockCP.EXPECT().
 		Create(mock.Anything, mock.MatchedBy(func(spec controlplane.WorkflowSpec) bool {
 			// Arguments are now rendered into epic template via {{.Args.key}},
-			// so they don't appear in InitialGoal. Without RegistryService, InitialGoal is empty.
-			return spec.TemplateID == "cook" && spec.InitialGoal == ""
+			// so they don't appear in InitialPrompt. Without RegistryService, InitialPrompt is empty.
+			return spec.TemplateID == "cook" && spec.InitialPrompt == ""
 		})).
 		Return(controlplane.WorkflowID("wf-123"), nil).
 		Once()
@@ -69,11 +69,11 @@ func TestHandler_Get(t *testing.T) {
 	mockCP.EXPECT().
 		Get(mock.Anything, controlplane.WorkflowID("wf-123")).
 		Return(&controlplane.WorkflowInstance{
-			ID:          "wf-123",
-			TemplateID:  "cook",
-			State:       controlplane.WorkflowRunning,
-			InitialGoal: "Build feature",
-			MCPPort:     19001,
+			ID:            "wf-123",
+			TemplateID:    "cook",
+			State:         controlplane.WorkflowRunning,
+			InitialPrompt: "Build feature",
+			MCPPort:       19001,
 		}, nil).
 		Once()
 	mockCP.EXPECT().

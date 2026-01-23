@@ -597,15 +597,15 @@ func TestBuildNodeOptions(t *testing.T) {
 	}
 }
 
-func TestYAMLLoader_ParsesInstructionsField(t *testing.T) {
+func TestYAMLLoader_ParsesSystemPromptField(t *testing.T) {
 	yamlContent := `
 registry:
   - namespace: "workflow"
-    key: "with-instructions"
+    key: "with-system-prompt"
     version: "v1"
-    name: "Workflow With Instructions"
-    description: "A workflow with instructions"
-    instructions: "coordinator_template.md"
+    name: "Workflow With System Prompt"
+    description: "A workflow with system prompt"
+    system_prompt: "coordinator_template.md"
     nodes:
       - key: "step1"
         name: "Step 1"
@@ -613,19 +613,19 @@ registry:
         assignee: "worker-1"
 `
 	fs := createWorkflowFS(yamlContent, "step1.md")
-	// Add the instructions template file
-	fs["workflows/test/coordinator_template.md"] = &fstest.MapFile{Data: []byte("# Instructions")}
+	// Add the system prompt template file
+	fs["workflows/test/coordinator_template.md"] = &fstest.MapFile{Data: []byte("# System Prompt")}
 
 	registrations, err := LoadRegistryFromYAML(fs)
 	require.NoError(t, err, "LoadRegistryFromYAML() unexpected error")
 	require.Len(t, registrations, 1, "expected 1 registration")
 
 	reg := registrations[0]
-	require.Equal(t, "workflows/test/coordinator_template.md", reg.Instructions(), "Instructions() should return resolved path")
+	require.Equal(t, "workflows/test/coordinator_template.md", reg.SystemPrompt(), "SystemPrompt() should return resolved path")
 }
 
-func TestYAMLLoader_EmptyInstructions_AllowedForNonWorkflow(t *testing.T) {
-	// Non-orchestration workflow (no assignee fields) should not require instructions
+func TestYAMLLoader_EmptySystemPrompt_AllowedForNonWorkflow(t *testing.T) {
+	// Non-orchestration workflow (no assignee fields) should not require system_prompt
 	yamlContent := `
 registry:
   - namespace: "workflow"
@@ -641,20 +641,20 @@ registry:
 	fs := createWorkflowFS(yamlContent, "step1.md")
 
 	registrations, err := LoadRegistryFromYAML(fs)
-	require.NoError(t, err, "LoadRegistryFromYAML() should not error for non-orchestration workflows without instructions")
+	require.NoError(t, err, "LoadRegistryFromYAML() should not error for non-orchestration workflows without system_prompt")
 	require.Len(t, registrations, 1, "expected 1 registration")
-	require.Empty(t, registrations[0].Instructions(), "Instructions() should be empty")
+	require.Empty(t, registrations[0].SystemPrompt(), "SystemPrompt() should be empty")
 }
 
-func TestYAMLLoader_EmptyInstructions_ErrorForOrchestrationWorkflow(t *testing.T) {
-	// Orchestration workflow (has assignee) without instructions should fail
+func TestYAMLLoader_EmptySystemPrompt_ErrorForOrchestrationWorkflow(t *testing.T) {
+	// Orchestration workflow (has assignee) without system_prompt should fail
 	yamlContent := `
 registry:
   - namespace: "workflow"
-    key: "missing-instructions"
+    key: "missing-system-prompt"
     version: "v1"
-    name: "Orchestration Without Instructions"
-    description: "An orchestration workflow missing instructions"
+    name: "Orchestration Without System Prompt"
+    description: "An orchestration workflow missing system_prompt"
     nodes:
       - key: "step1"
         name: "Step 1"
@@ -664,10 +664,10 @@ registry:
 	fs := createWorkflowFS(yamlContent, "step1.md")
 
 	_, err := LoadRegistryFromYAML(fs)
-	require.Error(t, err, "LoadRegistryFromYAML() should error for orchestration workflows without instructions")
-	require.Contains(t, err.Error(), "requires 'instructions' field",
-		"error should mention 'instructions' field requirement")
-	require.Contains(t, err.Error(), "workflow/missing-instructions",
+	require.Error(t, err, "LoadRegistryFromYAML() should error for orchestration workflows without system_prompt")
+	require.Contains(t, err.Error(), "requires 'system_prompt' field",
+		"error should mention 'system_prompt' field requirement")
+	require.Contains(t, err.Error(), "workflow/missing-system-prompt",
 		"error should include namespace/key for context")
 }
 
@@ -1147,7 +1147,7 @@ registry:
     version: "v1"
     name: "Path Traversal"
     description: ""
-    template: "../../../etc/passwd"
+    epic_template: "../../../etc/passwd"
     nodes:
       - key: "step1"
         name: "Step 1"
@@ -1168,7 +1168,7 @@ registry:
     version: "v1"
     name: "Absolute Path"
     description: ""
-    template: "/etc/passwd"
+    epic_template: "/etc/passwd"
     nodes:
       - key: "step1"
         name: "Step 1"
@@ -1196,8 +1196,8 @@ func TestValidateTemplateExists(t *testing.T) {
 		{
 			name: "all templates exist",
 			def: WorkflowDef{
-				Template:     "workflows/test/template.md",
-				Instructions: "workflows/test/instructions.md",
+				EpicTemplate: "workflows/test/template.md",
+				SystemPrompt: "workflows/test/instructions.md",
 				Nodes: []NodeDef{
 					{Key: "node1", Template: "workflows/test/node1.md"},
 				},
@@ -1205,9 +1205,9 @@ func TestValidateTemplateExists(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "missing main template",
+			name: "missing initial prompt",
 			def: WorkflowDef{
-				Template: "workflows/test/missing.md",
+				EpicTemplate: "workflows/test/missing.md",
 				Nodes: []NodeDef{
 					{Key: "node1", Template: "workflows/test/node1.md"},
 				},
@@ -1215,9 +1215,9 @@ func TestValidateTemplateExists(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "missing instructions template",
+			name: "missing system prompt",
 			def: WorkflowDef{
-				Instructions: "workflows/test/missing-instructions.md",
+				SystemPrompt: "workflows/test/missing-system-prompt.md",
 				Nodes: []NodeDef{
 					{Key: "node1", Template: "workflows/test/node1.md"},
 				},
@@ -1227,7 +1227,7 @@ func TestValidateTemplateExists(t *testing.T) {
 		{
 			name: "missing node template",
 			def: WorkflowDef{
-				Template: "workflows/test/template.md",
+				EpicTemplate: "workflows/test/template.md",
 				Nodes: []NodeDef{
 					{Key: "node1", Template: "workflows/test/missing-node.md"},
 				},
@@ -1237,8 +1237,8 @@ func TestValidateTemplateExists(t *testing.T) {
 		{
 			name: "empty templates are allowed",
 			def: WorkflowDef{
-				Template:     "",
-				Instructions: "",
+				EpicTemplate: "",
+				SystemPrompt: "",
 				Nodes: []NodeDef{
 					{Key: "node1", Template: "workflows/test/node1.md"},
 				},

@@ -28,10 +28,12 @@ type SpawnOptions struct {
 	// base prompts → override (if set) → append (if set).
 	WorkflowConfig *roles.WorkflowConfig
 
+	// TODO we should eventually just refactor this out and combine with the WorkflowConfig
 	// InitialPromptOverride overrides the initial prompt sent to the process.
 	// Empty string means use the default prompt.
 	InitialPromptOverride string
 
+	// TODO we should eventually just refactor this out and combine with the WorkflowConfig
 	// SystemPromptOverride overrides the system prompt for the process.
 	// Empty string means use the default prompt.
 	SystemPromptOverride string
@@ -96,7 +98,11 @@ func (s *UnifiedProcessSpawnerImpl) SpawnProcess(ctx context.Context, id string,
 		var systemPrompt string
 		if opts.SystemPromptOverride != "" {
 			systemPrompt = opts.SystemPromptOverride
-		} else {
+		}
+		if opts.WorkflowConfig != nil && opts.WorkflowConfig.SystemPromptOverride != "" {
+			systemPrompt = opts.WorkflowConfig.SystemPromptOverride
+		}
+		if systemPrompt == "" {
 			systemPrompt, err = prompt.BuildCoordinatorSystemPrompt()
 			if err != nil {
 				return nil, fmt.Errorf("failed to build coordinator system prompt: %w", err)
@@ -107,7 +113,11 @@ func (s *UnifiedProcessSpawnerImpl) SpawnProcess(ctx context.Context, id string,
 		var initialPrompt string
 		if opts.InitialPromptOverride != "" {
 			initialPrompt = opts.InitialPromptOverride
-		} else {
+		}
+		if opts.WorkflowConfig != nil && opts.WorkflowConfig.InitialPromptOverride != "" {
+			initialPrompt = opts.WorkflowConfig.InitialPromptOverride
+		}
+		if initialPrompt == "" {
 			initialPrompt, err = prompt.BuildCoordinatorInitialPrompt()
 			if err != nil {
 				return nil, fmt.Errorf("failed to build coordinator initial prompt: %w", err)

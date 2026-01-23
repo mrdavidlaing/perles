@@ -264,44 +264,44 @@ func TestBuilder_Labels_FluentChaining(t *testing.T) {
 	require.Same(t, builder, result)
 }
 
-// Instructions Tests
+// SystemPrompt Tests
 
-func TestBuilder_Instructions_SetsField(t *testing.T) {
+func TestBuilder_SystemPrompt_SetsField(t *testing.T) {
 	chain := testChain(t, "step", "Step", "step.md")
 
 	reg, err := NewBuilder("workflow").
 		Key("key").
 		Version("v1").
 		SetChain(chain).
-		Instructions("epic_driven.md").
+		SystemPrompt("epic_driven.md").
 		Build()
 
 	require.NoError(t, err)
-	require.Equal(t, "epic_driven.md", reg.Instructions())
+	require.Equal(t, "epic_driven.md", reg.SystemPrompt())
 }
 
-func TestBuilder_Instructions_EmptyAllowed(t *testing.T) {
+func TestBuilder_SystemPrompt_EmptyAllowed(t *testing.T) {
 	chain := testChain(t, "step", "Step", "step.md")
 
-	// Empty instructions is valid at domain level (validation happens in application layer)
+	// Empty system prompt is valid at domain level (validation happens in application layer)
 	reg, err := NewBuilder("workflow").
 		Key("key").
 		Version("v1").
 		SetChain(chain).
-		Instructions("").
+		SystemPrompt("").
 		Build()
 
 	require.NoError(t, err)
-	require.Equal(t, "", reg.Instructions())
+	require.Equal(t, "", reg.SystemPrompt())
 }
 
-func TestBuilder_Instructions_FluentChaining(t *testing.T) {
+func TestBuilder_SystemPrompt_FluentChaining(t *testing.T) {
 	builder := NewBuilder("workflow")
-	result := builder.Instructions("epic_driven.md")
+	result := builder.SystemPrompt("epic_driven.md")
 	require.Same(t, builder, result)
 }
 
-func TestBuilder_Build_IncludesInstructions(t *testing.T) {
+func TestBuilder_Build_IncludesPromptFields(t *testing.T) {
 	chain := testChain(t, "step", "Step", "step.md")
 
 	reg, err := NewBuilder("workflow").
@@ -309,14 +309,14 @@ func TestBuilder_Build_IncludesInstructions(t *testing.T) {
 		Version("v1").
 		Name("Standard Planning").
 		Description("A workflow").
-		Template("v1-epic.md").
-		Instructions("epic_driven.md").
+		EpicTemplate("v1-epic.md").
+		SystemPrompt("epic_driven.md").
 		SetChain(chain).
 		Build()
 
 	require.NoError(t, err)
-	require.Equal(t, "v1-epic.md", reg.Template())
-	require.Equal(t, "epic_driven.md", reg.Instructions())
+	require.Equal(t, "v1-epic.md", reg.EpicTemplate())
+	require.Equal(t, "epic_driven.md", reg.SystemPrompt())
 }
 
 // Source Tests

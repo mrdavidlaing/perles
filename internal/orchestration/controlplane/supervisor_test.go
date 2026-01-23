@@ -667,7 +667,7 @@ func TestSupervisor_Config_AcceptsFlags(t *testing.T) {
 func newTestSpecWithWorktree(name, baseBranch, customBranch string) *WorkflowSpec {
 	return &WorkflowSpec{
 		TemplateID:         "test-template",
-		InitialGoal:        "Test goal",
+		InitialPrompt:      "Test goal",
 		Name:               name,
 		WorktreeEnabled:    true,
 		WorktreeBaseBranch: baseBranch,

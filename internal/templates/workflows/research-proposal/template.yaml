@@ -5,8 +5,8 @@ registry:
     version: "v1"
     name: "Research Proposal"
     description: "Collaborative research with parallel exploration and structured synthesis for implementation plans"
-    template: "v1-research-proposal-epic.md"
-    instructions: "v1-epic-instructions.md"
+    epic_template: "v1-research-proposal-epic.md"
+    system_prompt: "v1-epic-instructions.md"
     path: "docs/proposals"
     labels:
       - "category:research"

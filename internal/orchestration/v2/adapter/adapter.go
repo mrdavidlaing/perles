@@ -251,7 +251,7 @@ func (a *V2Adapter) HandleSpawnProcess(ctx context.Context, args json.RawMessage
 
 	// Extract ProcessID from result
 	processID := extractProcessID(result.Data)
-	return mcptypes.SuccessResult(fmt.Sprintf("Process %s spawned and ready", processID)), nil
+	return mcptypes.SuccessResult(fmt.Sprintf("Process %s spawned the process will notify you when they are ready. DO NOT assign work until they have sent you a ready signal", processID)), nil
 }
 
 // HandleRetireProcess handles the retire_process MCP tool call.

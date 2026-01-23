@@ -745,7 +745,7 @@ func TestRenderTemplate_IdentifierErrors(t *testing.T) {
 	}
 }
 
-// === GetInstructionsTemplate tests ===
+// === GetSystemPromptTemplate tests ===
 
 // createTestChain creates a minimal chain for testing registrations
 func createTestChain() *registry.Chain {
@@ -755,8 +755,8 @@ func createTestChain() *registry.Chain {
 	return chain
 }
 
-func TestGetInstructionsTemplate_ReturnsContent(t *testing.T) {
-	// Create test FS with instructions file included
+func TestGetSystemPromptTemplate_ReturnsContent(t *testing.T) {
+	// Create test FS with system prompt file included
 	testFS := fstest.MapFS{
 		"workflows/test-wf/template.yaml": &fstest.MapFile{
 			Data: []byte(`registry:
@@ -765,7 +765,7 @@ func TestGetInstructionsTemplate_ReturnsContent(t *testing.T) {
     version: "v1"
     name: "Test"
     description: "Test workflow"
-    instructions: "my-instructions.md"
+    system_prompt: "my-system-prompt.md"
     nodes:
       - key: "test"
         name: "Test Node"
@@ -773,8 +773,8 @@ func TestGetInstructionsTemplate_ReturnsContent(t *testing.T) {
         assignee: "worker-1"
 `),
 		},
-		"workflows/test-wf/my-instructions.md": &fstest.MapFile{
-			Data: []byte("# My Instructions\n\nContent here."),
+		"workflows/test-wf/my-system-prompt.md": &fstest.MapFile{
+			Data: []byte("# My System Prompt\n\nContent here."),
 		},
 		"workflows/test-wf/test.md": &fstest.MapFile{Data: []byte("# Test")},
 	}
@@ -786,29 +786,29 @@ func TestGetInstructionsTemplate_ReturnsContent(t *testing.T) {
 	reg, err := svc.GetByKey("test-ns", "test-key")
 	require.NoError(t, err)
 
-	content, err := svc.GetInstructionsTemplate(reg)
+	content, err := svc.GetSystemPromptTemplate(reg)
 	require.NoError(t, err)
 	require.NotEmpty(t, content)
-	require.Contains(t, content, "My Instructions")
+	require.Contains(t, content, "My System Prompt")
 }
 
-func TestGetInstructionsTemplate_ErrorWhenNilRegistration(t *testing.T) {
+func TestGetSystemPromptTemplate_ErrorWhenNilRegistration(t *testing.T) {
 	testFS := createTestFS()
 	svc, err := NewRegistryService(testFS, "")
 	require.NoError(t, err)
 
-	content, err := svc.GetInstructionsTemplate(nil)
+	content, err := svc.GetSystemPromptTemplate(nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "registration is nil")
 	require.Empty(t, content)
 }
 
-func TestGetInstructionsTemplate_ErrorWhenEmptyInstructions(t *testing.T) {
+func TestGetSystemPromptTemplate_ErrorWhenEmptySystemPrompt(t *testing.T) {
 	testFS := createTestFS()
 	svc, err := NewRegistryService(testFS, "")
 	require.NoError(t, err)
 
-	// Create a registration without instructions
+	// Create a registration without system prompt
 	reg, err := registry.NewBuilder("test-ns").
 		Key("test-key").
 		Version("v1").
@@ -817,31 +817,31 @@ func TestGetInstructionsTemplate_ErrorWhenEmptyInstructions(t *testing.T) {
 		Build()
 	require.NoError(t, err)
 
-	content, err := svc.GetInstructionsTemplate(reg)
+	content, err := svc.GetSystemPromptTemplate(reg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "has no instructions template specified")
+	require.Contains(t, err.Error(), "has no system_prompt template specified")
 	require.Contains(t, err.Error(), "test-key")
 	require.Empty(t, content)
 }
 
-func TestGetInstructionsTemplate_ErrorWhenNotFound(t *testing.T) {
+func TestGetSystemPromptTemplate_ErrorWhenNotFound(t *testing.T) {
 	testFS := createTestFS()
 	svc, err := NewRegistryService(testFS, "")
 	require.NoError(t, err)
 
-	// Create a registration with instructions pointing to nonexistent file
+	// Create a registration with system prompt pointing to nonexistent file
 	reg, err := registry.NewBuilder("test-ns").
 		Key("test-key").
 		Version("v1").
 		Name("Test").
-		Instructions("nonexistent.md").
+		SystemPrompt("nonexistent.md").
 		SetChain(createTestChain()).
 		Build()
 	require.NoError(t, err)
 
-	content, err := svc.GetInstructionsTemplate(reg)
+	content, err := svc.GetSystemPromptTemplate(reg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "read instructions template")
+	require.Contains(t, err.Error(), "read system_prompt template")
 	require.Contains(t, err.Error(), "nonexistent.md")
 	require.Empty(t, content)
 }
@@ -1202,7 +1202,7 @@ func TestRenderEpicTemplate_BuiltInWorkflow(t *testing.T) {
     version: "v1"
     name: "Built-in Workflow"
     description: "A built-in workflow"
-    template: "workflows/builtin/epic.md"
+    epic_template: "workflows/builtin/epic.md"
     nodes:
       - key: "step1"
         name: "Step 1"
@@ -1267,7 +1267,7 @@ func TestRenderEpicTemplate_UserWorkflow(t *testing.T) {
     version: "v1"
     name: "User Workflow"
     description: "A user-defined workflow"
-    template: "workflows/user-wf/user-epic.md"
+    epic_template: "workflows/user-wf/user-epic.md"
     nodes:
       - key: "step1"
         name: "Step 1"
@@ -1355,7 +1355,7 @@ func TestRenderEpicTemplate_NoTemplate(t *testing.T) {
 
 	_, err = svc.RenderEpicTemplate(reg, ctx)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "registration has no template")
+	require.Contains(t, err.Error(), "registration has no epic_template")
 }
 
 func TestRenderEpicTemplate_SlugRequired(t *testing.T) {
@@ -1367,7 +1367,7 @@ func TestRenderEpicTemplate_SlugRequired(t *testing.T) {
     version: "v1"
     name: "Test"
     description: "Test workflow"
-    template: "workflows/test/epic.md"
+    epic_template: "workflows/test/epic.md"
     nodes:
       - key: "step1"
         name: "Step 1"

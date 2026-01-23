@@ -40,32 +40,32 @@ func TestRegistration_EmptyFields(t *testing.T) {
 	require.Len(t, reg.DAG().Nodes(), 1)
 }
 
-func TestRegistration_Template(t *testing.T) {
+func TestRegistration_EpicTemplate(t *testing.T) {
 	chain, err := NewChain().
 		Node("plan", "Plan", "v1-plan.md").
 		Build()
 	require.NoError(t, err)
 
 	reg := newRegistration("workflow", "test", "v1", "Test", "Desc", "v1-epic-template.md", "", "", chain, nil, nil, SourceBuiltIn)
-	require.Equal(t, "v1-epic-template.md", reg.Template())
+	require.Equal(t, "v1-epic-template.md", reg.EpicTemplate())
 
-	// Empty template
-	regNoTemplate := newRegistration("workflow", "test2", "v1", "Test", "Desc", "", "", "", chain, nil, nil, SourceBuiltIn)
-	require.Equal(t, "", regNoTemplate.Template())
+	// Empty initial prompt
+	regNoPrompt := newRegistration("workflow", "test2", "v1", "Test", "Desc", "", "", "", chain, nil, nil, SourceBuiltIn)
+	require.Equal(t, "", regNoPrompt.EpicTemplate())
 }
 
-func TestRegistration_Instructions_ReturnsValue(t *testing.T) {
+func TestRegistration_SystemPrompt_ReturnsValue(t *testing.T) {
 	chain, err := NewChain().
 		Node("plan", "Plan", "v1-plan.md").
 		Build()
 	require.NoError(t, err)
 
 	reg := newRegistration("workflow", "test", "v1", "Test", "Desc", "", "epic_driven.md", "", chain, nil, nil, SourceBuiltIn)
-	require.Equal(t, "epic_driven.md", reg.Instructions())
+	require.Equal(t, "epic_driven.md", reg.SystemPrompt())
 
-	// Empty instructions is allowed at domain level
-	regNoInstructions := newRegistration("workflow", "test2", "v1", "Test", "Desc", "", "", "", chain, nil, nil, SourceBuiltIn)
-	require.Equal(t, "", regNoInstructions.Instructions())
+	// Empty system prompt is allowed at domain level
+	regNoPrompt := newRegistration("workflow", "test2", "v1", "Test", "Desc", "", "", "", chain, nil, nil, SourceBuiltIn)
+	require.Equal(t, "", regNoPrompt.SystemPrompt())
 }
 
 func TestRegistration_DAGAccess(t *testing.T) {

@@ -210,9 +210,9 @@ func TestControlPlane_Create_StoresWorkflowInPendingState(t *testing.T) {
 	cp, _, _ := newTestControlPlane(t)
 
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Build a feature",
-		Name:        "My Workflow",
+		TemplateID:    "test-template",
+		InitialPrompt: "Build a feature",
+		Name:          "My Workflow",
 	}
 
 	id, err := cp.Create(context.Background(), spec)
@@ -233,7 +233,7 @@ func TestControlPlane_Create_RejectsInvalidSpec_MissingTemplateID(t *testing.T) 
 
 	spec := WorkflowSpec{
 		// TemplateID is empty
-		InitialGoal: "Build a feature",
+		InitialPrompt: "Build a feature",
 	}
 
 	id, err := cp.Create(context.Background(), spec)
@@ -243,31 +243,31 @@ func TestControlPlane_Create_RejectsInvalidSpec_MissingTemplateID(t *testing.T) 
 	require.Contains(t, err.Error(), "template_id is required")
 }
 
-func TestControlPlane_Create_RejectsInvalidSpec_MissingInitialGoal(t *testing.T) {
+func TestControlPlane_Create_RejectsInvalidSpec_MissingInitialPrompt(t *testing.T) {
 	cp, _, _ := newTestControlPlane(t)
 
 	spec := WorkflowSpec{
 		TemplateID: "test-template",
-		// InitialGoal is empty
+		// InitialPrompt is empty
 	}
 
 	id, err := cp.Create(context.Background(), spec)
 
 	require.Error(t, err)
 	require.Empty(t, id)
-	require.Contains(t, err.Error(), "initial_goal is required")
+	require.Contains(t, err.Error(), "initial_prompt is required")
 }
 
 func TestControlPlane_Create_GeneratesUniqueIDs(t *testing.T) {
 	cp, _, _ := newTestControlPlane(t)
 
 	spec1 := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Goal 1",
+		TemplateID:    "test-template",
+		InitialPrompt: "Goal 1",
 	}
 	spec2 := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Goal 2",
+		TemplateID:    "test-template",
+		InitialPrompt: "Goal 2",
 	}
 
 	id1, err := cp.Create(context.Background(), spec1)
@@ -283,8 +283,8 @@ func TestControlPlane_Create_DefaultsNameToTemplateID(t *testing.T) {
 	cp, _, _ := newTestControlPlane(t)
 
 	spec := WorkflowSpec{
-		TemplateID:  "my-awesome-template",
-		InitialGoal: "Build a feature",
+		TemplateID:    "my-awesome-template",
+		InitialPrompt: "Build a feature",
 		// Name is empty
 	}
 
@@ -303,8 +303,8 @@ func TestControlPlane_Start_DelegatesToSupervisor(t *testing.T) {
 
 	// Create workflow first
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Build a feature",
+		TemplateID:    "test-template",
+		InitialPrompt: "Build a feature",
 	}
 	id, err := cp.Create(context.Background(), spec)
 	require.NoError(t, err)
@@ -351,8 +351,8 @@ func TestControlPlane_Stop_DelegatesToSupervisor(t *testing.T) {
 
 	// Create and start workflow first
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Build a feature",
+		TemplateID:    "test-template",
+		InitialPrompt: "Build a feature",
 	}
 	id, err := cp.Create(context.Background(), spec)
 	require.NoError(t, err)
@@ -398,9 +398,9 @@ func TestControlPlane_Get_RetrievesWorkflowFromRegistry(t *testing.T) {
 
 	// Create workflow
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Build a feature",
-		Name:        "Test Workflow",
+		TemplateID:    "test-template",
+		InitialPrompt: "Build a feature",
+		Name:          "Test Workflow",
 	}
 	id, err := cp.Create(context.Background(), spec)
 	require.NoError(t, err)
@@ -433,16 +433,16 @@ func TestControlPlane_List_FiltersWorkflowsCorrectly(t *testing.T) {
 
 	// Create workflows with different priorities
 	spec1 := WorkflowSpec{
-		TemplateID:  "template-a",
-		InitialGoal: "Goal 1",
+		TemplateID:    "template-a",
+		InitialPrompt: "Goal 1",
 	}
 	spec2 := WorkflowSpec{
-		TemplateID:  "template-b",
-		InitialGoal: "Goal 2",
+		TemplateID:    "template-b",
+		InitialPrompt: "Goal 2",
 	}
 	spec3 := WorkflowSpec{
-		TemplateID:  "template-a",
-		InitialGoal: "Goal 3",
+		TemplateID:    "template-a",
+		InitialPrompt: "Goal 3",
 	}
 
 	_, err := cp.Create(ctx, spec1)
@@ -493,9 +493,9 @@ func TestControlPlane_FullLifecycle_CreateStartStop(t *testing.T) {
 
 	// Step 1: Create workflow
 	spec := WorkflowSpec{
-		TemplateID:  "integration-template",
-		InitialGoal: "Complete integration test",
-		Name:        "Integration Test Workflow",
+		TemplateID:    "integration-template",
+		InitialPrompt: "Complete integration test",
+		Name:          "Integration Test Workflow",
 	}
 	id, err := cp.Create(ctx, spec)
 	require.NoError(t, err)
@@ -559,8 +559,8 @@ func TestControlPlane_Create_WithLabels(t *testing.T) {
 	cp, _, _ := newTestControlPlane(t)
 
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Build a feature",
+		TemplateID:    "test-template",
+		InitialPrompt: "Build a feature",
 		Labels: map[string]string{
 			"team": "platform",
 			"env":  "staging",
@@ -581,8 +581,8 @@ func TestControlPlane_Start_PropagatesInfrastructureError(t *testing.T) {
 
 	// Create workflow
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Build a feature",
+		TemplateID:    "test-template",
+		InitialPrompt: "Build a feature",
 	}
 	id, err := cp.Create(context.Background(), spec)
 	require.NoError(t, err)
@@ -1009,8 +1009,8 @@ func TestControlPlane_Shutdown_StopsAllRunningWorkflows(t *testing.T) {
 	var ids []WorkflowID
 	for i := 0; i < 3; i++ {
 		spec := WorkflowSpec{
-			TemplateID:  "test-template",
-			InitialGoal: "Goal",
+			TemplateID:    "test-template",
+			InitialPrompt: "Goal",
 		}
 		id, err := cp.Create(ctx, spec)
 		require.NoError(t, err)
@@ -1071,8 +1071,8 @@ func TestControlPlane_Shutdown_WithPendingWorkflows(t *testing.T) {
 
 	// Create but don't start a workflow
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Goal",
+		TemplateID:    "test-template",
+		InitialPrompt: "Goal",
 	}
 	id, err := cp.Create(ctx, spec)
 	require.NoError(t, err)
@@ -1098,8 +1098,8 @@ func TestControlPlane_Shutdown_RespectsGracePeriod(t *testing.T) {
 
 	// Create and start a workflow
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Goal",
+		TemplateID:    "test-template",
+		InitialPrompt: "Goal",
 	}
 	id, err := cp.Create(ctx, spec)
 	require.NoError(t, err)
@@ -1134,8 +1134,8 @@ func TestControlPlane_Shutdown_ForceStopsOnContextCancel(t *testing.T) {
 
 	// Create and start a workflow
 	spec := WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Goal",
+		TemplateID:    "test-template",
+		InitialPrompt: "Goal",
 	}
 	id, err := cp.Create(ctx, spec)
 	require.NoError(t, err)
@@ -1214,8 +1214,8 @@ func TestControlPlane_Shutdown_PartialFailureCleanup(t *testing.T) {
 	var ids []WorkflowID
 	for i := 0; i < 3; i++ {
 		spec := WorkflowSpec{
-			TemplateID:  "test-template",
-			InitialGoal: "Goal",
+			TemplateID:    "test-template",
+			InitialPrompt: "Goal",
 		}
 		id, err := cp.Create(ctx, spec)
 		require.NoError(t, err)

@@ -17,8 +17,8 @@ type Builder struct {
 	version      string
 	name         string
 	description  string
-	template     string
-	instructions string
+	epicTemplate string
+	systemPrompt string
 	artifactPath string
 	dag          *Chain
 	labels       []string
@@ -57,15 +57,15 @@ func (b *Builder) Description(d string) *Builder {
 	return b
 }
 
-// Template sets the template filename for the epic description
-func (b *Builder) Template(t string) *Builder {
-	b.template = t
+// EpicTemplate sets the template filename for epic content
+func (b *Builder) EpicTemplate(t string) *Builder {
+	b.epicTemplate = t
 	return b
 }
 
-// Instructions sets the template filename for coordinator instructions
-func (b *Builder) Instructions(i string) *Builder {
-	b.instructions = i
+// SystemPrompt sets the template filename for system prompt content
+func (b *Builder) SystemPrompt(s string) *Builder {
+	b.systemPrompt = s
 	return b
 }
 
@@ -115,5 +115,5 @@ func (b *Builder) Build() (*Registration, error) {
 		return nil, ErrEmptyChain
 	}
 
-	return newRegistration(b.namespace, b.key, b.version, b.name, b.description, b.template, b.instructions, b.artifactPath, b.dag, b.labels, b.arguments, b.source), nil
+	return newRegistration(b.namespace, b.key, b.version, b.name, b.description, b.epicTemplate, b.systemPrompt, b.artifactPath, b.dag, b.labels, b.arguments, b.source), nil
 }

@@ -141,9 +141,9 @@ type WorkflowSpec struct {
 	// This is required and must reference a valid template.
 	TemplateID string
 
-	// InitialGoal is the initial prompt or goal for the coordinator.
+	// InitialPrompt is the initial prompt for the coordinator.
 	// This is required and provides the starting context for the workflow.
-	InitialGoal string
+	InitialPrompt string
 
 	// Name is the display name for the workflow.
 	// If empty, defaults to the template name.
@@ -180,8 +180,8 @@ func (s *WorkflowSpec) Validate() error {
 	if s.TemplateID == "" {
 		return fmt.Errorf("template_id is required")
 	}
-	if s.InitialGoal == "" {
-		return fmt.Errorf("initial_goal is required")
+	if s.InitialPrompt == "" {
+		return fmt.Errorf("initial_prompt is required")
 	}
 	return nil
 }
@@ -196,9 +196,9 @@ type WorkflowInstance struct {
 	Name       string
 
 	// Configuration
-	WorkDir     string // Working directory for the workflow
-	InitialGoal string // Initial prompt/goal for the coordinator
-	EpicID      string // Beads epic ID associated with this workflow (optional)
+	WorkDir       string // Working directory for the workflow
+	InitialPrompt string // Initial prompt for the coordinator
+	EpicID        string // Beads epic ID associated with this workflow (optional)
 
 	// Worktree configuration (from WorkflowSpec)
 	WorktreeEnabled    bool   // Whether worktree was requested
@@ -257,12 +257,12 @@ func NewWorkflowInstance(spec *WorkflowSpec) (*WorkflowInstance, error) {
 	maps.Copy(labels, spec.Labels)
 
 	inst := &WorkflowInstance{
-		ID:          NewWorkflowID(),
-		TemplateID:  spec.TemplateID,
-		Name:        name,
-		WorkDir:     spec.WorkDir,
-		InitialGoal: spec.InitialGoal,
-		EpicID:      spec.EpicID,
+		ID:            NewWorkflowID(),
+		TemplateID:    spec.TemplateID,
+		Name:          name,
+		WorkDir:       spec.WorkDir,
+		InitialPrompt: spec.InitialPrompt,
+		EpicID:        spec.EpicID,
 		// Worktree configuration from spec
 		WorktreeEnabled:    spec.WorktreeEnabled,
 		WorktreeBaseBranch: spec.WorktreeBaseBranch,

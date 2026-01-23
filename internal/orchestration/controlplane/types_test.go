@@ -196,9 +196,9 @@ func TestWorkflowState_ValidTargets(t *testing.T) {
 
 func TestWorkflowSpec_Validate_ValidSpec(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Implement feature X",
-		Name:        "Feature X",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
+		Name:          "Feature X",
 	}
 
 	err := spec.Validate()
@@ -214,16 +214,16 @@ func TestWorkflowSpec_Validate_RequiredFields(t *testing.T) {
 		{
 			name: "missing template_id",
 			spec: &WorkflowSpec{
-				InitialGoal: "Do something",
+				InitialPrompt: "Do something",
 			},
 			errSubstr: "template_id is required",
 		},
 		{
-			name: "missing initial_goal",
+			name: "missing initial_prompt",
 			spec: &WorkflowSpec{
 				TemplateID: "cook.md",
 			},
-			errSubstr: "initial_goal is required",
+			errSubstr: "initial_prompt is required",
 		},
 	}
 
@@ -240,10 +240,10 @@ func TestWorkflowSpec_Validate_RequiredFields(t *testing.T) {
 
 func TestNewWorkflowInstance_CreatesInstance(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Implement feature X",
-		Name:        "Feature X",
-		Labels:      map[string]string{"team": "platform"},
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
+		Name:          "Feature X",
+		Labels:        map[string]string{"team": "platform"},
 	}
 
 	inst, err := NewWorkflowInstance(spec)
@@ -261,8 +261,8 @@ func TestNewWorkflowInstance_CreatesInstance(t *testing.T) {
 
 func TestNewWorkflowInstance_DefaultsNameToTemplateID(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 		// Name intentionally left empty
 	}
 
@@ -275,9 +275,9 @@ func TestNewWorkflowInstance_DefaultsNameToTemplateID(t *testing.T) {
 func TestNewWorkflowInstance_CopiesLabels(t *testing.T) {
 	labels := map[string]string{"team": "platform"}
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
-		Labels:      labels,
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
+		Labels:        labels,
 	}
 
 	inst, err := NewWorkflowInstance(spec)
@@ -306,8 +306,8 @@ func TestNewWorkflowInstance_ReturnsErrorForInvalidSpec(t *testing.T) {
 
 func TestWorkflowInstance_TransitionTo_ValidTransitions(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -336,8 +336,8 @@ func TestWorkflowInstance_TransitionTo_ValidTransitions(t *testing.T) {
 
 func TestWorkflowInstance_TransitionTo_InvalidTransitions(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -351,8 +351,8 @@ func TestWorkflowInstance_TransitionTo_InvalidTransitions(t *testing.T) {
 
 func TestWorkflowInstance_TransitionTo_FromTerminalState(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -369,8 +369,8 @@ func TestWorkflowInstance_TransitionTo_FromTerminalState(t *testing.T) {
 
 func TestWorkflowInstance_IsTerminal(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -386,8 +386,8 @@ func TestWorkflowInstance_IsTerminal(t *testing.T) {
 
 func TestWorkflowInstance_IsActive(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -403,8 +403,8 @@ func TestWorkflowInstance_IsActive(t *testing.T) {
 
 func TestWorkflowInstance_IsRunning(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -418,8 +418,8 @@ func TestWorkflowInstance_IsRunning(t *testing.T) {
 
 func TestWorkflowInstance_IsPaused(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -433,8 +433,8 @@ func TestWorkflowInstance_IsPaused(t *testing.T) {
 
 func TestWorkflowInstance_RecordHeartbeat(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -450,8 +450,8 @@ func TestWorkflowInstance_RecordHeartbeat(t *testing.T) {
 
 func TestWorkflowInstance_RecordProgress(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -468,8 +468,8 @@ func TestWorkflowInstance_RecordProgress(t *testing.T) {
 
 func TestWorkflowInstance_TokenTracking(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -483,8 +483,8 @@ func TestWorkflowInstance_TokenTracking(t *testing.T) {
 
 func TestWorkflowInstance_TokenMetrics(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Do something",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Do something",
 	}
 	inst, err := NewWorkflowInstance(spec)
 	require.NoError(t, err)
@@ -501,7 +501,7 @@ func TestWorkflowInstance_TokenMetrics(t *testing.T) {
 func TestWorkflowSpec_WorktreeFields(t *testing.T) {
 	spec := &WorkflowSpec{
 		TemplateID:         "cook.md",
-		InitialGoal:        "Implement feature X",
+		InitialPrompt:      "Implement feature X",
 		Name:               "Feature X",
 		WorktreeEnabled:    true,
 		WorktreeBaseBranch: "main",
@@ -520,8 +520,8 @@ func TestWorkflowSpec_WorktreeFields(t *testing.T) {
 
 func TestWorkflowSpec_WorktreeFieldsDefaultValues(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Implement feature X",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
 	}
 
 	// Verify default values (all false/empty)
@@ -539,7 +539,7 @@ func TestWorkflowSpec_WorktreeFieldsDefaultValues(t *testing.T) {
 func TestNewWorkflowInstance_PreservesWorktreeFields(t *testing.T) {
 	spec := &WorkflowSpec{
 		TemplateID:         "cook.md",
-		InitialGoal:        "Implement feature X",
+		InitialPrompt:      "Implement feature X",
 		WorktreeEnabled:    true,
 		WorktreeBaseBranch: "develop",
 		WorktreeBranchName: "feature/custom-branch",
@@ -563,7 +563,7 @@ func TestNewWorkflowInstance_PreservesWorktreeFields(t *testing.T) {
 func TestNewWorkflowInstance_PreservesWorktreeDisabled(t *testing.T) {
 	spec := &WorkflowSpec{
 		TemplateID:      "cook.md",
-		InitialGoal:     "Implement feature X",
+		InitialPrompt:   "Implement feature X",
 		WorktreeEnabled: false,
 	}
 
@@ -584,10 +584,10 @@ func TestNewWorkflowInstance_PreservesWorktreeDisabled(t *testing.T) {
 
 func TestWorkflowSpec_EpicIDField(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Implement feature X",
-		Name:        "Feature X",
-		EpicID:      "epic-123",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
+		Name:          "Feature X",
+		EpicID:        "epic-123",
 	}
 
 	// Verify field is stored correctly
@@ -600,8 +600,8 @@ func TestWorkflowSpec_EpicIDField(t *testing.T) {
 
 func TestWorkflowSpec_EpicIDEmptyIsValid(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Implement feature X",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
 		// EpicID intentionally left empty for backwards compatibility
 	}
 
@@ -617,9 +617,9 @@ func TestWorkflowSpec_EpicIDEmptyIsValid(t *testing.T) {
 
 func TestNewWorkflowInstance_PreservesEpicID(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Implement feature X",
-		EpicID:      "perles-123",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
+		EpicID:        "perles-123",
 	}
 
 	inst, err := NewWorkflowInstance(spec)
@@ -633,8 +633,8 @@ func TestNewWorkflowInstance_PreservesEpicID(t *testing.T) {
 
 func TestNewWorkflowInstance_EmptyEpicIDIsValid(t *testing.T) {
 	spec := &WorkflowSpec{
-		TemplateID:  "cook.md",
-		InitialGoal: "Implement feature X",
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
 		// EpicID intentionally left empty for backwards compatibility
 	}
 

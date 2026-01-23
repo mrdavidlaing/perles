@@ -143,6 +143,10 @@ func NewCoordinatorPanel() *CoordinatorPanel {
 func (p *CoordinatorPanel) SetSize(width, height int) {
 	p.width = width
 	p.height = height
+	// Update input size for proper soft-wrap calculation and scrolling
+	// Width: panel width - 4 (2 for borders, 2 for padding)
+	// Height: 4 lines (allows input to grow/scroll properly)
+	p.input.SetSize(max(width-4, 1), 4)
 }
 
 // SetWorkflow updates the panel to show data for the given workflow.
@@ -316,8 +320,8 @@ func (p *CoordinatorPanel) View() string {
 		return ""
 	}
 
-	// Calculate input height (5 lines: 2 content lines + 2 borders + 1 padding)
-	inputHeight := 5
+	// Calculate input height (6 lines: 3 content lines + 2 borders + 1 padding)
+	inputHeight := 6
 	contentHeight := p.height - inputHeight
 
 	// Build tabs
@@ -619,9 +623,13 @@ func (p *CoordinatorPanel) renderInputPane(width, height int) string {
 	// Get input view
 	inputView := p.input.View()
 
-	// Build content with padding
-	innerWidth := width - 4 // borders + padding
-	content := lipgloss.NewStyle().Width(innerWidth).Padding(0, 1).Render(inputView)
+	// Build content with explicit space padding (matches chatpanel pattern)
+	inputWidth := width - 2 - 2 // borders and padding
+	content := lipgloss.JoinHorizontal(lipgloss.Left,
+		" ",
+		lipgloss.NewStyle().Width(inputWidth).Render(inputView),
+		" ",
+	)
 
 	// Use default border color for input pane (no highlighting)
 	return panes.BorderedPane(panes.BorderConfig{
@@ -632,6 +640,8 @@ func (p *CoordinatorPanel) renderInputPane(width, height int) string {
 		Focused:            false, // Don't show focused border styling
 		TitleColor:         styles.BorderDefaultColor,
 		FocusedBorderColor: styles.BorderDefaultColor,
+		// PreWrapped true because vimtextarea handles its own soft-wrapping
+		PreWrapped: true,
 	})
 }
 
@@ -671,8 +681,8 @@ func renderChatContent(messages []chatrender.Message, wrapWidth int, cfg chatren
 	}
 
 	if len(filtered) == 0 {
-		emptyStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)
-		return emptyStyle.Render("No messages yet. The coordinator will appear here once the workflow is running.")
+		emptyStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor).PaddingLeft(1).PaddingBottom(1)
+		return emptyStyle.Render("Waiting for the coordinator to initialize.")
 	}
 
 	return chatrender.RenderContent(filtered, wrapWidth, cfg)

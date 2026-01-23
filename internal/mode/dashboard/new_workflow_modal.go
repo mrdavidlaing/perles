@@ -391,34 +391,28 @@ func (m *NewWorkflowModal) createWorkflowAsync(values map[string]any) tea.Cmd {
 		var epicID string
 		var initialPrompt string
 
-		// If WorkflowCreator is available, create epic + tasks in beads first
-		if m.workflowCreator != nil {
-			// Use name as feature slug, or derive from templateID if empty
-			feature := name
-			if feature == "" {
-				feature = templateID
-			}
-
-			result, err := m.workflowCreator.CreateWithArgs(feature, templateID, args)
-			if err != nil {
-				return ErrorMsg{Err: fmt.Errorf("create epic: %w", err)}
-			}
-
-			epicID = result.Epic.ID
-
-			// Build coordinator prompt: instructions template + epic ID section + args
-			initialPrompt = m.buildCoordinatorPrompt(templateID, epicID, args)
-		} else {
-			// No WorkflowCreator, use goal from args if present, otherwise empty
-			initialPrompt = args["goal"]
+		// Use name as feature slug, or derive from templateID if empty
+		feature := name
+		if feature == "" {
+			feature = templateID
 		}
+
+		result, err := m.workflowCreator.CreateWithArgs(feature, templateID, args)
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("create epic: %w", err)}
+		}
+
+		epicID = result.Epic.ID
+
+		// Build coordinator prompt: instructions template + epic ID section
+		initialPrompt = m.buildCoordinatorPrompt(templateID, epicID)
 
 		// Build WorkflowSpec
 		spec := controlplane.WorkflowSpec{
-			TemplateID:  templateID,
-			InitialGoal: initialPrompt,
-			Name:        name,
-			EpicID:      epicID,
+			TemplateID:    templateID,
+			InitialPrompt: initialPrompt,
+			Name:          name,
+			EpicID:        epicID,
 		}
 
 		// Set worktree fields if worktree options are available
@@ -487,25 +481,25 @@ func (m *NewWorkflowModal) extractArgumentValues(templateKey string, values map[
 }
 
 // buildCoordinatorPrompt assembles the coordinator prompt from:
-// 1. Instructions template content (from registration's instructions field)
+// 1. System prompt template content (from registration's system_prompt field)
 // 2. Epic ID section (so coordinator can read detailed instructions via bd show)
-func (m *NewWorkflowModal) buildCoordinatorPrompt(templateID, epicID string, _ map[string]string) string {
-	// Load instructions template if registry service is available
-	var instructionsContent string
+func (m *NewWorkflowModal) buildCoordinatorPrompt(templateID, epicID string) string {
+	// Load system prompt template if registry service is available
+	var systemPromptContent string
 	if m.registryService != nil {
 		// Get the registration for this template
 		reg, err := m.registryService.GetByKey("workflow", templateID)
 		if err == nil {
-			content, err := m.registryService.GetInstructionsTemplate(reg)
+			content, err := m.registryService.GetSystemPromptTemplate(reg)
 			if err == nil {
-				instructionsContent = content
+				systemPromptContent = content
 			}
 		}
 		// If error loading template, continue without it
 	}
 
 	// Build the full prompt
-	if instructionsContent != "" {
+	if systemPromptContent != "" {
 		return fmt.Sprintf(`%s
 
 ---
@@ -514,7 +508,7 @@ func (m *NewWorkflowModal) buildCoordinatorPrompt(templateID, epicID string, _ m
 
 Epic ID: %s
 
-Use `+"`bd show %s --json`"+` to read your detailed workflow instructions.`, instructionsContent, epicID, epicID)
+Use `+"`bd show %s --json`"+` to read your detailed workflow instructions.`, systemPromptContent, epicID, epicID)
 	}
 
 	// Fallback if no instructions template available

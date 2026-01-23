@@ -75,8 +75,8 @@ func (s *mockCommandSubmitter) GetCommands() []command.Command {
 // createTestWorkflow creates a test workflow instance.
 func createTestWorkflow(id WorkflowID, state WorkflowState) *WorkflowInstance {
 	spec := &WorkflowSpec{
-		TemplateID:  "test",
-		InitialGoal: "test goal",
+		TemplateID:    "test",
+		InitialPrompt: "test goal",
 	}
 	inst, _ := NewWorkflowInstance(spec)
 	inst.ID = id

@@ -229,9 +229,9 @@ func (s *RegistryService) RenderEpicTemplate(reg *registry.Registration, ctx Tem
 		return "", fmt.Errorf("registration is nil")
 	}
 
-	templateFile := reg.Template()
+	templateFile := reg.EpicTemplate()
 	if templateFile == "" {
-		return "", fmt.Errorf("registration has no template")
+		return "", fmt.Errorf("registration has no epic_template")
 	}
 
 	// Use the correct filesystem for this registration (built-in vs user)
@@ -301,21 +301,21 @@ func renderArtifactFilename(filename string, ctx TemplateContext) string {
 	return buf.String()
 }
 
-// GetInstructionsTemplate returns coordinator instructions for a registration.
-// The registration must have a non-empty Instructions() field.
-func (s *RegistryService) GetInstructionsTemplate(reg *registry.Registration) (string, error) {
+// GetSystemPromptTemplate returns system prompt content for a registration.
+// The registration must have a non-empty SystemPrompt() field.
+func (s *RegistryService) GetSystemPromptTemplate(reg *registry.Registration) (string, error) {
 	if reg == nil {
 		return "", fmt.Errorf("registration is nil")
 	}
-	if reg.Instructions() == "" {
-		return "", fmt.Errorf("registration %s has no instructions template specified", reg.Key())
+	if reg.SystemPrompt() == "" {
+		return "", fmt.Errorf("registration %s has no system_prompt template specified", reg.Key())
 	}
 
 	// Read from the correct FS for this registration
 	regFS := s.getRegistrationFS(reg)
-	content, err := fs.ReadFile(regFS, reg.Instructions())
+	content, err := fs.ReadFile(regFS, reg.SystemPrompt())
 	if err != nil {
-		return "", fmt.Errorf("read instructions template %q: %w", reg.Instructions(), err)
+		return "", fmt.Errorf("read system_prompt template %q: %w", reg.SystemPrompt(), err)
 	}
 
 	return string(content), nil

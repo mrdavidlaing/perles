@@ -1087,11 +1087,3 @@ func (m *Model) isWorkflowRunning(id controlplane.WorkflowID) bool {
 	}
 	return false
 }
-
-// truncate truncates a string to maxLen characters, adding "..." if truncated.
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}

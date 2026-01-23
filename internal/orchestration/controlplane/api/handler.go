@@ -102,16 +102,16 @@ type CreateWorkflowResponse struct {
 
 // WorkflowResponse is the response body for a single workflow.
 type WorkflowResponse struct {
-	ID          string            `json:"id"`
-	TemplateID  string            `json:"template_id"`
-	Name        string            `json:"name"`
-	State       string            `json:"state"`
-	InitialGoal string            `json:"initial_goal"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	StartedAt   *time.Time        `json:"started_at,omitempty"`
-	EndedAt     *time.Time        `json:"ended_at,omitempty"`
-	Port        int               `json:"port,omitempty"`
+	ID            string            `json:"id"`
+	TemplateID    string            `json:"template_id"`
+	Name          string            `json:"name"`
+	State         string            `json:"state"`
+	InitialPrompt string            `json:"initial_prompt"`
+	Labels        map[string]string `json:"labels,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
+	StartedAt     *time.Time        `json:"started_at,omitempty"`
+	EndedAt       *time.Time        `json:"ended_at,omitempty"`
+	Port          int               `json:"port,omitempty"`
 	// Worktree fields
 	WorktreeEnabled bool   `json:"worktree_enabled,omitempty"`
 	WorktreePath    string `json:"worktree_path,omitempty"`
@@ -219,7 +219,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	spec := controlplane.WorkflowSpec{
 		TemplateID:         req.TemplateID,
 		Name:               req.Name,
-		InitialGoal:        initialPrompt,
+		InitialPrompt:      initialPrompt,
 		Labels:             req.Labels,
 		WorktreeEnabled:    req.WorktreeEnabled,
 		WorktreeBaseBranch: req.WorktreeBaseBranch,
@@ -307,15 +307,15 @@ func (h *Handler) validateTemplateArgs(templateID string, args map[string]string
 // 1. Instructions template content (from registration's instructions field)
 // 2. Epic ID section (so coordinator can read detailed instructions via bd show)
 func (h *Handler) buildCoordinatorPrompt(templateID, epicID string, _ map[string]string) string {
-	// Load instructions template if registry service is available
-	var instructionsContent string
+	// Load system prompt template if registry service is available
+	var systemPromptContent string
 	if h.registryService != nil {
 		// Get the registration for this template
 		reg, err := h.registryService.GetByKey("workflow", templateID)
 		if err == nil {
-			content, err := h.registryService.GetInstructionsTemplate(reg)
+			content, err := h.registryService.GetSystemPromptTemplate(reg)
 			if err == nil {
-				instructionsContent = content
+				systemPromptContent = content
 			}
 		}
 		// If error loading template, continue without it
@@ -324,8 +324,8 @@ func (h *Handler) buildCoordinatorPrompt(templateID, epicID string, _ map[string
 	// Build the full prompt
 	var parts []string
 
-	if instructionsContent != "" {
-		parts = append(parts, instructionsContent)
+	if systemPromptContent != "" {
+		parts = append(parts, systemPromptContent)
 	}
 
 	if epicID != "" {
@@ -578,7 +578,7 @@ func (h *Handler) workflowToResponse(wf *controlplane.WorkflowInstance) Workflow
 		TemplateID:      wf.TemplateID,
 		Name:            wf.Name,
 		State:           string(wf.State),
-		InitialGoal:     wf.InitialGoal,
+		InitialPrompt:   wf.InitialPrompt,
 		Labels:          wf.Labels,
 		CreatedAt:       wf.CreatedAt,
 		Port:            wf.MCPPort,

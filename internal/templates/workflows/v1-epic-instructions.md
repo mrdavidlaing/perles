@@ -30,9 +30,9 @@ The epic will define specific roles and responsibilities for each worker.
 | `spawn_worker(role, instructions)` | Create a new worker | When you need additional workers beyond initial pool |
 | `send_to_worker(worker_id, message)` | Send message to worker | For non-bd work, clarifications, or additional context |
 | `retire_worker(worker_id, reason)` | Retire a worker | When worker is no longer needed or context is stale |
-| `query_worker_state(worker_id, task_id)` | Check worker/task state | Before assignments to verify availability |
+| `query_worker_state(worker_id, task_id)` | Check worker/task state | To verify worker availability after receiving ready signals |
 
-**Important**: Always check `query_worker_state()` before assigning tasks to ensure the worker is ready.
+**Important**: After spawning workers, you must **wait for ready signals** before assigning tasks. See "Waiting for Workers to Be Ready" below.
 
 ### Human Communication
 
@@ -49,9 +49,16 @@ assign_task(worker_id="worker-1", task_id="proj-abc.1", summary="Implement featu
 # 2. Worker completes work and signals done (you'll see this in message log)
 # Worker calls: report_implementation_complete(summary="Added feature X with tests")
 
-# 3. YOU must mark the task complete - this doesn't happen automatically
+# 3. IMMEDIATELY mark the task complete - don't wait or batch!
 mark_task_complete(task_id="proj-abc.1")
 ```
+
+**IMPORTANT**: Call `mark_task_complete` as soon as a worker signals completion. Do NOT:
+- Wait until multiple workers finish to batch completions
+- Defer marking until the end of a phase
+- Forget to mark and only close tasks at workflow end
+
+This keeps the task tracker accurate and prevents confusion about what's actually done.
 
 ## Getting Started
 
@@ -60,25 +67,110 @@ mark_task_complete(task_id="proj-abc.1")
 1. **Read the epic description** - It contains your complete workflow instructions
 2. **Identify the phases** - Understand what needs to happen and in what order
 3. **Note worker assignments** - Each task specifies which worker should execute it
-4. **Begin execution immediately** - Start with Phase 0/1 as defined in the epic
+4. **Wait for workers to be ready** - Workers must signal readiness before you can assign tasks (see below)
+5. **Begin execution** - Start with Phase 0/1 as defined in the epic
+
+## Waiting for Workers to Be Ready
+
+**CRITICAL**: You MUST wait for workers to signal they are ready before assigning tasks.
+
+When you spawn workers, they need time to initialize. The system will notify you when workers are ready with messages like:
+
+```
+[worker-1] have started up and are now ready
+```
+
+Or you will see messages in the message log like:
+
+```
+"Worker worker-1 is ready for task assignment"
+```
+
+**Do NOT attempt to assign tasks until you receive ready notifications.** The `assign_task` tool will fail with "process not ready" if you try to assign before the worker is ready.
+
+### Correct Flow
+
+1. **Read the epic** - Understand what needs to be done
+2. **Spawn workers** - Use `spawn_worker()` to create the workers you need
+3. **STOP AND WAIT** - End your turn immediately after spawning. Do NOT call `query_worker_state()` or `assign_task()` yet. Workers will signal when they are ready.
+4. **Receive ready signals** - The system will notify you (e.g., `[worker-1, worker-2] have started up and are now ready`)
+5. **Verify with read_message_log()** - Optionally confirm which workers are ready
+6. **Assign tasks** - Now you can use `assign_task()` for ready workers
+
+### Example
+
+```
+# === TURN 1: Read epic and spawn workers ===
+
+# 1. Read epic (done) - identified need for 2 implementers and 1 reviewer
+
+# 2. Spawn the workers you need
+spawn_worker(agent_type="implementer")  # Creates worker-1
+spawn_worker(agent_type="implementer")  # Creates worker-2
+spawn_worker(agent_type="reviewer")     # Creates worker-3
+
+# 3. STOP HERE - end your turn and wait for ready signals
+# Do NOT call query_worker_state() or assign_task() yet!
+
+# === TURN 2: After receiving ready notification ===
+
+# 4. System notifies you: "[worker-1, worker-2, worker-3] have started up and are now ready"
+
+# 5. Verify with read_message_log()
+read_message_log()
+# Output
+# worker-1 is ready for task assignment
+# worker-2 is ready for task assignment
+# worker-3 is ready for task assignment
+
+# 6. Understand what tasks are ready
+bd ready --parent <epic-id> --json
+
+# 7. Now you can assign tasks
+assign_task(worker_id="worker-1", task_id="proj-abc.1", summary="...")
+assign_task(worker_id="worker-2", task_id="proj-abc.2", summary="...")
+```
+
+**Common mistakes**:
+- Calling `query_worker_state()` immediately after spawning instead of waiting for ready signals
+- Trying to assign tasks in the same turn as spawning workers
+- Using `send_to_worker` as a workaround when `assign_task` fails due to workers not being ready
 
 ## Key Principles
 
 - **Start immediately** - The user provided their goal; don't ask for confirmation to begin
 - **Follow epic instructions** - The epic is your source of truth
+- **Mark tasks complete IMMEDIATELY** - When a worker signals completion, call `mark_task_complete` right away. Do not batch completions or wait until the end of a phase.
 - **Sequential file writes** - Never assign multiple workers to write the same file simultaneously
 - **Wait for completion** - Don't proceed to next phase until current phase completes
 - **Use read before write** - Workers must read files before editing them
 - **Track progress** - Use task status tools to monitor workflow state
 
+## Determining Task Readiness
+
+**IMPORTANT**: Use `bd ready` to check which tasks are ready for assignment:
+
+```bash
+bd ready --parent <epic-id> --json
+```
+
+This shows tasks within the epic that are:
+- Not blocked by incomplete dependencies
+- Status is `open` or `in_progress`
+
+**Follow task ordering**: Tasks are numbered sequentially (e.g., `.1`, `.2`, `.3`). This numbering often reflects the intended execution order. If task `.3` is a human review gate, you must complete it before proceeding to task `.4`, even if `.4` appears ready.
+
+**Check before assigning**: Always run `bd ready --parent <epic-id>` to see what's actually unblocked before making assignments.
+
 ## Human-Assigned Tasks
 
-When a task has `assignee: human` or is assigned to the human role:
+When a task has `assignee: human` or is assigned to the human role, it is a **workflow gate** that requires human approval before proceeding.
 
-1. **Read the task instructions carefully** - The task description contains specific instructions for how to notify and interact with the human
-2. **Use `notify_user`** - Follow the notification instructions in the task to alert the user
-3. **Wait for response** - Pause workflow execution until the human responds
-4. **Do not proceed without human input** - Human tasks are explicit checkpoints requiring user action
+1. **Check task readiness** - Use `bd ready --parent <epic-id>` to confirm the human task is ready (dependencies satisfied)
+2. **Read the task instructions carefully** - The task description contains specific instructions for how to notify and interact with the human
+3. **Use `notify_user`** - Follow the notification instructions in the task to alert the user
+4. **Wait for response** - Pause workflow execution until the human responds
+5. **Do not proceed without human input** - Human tasks are explicit checkpoints; do NOT skip ahead to later tasks
 
 ## If the Epic is Missing Instructions
 
@@ -92,17 +184,26 @@ If the epic doesn't provide clear instructions for a phase or task:
 
 **CRITICAL**: When all phases are complete, you MUST:
 
-1. **Close all remaining open tasks** in the epic (including any that were skipped):
+1. **Check current task status** - First, see what's still open:
+   ```bash
+   bd show <epic-id> --json
+   ```
+   Review the `dependents` array to see which tasks are already `closed` vs still `open`.
+
+2. **Close only remaining open tasks** - Only call `mark_task_complete` for tasks that are still open:
    ```
    mark_task_complete(task_id="epic-id.N")
    ```
+   Skip tasks that are already closed - calling mark_task_complete on them is unnecessary.
 
-2. **Close the epic itself**:
+   **Summarize to the user** which tasks you closed (e.g., "Closing tasks: .2, .4 (already closed: .1, .3)").
+
+3. **Close the epic itself** (if still open):
    ```
    mark_task_complete(task_id="epic-id")
    ```
 
-3. **Signal workflow completion**:
+4. **Signal workflow completion**:
    ```
    signal_workflow_complete(
        status="success",

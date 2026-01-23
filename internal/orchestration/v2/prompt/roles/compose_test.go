@@ -203,26 +203,61 @@ func TestComposeInitialPrompt_BaseOnly(t *testing.T) {
 		"Result should contain workerID")
 }
 
-// TestComposeInitialPrompt_AppendMode verifies config is accepted but not applied.
+// TestComposeInitialPrompt_AppendMode verifies append is added to base prompt.
 func TestComposeInitialPrompt_AppendMode(t *testing.T) {
 	workerID := "worker-initial-append"
-	appendText := "This should not appear in initial prompt."
+	appendText := "Additional initial instructions for this workflow."
 
 	config := &WorkflowConfig{
-		SystemPromptAppend: appendText,
+		InitialPromptAppend: appendText,
 	}
 
 	// Get expected base prompt
 	rolePrompts := GetPrompts(AgentTypeReviewer)
 	expectedBase := rolePrompts.InitialPrompt(workerID)
 
-	// Compose - config is accepted but initial prompts don't support customization yet
 	result := ComposeInitialPrompt(workerID, AgentTypeReviewer, config)
 
-	require.Equal(t, expectedBase, result,
-		"Initial prompt should return base (customization not supported)")
+	require.Contains(t, result, expectedBase,
+		"Result should contain base initial prompt")
+	require.Contains(t, result, appendText,
+		"Result should contain appended text")
+	require.True(t, strings.HasPrefix(result, expectedBase),
+		"Base prompt should come first")
+}
+
+// TestComposeInitialPrompt_OverrideMode verifies override replaces base prompt.
+func TestComposeInitialPrompt_OverrideMode(t *testing.T) {
+	workerID := "worker-initial-override"
+	overrideText := "Completely custom initial prompt for this workflow."
+
+	config := &WorkflowConfig{
+		InitialPromptOverride: overrideText,
+	}
+
+	result := ComposeInitialPrompt(workerID, AgentTypeGeneric, config)
+
+	require.Equal(t, overrideText, result,
+		"Override should completely replace base prompt")
+}
+
+// TestComposeInitialPrompt_OverrideTakesPrecedence verifies override wins over append.
+func TestComposeInitialPrompt_OverrideTakesPrecedence(t *testing.T) {
+	workerID := "worker-initial-precedence"
+	overrideText := "Override wins."
+	appendText := "This should be ignored."
+
+	config := &WorkflowConfig{
+		InitialPromptOverride: overrideText,
+		InitialPromptAppend:   appendText,
+	}
+
+	result := ComposeInitialPrompt(workerID, AgentTypeImplementer, config)
+
+	require.Equal(t, overrideText, result,
+		"Override should take precedence over append")
 	require.NotContains(t, result, appendText,
-		"Append text should not appear in initial prompt")
+		"Append should not appear when override is set")
 }
 
 // TestComposeInitialPrompt_AllAgentTypes verifies works for all agent types.
@@ -235,21 +270,24 @@ func TestComposeInitialPrompt_AllAgentTypes(t *testing.T) {
 	}
 
 	workerID := "worker-initial-all"
+	appendText := "Custom workflow instructions."
 
 	for _, agentType := range agentTypes {
 		t.Run(agentType.String(), func(t *testing.T) {
-			// Test nil config
+			// Test nil config returns base
 			resultNil := ComposeInitialPrompt(workerID, agentType, nil)
 			require.NotEmpty(t, resultNil, "Should return non-empty prompt")
 			require.Contains(t, resultNil, workerID, "Should contain workerID")
 
-			// Test with config (should be same as nil)
+			// Test with InitialPromptAppend
 			config := &WorkflowConfig{
-				SystemPromptAppend: "ignored",
+				InitialPromptAppend: appendText,
 			}
 			resultConfig := ComposeInitialPrompt(workerID, agentType, config)
-			require.Equal(t, resultNil, resultConfig,
-				"Config should not affect initial prompt")
+			require.Contains(t, resultConfig, resultNil,
+				"Should contain base prompt")
+			require.Contains(t, resultConfig, appendText,
+				"Should contain appended text")
 		})
 	}
 }

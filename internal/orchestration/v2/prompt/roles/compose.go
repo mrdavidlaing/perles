@@ -13,6 +13,12 @@ type WorkflowConfig struct {
 	// SystemPromptOverride completely replaces the default system prompt.
 	SystemPromptOverride string
 
+	// InitialPromptAppend is appended to the default initial prompt.
+	InitialPromptAppend string
+
+	// InitialPromptOverride completely replaces the default initial prompt.
+	InitialPromptOverride string
+
 	// Constraints are behavioral constraints (currently unused in prompt composition).
 	Constraints []string
 }
@@ -46,17 +52,24 @@ func ComposeSystemPrompt(workerID string, agentType AgentType, workflowConfig *W
 // ComposeInitialPrompt composes the final initial/idle prompt using three-tier resolution:
 //  1. Get base prompt from the roles registry for the agent type
 //  2. If workflowConfig is nil, return the base prompt
-//  3. If workflowConfig has no customizations, return the base prompt
-//
-// Note: Initial prompts currently only support the base tier. Workflow customization
-// for initial prompts may be added in the future if needed.
+//  3. If workflowConfig.InitialPromptOverride is set, return the override
+//  4. If workflowConfig.InitialPromptAppend is set, return base + append
+//  5. Otherwise, return the base prompt
 func ComposeInitialPrompt(workerID string, agentType AgentType, workflowConfig *WorkflowConfig) string {
 	rolePrompts := GetPrompts(agentType)
 	basePrompt := rolePrompts.InitialPrompt(workerID)
 
-	// TODO Initial prompts don't currently support workflow customization
-	// The workflow config is accepted for API consistency and future extensibility
-	_ = workflowConfig
+	if workflowConfig == nil {
+		return basePrompt
+	}
+
+	if workflowConfig.InitialPromptOverride != "" {
+		return workflowConfig.InitialPromptOverride
+	}
+
+	if workflowConfig.InitialPromptAppend != "" {
+		return basePrompt + "\n\n" + workflowConfig.InitialPromptAppend
+	}
 
 	return basePrompt
 }

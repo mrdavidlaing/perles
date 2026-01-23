@@ -84,7 +84,7 @@ func (c *WorkflowCreator) CreateWithArgs(feature, workflowKey string, args map[s
 	epicTitle := fmt.Sprintf("%s: %s", reg.Name(), toTitleCase(feature))
 
 	var epicDescription string
-	if reg.Template() != "" {
+	if reg.EpicTemplate() != "" {
 		epicDescription, err = c.registry.RenderEpicTemplate(reg, baseCtx)
 		if err != nil {
 			return nil, fmt.Errorf("render epic template: %w", err)

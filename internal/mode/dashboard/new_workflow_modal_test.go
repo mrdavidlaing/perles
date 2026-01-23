@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	beadsdomain "github.com/zjrosen/perles/internal/beads/domain"
 	domaingit "github.com/zjrosen/perles/internal/git/domain"
 	"github.com/zjrosen/perles/internal/keys"
 	"github.com/zjrosen/perles/internal/mocks"
@@ -79,6 +80,19 @@ func createTestRegistryService(t *testing.T) *appreg.RegistryService {
 	registry, err := appreg.NewRegistryService(registryFS, "")
 	require.NoError(t, err)
 	return registry
+}
+
+// createTestWorkflowCreator creates a WorkflowCreator with a mock executor for testing.
+// The mock is set up to return successful results for epic/task creation.
+func createTestWorkflowCreator(t *testing.T, registryService *appreg.RegistryService) *appreg.WorkflowCreator {
+	t.Helper()
+	mockExecutor := mocks.NewMockIssueExecutor(t)
+	mockExecutor.EXPECT().CreateEpic(mock.Anything, mock.Anything, mock.Anything).
+		Return(beadsdomain.CreateResult{ID: "epic-123"}, nil).Maybe()
+	mockExecutor.EXPECT().CreateTask(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(beadsdomain.CreateResult{ID: "task-456"}, nil).Maybe()
+	mockExecutor.EXPECT().AddDependency(mock.Anything, mock.Anything).Return(nil).Maybe()
+	return appreg.NewWorkflowCreator(registryService, mockExecutor)
 }
 
 // simulateAsyncSubmit simulates the full async form submission flow:
@@ -256,7 +270,8 @@ func TestNewWorkflowModal_CreateCallsControlPlane(t *testing.T) {
 	mockCP.On("Subscribe", mock.Anything).Return((<-chan controlplane.ControlPlaneEvent)(eventCh), func() {}).Maybe()
 
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, mockCP, nil, nil)
+	workflowCreator := createTestWorkflowCreator(t, registryService)
+	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator)
 
 	// Simulate form submission (now async)
 	values := map[string]any{
@@ -612,6 +627,7 @@ func TestNewWorkflowModal_DisablesWorktreeFieldsWhenGitExecutorNil(t *testing.T)
 func TestNewWorkflowModal_OnSubmitSetsWorktreeEnabledCorrectly(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	mockGit := createMockGitExecutorWithBranches(t)
+	workflowCreator := createTestWorkflowCreator(t, registryService)
 
 	mockCP := newMockControlPlane()
 	mockCP.On("Create", mock.Anything, mock.MatchedBy(func(spec controlplane.WorkflowSpec) bool {
@@ -620,7 +636,7 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeEnabledCorrectly(t *testing.T) {
 			spec.WorktreeBranchName == "my-feature"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -641,13 +657,14 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeEnabledCorrectly(t *testing.T) {
 func TestNewWorkflowModal_OnSubmitSetsWorktreeBaseBranchFromSearchSelect(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	mockGit := createMockGitExecutorWithBranches(t)
+	workflowCreator := createTestWorkflowCreator(t, registryService)
 
 	mockCP := newMockControlPlane()
 	mockCP.On("Create", mock.Anything, mock.MatchedBy(func(spec controlplane.WorkflowSpec) bool {
 		return spec.WorktreeEnabled == true && spec.WorktreeBaseBranch == "develop"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -668,13 +685,14 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeBaseBranchFromSearchSelect(t *test
 func TestNewWorkflowModal_OnSubmitSetsWorktreeBranchNameFromTextField(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	mockGit := createMockGitExecutorWithBranches(t)
+	workflowCreator := createTestWorkflowCreator(t, registryService)
 
 	mockCP := newMockControlPlane()
 	mockCP.On("Create", mock.Anything, mock.MatchedBy(func(spec controlplane.WorkflowSpec) bool {
 		return spec.WorktreeEnabled == true && spec.WorktreeBranchName == "perles-custom-branch"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -841,29 +859,36 @@ func (m *MockWorkflowCreator) Create(feature, workflowKey string) (*appreg.Workf
 	return args.Get(0).(*appreg.WorkflowResultDTO), args.Error(1)
 }
 
+func (m *MockWorkflowCreator) CreateWithArgs(feature, workflowKey string, argValues map[string]string) (*appreg.WorkflowResultDTO, error) {
+	args := m.Called(feature, workflowKey, argValues)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*appreg.WorkflowResultDTO), args.Error(1)
+}
+
 // MockRegistryService is a mock implementation for testing.
 type MockRegistryService struct {
 	mock.Mock
 }
 
-func (m *MockRegistryService) GetInstructionsTemplate(reg *registry.Registration) (string, error) {
+func (m *MockRegistryService) GetSystemPromptTemplate(reg *registry.Registration) (string, error) {
 	args := m.Called(reg)
 	return args.String(0), args.Error(1)
 }
 
-func TestNewWorkflowModal_OnSubmitCallsWorkflowCreator_LegacyPathWithoutCreator(t *testing.T) {
+func TestNewWorkflowModal_OnSubmitCallsWorkflowCreatorWithName(t *testing.T) {
 	registryService := createTestRegistryService(t)
+	workflowCreator := createTestWorkflowCreator(t, registryService)
 	mockCP := newMockControlPlane()
-	// When WorkflowCreator is nil, goal from args (if any) is passed as InitialGoal
+	// Verify that EpicID is set from WorkflowCreator result
 	mockCP.On("Create", mock.Anything, mock.MatchedBy(func(spec controlplane.WorkflowSpec) bool {
-		return spec.EpicID == "" &&
+		return spec.EpicID == "epic-123" &&
 			spec.TemplateID == "quick-plan" &&
 			spec.Name == "test-feature"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	// Note: We can't directly use the mock since NewWorkflowModal expects concrete types.
-	// This test verifies the behavior when WorkflowCreator is nil (legacy path)
-	modal := NewNewWorkflowModal(registryService, mockCP, nil, nil)
+	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator)
 
 	values := map[string]any{
 		"template": "quick-plan",
@@ -897,8 +922,8 @@ func TestNewWorkflowModal_MockCreatorAndRegistryServiceTypes(t *testing.T) {
 	mockCreator.On("Create", "test-feature", "quick-plan").Return(mockCreatorResult, nil)
 
 	mockRegService := &MockRegistryService{}
-	// GetInstructionsTemplate takes a registration parameter (use mock.Anything for flexibility)
-	mockRegService.On("GetInstructionsTemplate", mock.Anything).Return("# Coordinator Instructions\n\nYou are the Coordinator.", nil)
+	// GetSystemPromptTemplate takes a registration parameter (use mock.Anything for flexibility)
+	mockRegService.On("GetSystemPromptTemplate", mock.Anything).Return("# System Prompt\n\nYou are the Coordinator.", nil)
 
 	// Verify mock methods work
 	result, err := mockCreator.Create("test-feature", "quick-plan")
@@ -906,10 +931,10 @@ func TestNewWorkflowModal_MockCreatorAndRegistryServiceTypes(t *testing.T) {
 	require.Equal(t, "perles-abc123", result.Epic.ID)
 	require.True(t, strings.Contains(result.Epic.Title, "Test Feature"))
 
-	// GetInstructionsTemplate requires a registration, pass nil for simplicity in mock test
-	template, err := mockRegService.GetInstructionsTemplate(nil)
+	// GetSystemPromptTemplate requires a registration, pass nil for simplicity in mock test
+	template, err := mockRegService.GetSystemPromptTemplate(nil)
 	require.NoError(t, err)
-	require.Contains(t, template, "Coordinator Instructions")
+	require.Contains(t, template, "System Prompt")
 
 	mockCreator.AssertExpectations(t)
 	mockRegService.AssertExpectations(t)
@@ -919,10 +944,7 @@ func TestNewWorkflowModal_BuildCoordinatorPromptContainsAllSections(t *testing.T
 	registryService := createTestRegistryService(t)
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
 
-	// Test the prompt building - arguments are now rendered into epic template,
-	// so they should NOT appear in the coordinator prompt
-	args := map[string]string{"goal": "Build a cool feature"}
-	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123", args)
+	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123")
 
 	// Verify prompt contains epic ID
 	require.Contains(t, prompt, "perles-abc123")
@@ -953,15 +975,16 @@ func TestNewWorkflowModal_OnSubmitReturnsErrorOnWorkflowCreatorFailure(t *testin
 
 func TestNewWorkflowModal_EpicIDPassedToWorkflowSpec(t *testing.T) {
 	registryService := createTestRegistryService(t)
+	workflowCreator := createTestWorkflowCreator(t, registryService)
 
 	// Verify that when onSubmit returns with EpicID, the spec contains it
 	mockCP := newMockControlPlane()
-	// Match on EpicID being empty when no WorkflowCreator is present
+	// Match on EpicID being set from WorkflowCreator result
 	mockCP.On("Create", mock.Anything, mock.MatchedBy(func(spec controlplane.WorkflowSpec) bool {
-		return spec.EpicID == "" && spec.TemplateID == "quick-plan"
+		return spec.EpicID == "epic-123" && spec.TemplateID == "quick-plan"
 	})).Return(controlplane.WorkflowID("workflow-123"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, nil, nil)
+	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator)
 
 	values := map[string]any{
 		"template": "quick-plan",
@@ -975,10 +998,10 @@ func TestNewWorkflowModal_EpicIDPassedToWorkflowSpec(t *testing.T) {
 	mockCP.AssertExpectations(t)
 }
 
-// === Tests for GetInstructionsTemplate integration ===
+// === Tests for GetSystemPromptTemplate integration ===
 
-// createTestRegistryServiceWithInstructions creates a registry service where templates have instructions specified
-func createTestRegistryServiceWithInstructions(t *testing.T) *appreg.RegistryService {
+// createTestRegistryServiceWithSystemPrompt creates a registry service where templates have system_prompt specified
+func createTestRegistryServiceWithSystemPrompt(t *testing.T) *appreg.RegistryService {
 	t.Helper()
 	registryFS := fstest.MapFS{
 		"workflows/quick-plan/template.yaml": &fstest.MapFile{
@@ -989,16 +1012,17 @@ registry:
     version: "v1"
     name: "Quick Plan"
     description: "Fast planning workflow"
-    instructions: "custom_instructions.md"
+    system_prompt: "custom_system_prompt.md"
     nodes:
       - key: "plan"
         name: "Plan"
         template: "v1-plan.md"
+        assignee: "worker-1"
 `),
 		},
 		"workflows/quick-plan/v1-plan.md": &fstest.MapFile{Data: []byte("# Plan Template")},
-		"workflows/quick-plan/custom_instructions.md": &fstest.MapFile{
-			Data: []byte("# Custom Instructions\n\nThis is a custom coordinator prompt."),
+		"workflows/quick-plan/custom_system_prompt.md": &fstest.MapFile{
+			Data: []byte("# Custom System Prompt\n\nThis is a custom coordinator prompt."),
 		},
 	}
 	registry, err := appreg.NewRegistryService(registryFS, "")
@@ -1006,16 +1030,14 @@ registry:
 	return registry
 }
 
-func TestBuildCoordinatorPrompt_UsesCustomInstructions(t *testing.T) {
-	registryService := createTestRegistryServiceWithInstructions(t)
+func TestBuildCoordinatorPrompt_UsesCustomSystemPrompt(t *testing.T) {
+	registryService := createTestRegistryServiceWithSystemPrompt(t)
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
 
-	// Test the prompt building with a template that HAS instructions
-	args := map[string]string{"goal": "Build a cool feature"}
-	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123", args)
+	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123")
 
-	// Verify prompt contains custom instructions content
-	require.Contains(t, prompt, "# Custom Instructions")
+	// Verify prompt contains custom system prompt content
+	require.Contains(t, prompt, "# Custom System Prompt")
 	require.Contains(t, prompt, "This is a custom coordinator prompt")
 	// Verify prompt contains epic ID
 	require.Contains(t, prompt, "perles-abc123")
@@ -1025,10 +1047,10 @@ func TestBuildCoordinatorPrompt_UsesCustomInstructions(t *testing.T) {
 	require.NotContains(t, prompt, "Build a cool feature")
 }
 
-func TestNewRegistryService_FailsOnMissingInstructionsFile(t *testing.T) {
+func TestNewRegistryService_FailsOnMissingSystemPromptFile(t *testing.T) {
 	// YAML loader now validates template existence at load time (early validation).
 	// This is a security improvement: missing templates fail fast at load time, not at render time.
-	// Create a registry where the template specifies an instructions file that doesn't exist
+	// Create a registry where the template specifies a system_prompt file that doesn't exist
 	registryFS := fstest.MapFS{
 		"workflows/broken-plan/template.yaml": &fstest.MapFile{
 			Data: []byte(`
@@ -1037,22 +1059,23 @@ registry:
     key: "broken-plan"
     version: "v1"
     name: "Broken Plan"
-    description: "Workflow with missing instructions"
-    instructions: "nonexistent.md"
+    description: "Workflow with missing system_prompt"
+    system_prompt: "nonexistent.md"
     nodes:
       - key: "plan"
         name: "Plan"
         template: "v1-plan.md"
+        assignee: "worker-1"
 `),
 		},
 		"workflows/broken-plan/v1-plan.md": &fstest.MapFile{Data: []byte("# Plan Template")},
-		// No "nonexistent.md" file - instructions file doesn't exist
+		// No "nonexistent.md" file - system_prompt file doesn't exist
 	}
 
-	// NewRegistryService should fail because instructions template doesn't exist (early validation)
+	// NewRegistryService should fail because system_prompt template doesn't exist (early validation)
 	_, err := appreg.NewRegistryService(registryFS, "")
-	require.Error(t, err, "NewRegistryService should fail when instructions template doesn't exist")
-	require.Contains(t, err.Error(), "instructions template", "error should mention instructions template")
+	require.Error(t, err, "NewRegistryService should fail when system_prompt template doesn't exist")
+	require.Contains(t, err.Error(), "system_prompt", "error should mention system_prompt")
 	require.Contains(t, err.Error(), "not found", "error should indicate file not found")
 }
 
@@ -1061,9 +1084,7 @@ func TestBuildCoordinatorPrompt_HandlesNoInstructionsField(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
 
-	// Test the prompt building - should fall back gracefully when no instructions field
-	args := map[string]string{"goal": "Build a cool feature"}
-	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123", args)
+	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123")
 
 	// Verify prompt falls back to minimal prompt without instructions
 	require.Contains(t, prompt, "perles-abc123")
@@ -1261,28 +1282,4 @@ registry:
 	values["arg_feature_name"] = "my-feature"
 	err = modal.validate(values)
 	require.NoError(t, err)
-}
-
-func TestNewWorkflowModal_BuildCoordinatorPromptDoesNotAppendArgs(t *testing.T) {
-	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
-
-	args := map[string]string{
-		"goal":     "Build feature",
-		"feature":  "auth-system",
-		"priority": "high",
-	}
-
-	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123", args)
-
-	// Arguments are now rendered directly into the epic template via {{.Args.key}},
-	// so they should NOT be appended to the coordinator prompt
-	require.NotContains(t, prompt, "# Arguments")
-	require.NotContains(t, prompt, "Build feature")
-	require.NotContains(t, prompt, "auth-system")
-	require.NotContains(t, prompt, "high")
-
-	// But prompt should still contain epic reference
-	require.Contains(t, prompt, "perles-abc123")
-	require.Contains(t, prompt, "bd show perles-abc123 --json")
 }

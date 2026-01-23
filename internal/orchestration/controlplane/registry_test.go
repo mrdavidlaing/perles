@@ -15,9 +15,9 @@ import (
 // newTestSpec creates a valid WorkflowSpec for testing.
 func newTestSpec(name string) *WorkflowSpec {
 	return &WorkflowSpec{
-		TemplateID:  "test-template",
-		InitialGoal: "Test goal",
-		Name:        name,
+		TemplateID:    "test-template",
+		InitialPrompt: "Test goal",
+		Name:          name,
 	}
 }
 
@@ -522,8 +522,8 @@ func TestRegistry_PropertyBased_CRUDConsistency(t *testing.T) {
 			switch op {
 			case 0: // Put
 				spec := &WorkflowSpec{
-					TemplateID:  rapid.StringMatching(`[a-z]{3,10}\.md`).Draw(t, "templateID"),
-					InitialGoal: rapid.StringMatching(`[a-zA-Z ]{5,50}`).Draw(t, "goal"),
+					TemplateID:    rapid.StringMatching(`[a-z]{3,10}\.md`).Draw(t, "templateID"),
+					InitialPrompt: rapid.StringMatching(`[a-zA-Z ]{5,50}`).Draw(t, "goal"),
 				}
 				inst, err := NewWorkflowInstance(spec)
 				if err != nil {
@@ -594,8 +594,8 @@ func TestRegistry_PropertyBased_UpdateNeverLosesWorkflow(t *testing.T) {
 
 		for i := 0; i < numWorkflows; i++ {
 			spec := &WorkflowSpec{
-				TemplateID:  "test.md",
-				InitialGoal: "goal",
+				TemplateID:    "test.md",
+				InitialPrompt: "goal",
 			}
 			inst, err := NewWorkflowInstance(spec)
 			if err != nil {
@@ -647,8 +647,8 @@ func TestRegistry_PropertyBased_FilteringIsComplete(t *testing.T) {
 
 		for i := 0; i < numWorkflows; i++ {
 			spec := &WorkflowSpec{
-				TemplateID:  "test.md",
-				InitialGoal: "goal",
+				TemplateID:    "test.md",
+				InitialPrompt: "goal",
 			}
 			inst, err := NewWorkflowInstance(spec)
 			if err != nil {

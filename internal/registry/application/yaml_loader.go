@@ -26,17 +26,17 @@ type RegistryFile struct {
 
 // WorkflowDef defines a single workflow registration in YAML
 type WorkflowDef struct {
-	Namespace    string        `yaml:"namespace"`    // e.g., "workflow", "lang-guidelines"
-	Key          string        `yaml:"key"`          // e.g., "planning-standard"
-	Version      string        `yaml:"version"`      // e.g., "v1"
-	Name         string        `yaml:"name"`         // Human-readable name
-	Description  string        `yaml:"description"`  // Description for AI agents
-	Template     string        `yaml:"template"`     // Template filename for epic description
-	Instructions string        `yaml:"instructions"` // Template filename for coordinator instructions (required for orchestration workflows)
-	Path         string        `yaml:"path"`         // Optional path prefix for artifacts (default: ".spec")
-	Labels       []string      `yaml:"labels"`       // Optional labels for filtering
-	Arguments    []ArgumentDef `yaml:"arguments"`    // User-configurable parameters
-	Nodes        []NodeDef     `yaml:"nodes"`        // Workflow nodes (chain)
+	Namespace    string        `yaml:"namespace"`     // e.g., "workflow", "lang-guidelines"
+	Key          string        `yaml:"key"`           // e.g., "planning-standard"
+	Version      string        `yaml:"version"`       // e.g., "v1"
+	Name         string        `yaml:"name"`          // Human-readable name
+	Description  string        `yaml:"description"`   // Description for AI agents
+	EpicTemplate string        `yaml:"epic_template"` // Template filename for epic content
+	SystemPrompt string        `yaml:"system_prompt"` // Template filename for system prompt content (required for orchestration workflows)
+	Path         string        `yaml:"path"`          // Optional path prefix for artifacts (default: ".spec")
+	Labels       []string      `yaml:"labels"`        // Optional labels for filtering
+	Arguments    []ArgumentDef `yaml:"arguments"`     // User-configurable parameters
+	Nodes        []NodeDef     `yaml:"nodes"`         // Workflow nodes (chain)
 }
 
 // ArgumentDef defines a user-configurable parameter in YAML
@@ -178,11 +178,11 @@ func LoadRegistryFromYAMLWithSource(fsys fs.FS, source registry.Source) ([]*regi
 			seen[regKey] = path
 
 			// Validate template paths before resolution
-			if err := validateTemplatePath(def.Template); err != nil {
+			if err := validateTemplatePath(def.EpicTemplate); err != nil {
 				return fmt.Errorf("workflow %s/%s in %s: %w", def.Namespace, def.Key, path, err)
 			}
-			if err := validateTemplatePath(def.Instructions); err != nil {
-				return fmt.Errorf("workflow %s/%s in %s: instructions: %w", def.Namespace, def.Key, path, err)
+			if err := validateTemplatePath(def.SystemPrompt); err != nil {
+				return fmt.Errorf("workflow %s/%s in %s: system_prompt: %w", def.Namespace, def.Key, path, err)
 			}
 			for i, node := range def.Nodes {
 				if err := validateTemplatePath(node.Template); err != nil {
@@ -229,17 +229,17 @@ func LoadRegistryFromYAMLWithSource(fsys fs.FS, source registry.Source) ([]*regi
 // validateTemplateExists checks that all template files referenced in a workflow definition exist.
 // This catches missing templates at load time rather than at render time.
 func validateTemplateExists(fsys fs.FS, def WorkflowDef) error {
-	// Check main template (may be empty for orchestration-only workflows)
-	if def.Template != "" {
-		if _, err := fs.Stat(fsys, def.Template); err != nil {
-			return fmt.Errorf("template %q not found", def.Template)
+	// Check initial prompt template (may be empty for orchestration-only workflows)
+	if def.EpicTemplate != "" {
+		if _, err := fs.Stat(fsys, def.EpicTemplate); err != nil {
+			return fmt.Errorf("epic_template %q not found", def.EpicTemplate)
 		}
 	}
 
-	// Check instructions template (may be empty for non-orchestration workflows)
-	if def.Instructions != "" {
-		if _, err := fs.Stat(fsys, def.Instructions); err != nil {
-			return fmt.Errorf("instructions template %q not found", def.Instructions)
+	// Check system prompt template (may be empty for non-orchestration workflows)
+	if def.SystemPrompt != "" {
+		if _, err := fs.Stat(fsys, def.SystemPrompt); err != nil {
+			return fmt.Errorf("system_prompt %q not found", def.SystemPrompt)
 		}
 	}
 
@@ -258,8 +258,8 @@ func validateTemplateExists(fsys fs.FS, def WorkflowDef) error {
 // resolveTemplatePaths resolves template paths to be relative to the workflows directory.
 // It first checks if the template exists in the workflow's directory, then falls back to workflows/.
 func resolveTemplatePaths(def WorkflowDef, workflowDir string, fsys fs.FS) WorkflowDef {
-	def.Template = resolveTemplatePath(def.Template, workflowDir, fsys)
-	def.Instructions = resolveTemplatePath(def.Instructions, workflowDir, fsys)
+	def.EpicTemplate = resolveTemplatePath(def.EpicTemplate, workflowDir, fsys)
+	def.SystemPrompt = resolveTemplatePath(def.SystemPrompt, workflowDir, fsys)
 
 	for i := range def.Nodes {
 		def.Nodes[i].Template = resolveTemplatePath(def.Nodes[i].Template, workflowDir, fsys)
@@ -299,9 +299,9 @@ func resolveTemplatePath(template, workflowDir string, fsys fs.FS) string {
 
 // buildRegistrationFromDefWithSource converts a WorkflowDef into a registry.Registration with a specific source.
 func buildRegistrationFromDefWithSource(def WorkflowDef, source registry.Source) (*registry.Registration, error) {
-	// Validate instructions field for orchestration workflows
-	if isOrchestrationWorkflow(&def) && def.Instructions == "" {
-		return nil, fmt.Errorf("registration %s/%s requires 'instructions' field (orchestration workflows must specify coordinator instructions template)", def.Namespace, def.Key)
+	// Validate system_prompt field for orchestration workflows
+	if isOrchestrationWorkflow(&def) && def.SystemPrompt == "" {
+		return nil, fmt.Errorf("registration %s/%s requires 'system_prompt' field (orchestration workflows must specify system prompt template)", def.Namespace, def.Key)
 	}
 
 	// Build the chain from node definitions
@@ -331,8 +331,8 @@ func buildRegistrationFromDefWithSource(def WorkflowDef, source registry.Source)
 		Version(def.Version).
 		Name(def.Name).
 		Description(def.Description).
-		Template(def.Template).
-		Instructions(def.Instructions).
+		EpicTemplate(def.EpicTemplate).
+		SystemPrompt(def.SystemPrompt).
 		ArtifactPath(def.Path).
 		Source(source).
 		SetChain(chain)

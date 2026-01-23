@@ -384,6 +384,174 @@ func TestUnifiedProcessSpawner_SpawnWorker_PassesBeadsDir(t *testing.T) {
 	proc.Stop()
 }
 
+func TestUnifiedProcessSpawner_SpawnCoordinator_UsesWorkflowConfigSystemPromptOverride(t *testing.T) {
+	var capturedConfig client.Config
+	mockClient := mock.NewClient()
+	mockClient.SpawnFunc = func(ctx context.Context, cfg client.Config) (client.HeadlessProcess, error) {
+		capturedConfig = cfg
+		return mock.NewProcess(), nil
+	}
+
+	eventBus := pubsub.NewBroker[any]()
+	submitter := &mockCommandSubmitter{}
+
+	spawner := NewUnifiedProcessSpawner(UnifiedSpawnerConfig{
+		Client:     mockClient,
+		WorkDir:    "/test/workdir",
+		Port:       8080,
+		Extensions: nil,
+		Submitter:  submitter,
+		EventBus:   eventBus,
+	})
+
+	workflowSystemPrompt := "Workflow-level system prompt override"
+	opts := SpawnOptions{
+		WorkflowConfig: &roles.WorkflowConfig{
+			SystemPromptOverride: workflowSystemPrompt,
+		},
+	}
+
+	proc, err := spawner.SpawnProcess(context.Background(), repository.CoordinatorID, repository.RoleCoordinator, opts)
+	require.NoError(t, err)
+	require.NotNil(t, proc)
+
+	// Verify the workflow config system prompt override was used
+	assert.Equal(t, workflowSystemPrompt, capturedConfig.SystemPrompt)
+	// Initial prompt should use default since not overridden
+	assert.NotEmpty(t, capturedConfig.Prompt)
+
+	// Cleanup
+	proc.Stop()
+}
+
+func TestUnifiedProcessSpawner_SpawnCoordinator_UsesWorkflowConfigInitialPromptOverride(t *testing.T) {
+	var capturedConfig client.Config
+	mockClient := mock.NewClient()
+	mockClient.SpawnFunc = func(ctx context.Context, cfg client.Config) (client.HeadlessProcess, error) {
+		capturedConfig = cfg
+		return mock.NewProcess(), nil
+	}
+
+	eventBus := pubsub.NewBroker[any]()
+	submitter := &mockCommandSubmitter{}
+
+	spawner := NewUnifiedProcessSpawner(UnifiedSpawnerConfig{
+		Client:     mockClient,
+		WorkDir:    "/test/workdir",
+		Port:       8080,
+		Extensions: nil,
+		Submitter:  submitter,
+		EventBus:   eventBus,
+	})
+
+	workflowInitialPrompt := "Workflow-level initial prompt override"
+	opts := SpawnOptions{
+		WorkflowConfig: &roles.WorkflowConfig{
+			InitialPromptOverride: workflowInitialPrompt,
+		},
+	}
+
+	proc, err := spawner.SpawnProcess(context.Background(), repository.CoordinatorID, repository.RoleCoordinator, opts)
+	require.NoError(t, err)
+	require.NotNil(t, proc)
+
+	// Verify the workflow config initial prompt override was used
+	assert.Equal(t, workflowInitialPrompt, capturedConfig.Prompt)
+	// System prompt should use default since not overridden
+	assert.NotEmpty(t, capturedConfig.SystemPrompt)
+
+	// Cleanup
+	proc.Stop()
+}
+
+func TestUnifiedProcessSpawner_SpawnCoordinator_WorkflowConfigTakesPrecedenceOverDirectOverride(t *testing.T) {
+	var capturedConfig client.Config
+	mockClient := mock.NewClient()
+	mockClient.SpawnFunc = func(ctx context.Context, cfg client.Config) (client.HeadlessProcess, error) {
+		capturedConfig = cfg
+		return mock.NewProcess(), nil
+	}
+
+	eventBus := pubsub.NewBroker[any]()
+	submitter := &mockCommandSubmitter{}
+
+	spawner := NewUnifiedProcessSpawner(UnifiedSpawnerConfig{
+		Client:     mockClient,
+		WorkDir:    "/test/workdir",
+		Port:       8080,
+		Extensions: nil,
+		Submitter:  submitter,
+		EventBus:   eventBus,
+	})
+
+	directSystemPrompt := "Direct system prompt override (should be ignored)"
+	directInitialPrompt := "Direct initial prompt override (should be ignored)"
+	workflowSystemPrompt := "Workflow-level system prompt"
+	workflowInitialPrompt := "Workflow-level initial prompt"
+
+	opts := SpawnOptions{
+		SystemPromptOverride:  directSystemPrompt,
+		InitialPromptOverride: directInitialPrompt,
+		WorkflowConfig: &roles.WorkflowConfig{
+			SystemPromptOverride:  workflowSystemPrompt,
+			InitialPromptOverride: workflowInitialPrompt,
+		},
+	}
+
+	proc, err := spawner.SpawnProcess(context.Background(), repository.CoordinatorID, repository.RoleCoordinator, opts)
+	require.NoError(t, err)
+	require.NotNil(t, proc)
+
+	// WorkflowConfig overrides should take precedence over direct overrides
+	assert.Equal(t, workflowSystemPrompt, capturedConfig.SystemPrompt)
+	assert.Equal(t, workflowInitialPrompt, capturedConfig.Prompt)
+
+	// Cleanup
+	proc.Stop()
+}
+
+func TestUnifiedProcessSpawner_SpawnCoordinator_WorkflowConfigBothOverrides(t *testing.T) {
+	var capturedConfig client.Config
+	mockClient := mock.NewClient()
+	mockClient.SpawnFunc = func(ctx context.Context, cfg client.Config) (client.HeadlessProcess, error) {
+		capturedConfig = cfg
+		return mock.NewProcess(), nil
+	}
+
+	eventBus := pubsub.NewBroker[any]()
+	submitter := &mockCommandSubmitter{}
+
+	spawner := NewUnifiedProcessSpawner(UnifiedSpawnerConfig{
+		Client:     mockClient,
+		WorkDir:    "/test/workdir",
+		Port:       8080,
+		Extensions: nil,
+		Submitter:  submitter,
+		EventBus:   eventBus,
+	})
+
+	workflowSystemPrompt := "Workflow system prompt"
+	workflowInitialPrompt := "Workflow initial prompt"
+
+	opts := SpawnOptions{
+		WorkflowConfig: &roles.WorkflowConfig{
+			SystemPromptOverride:  workflowSystemPrompt,
+			InitialPromptOverride: workflowInitialPrompt,
+		},
+	}
+
+	proc, err := spawner.SpawnProcess(context.Background(), repository.CoordinatorID, repository.RoleCoordinator, opts)
+	require.NoError(t, err)
+	require.NotNil(t, proc)
+
+	// Both workflow config overrides should be used
+	assert.Equal(t, workflowSystemPrompt, capturedConfig.SystemPrompt)
+	assert.Equal(t, workflowInitialPrompt, capturedConfig.Prompt)
+
+	// Cleanup
+	proc.Stop()
+}
+
 func TestUnifiedProcessSpawner_SpawnProcess_EmptyBeadsDir(t *testing.T) {
 	var capturedConfig client.Config
 	mockClient := mock.NewClient()
