@@ -125,3 +125,70 @@ func TestSource_DefaultValue(t *testing.T) {
 	require.Equal(t, SourceBuiltIn, s)
 	require.Equal(t, "built-in", s.String())
 }
+
+func TestRegistration_IsEpicDriven(t *testing.T) {
+	epicIDArg, err := NewArgument("epic_id", "Epic ID", "The epic to work on", ArgumentTypeText, true, "")
+	require.NoError(t, err)
+
+	goalArg, err := NewArgument("goal", "Goal", "What to achieve", ArgumentTypeTextarea, true, "")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		args     []*Argument
+		hasChain bool
+		want     bool
+	}{
+		{
+			name:     "epic-driven: single epic_id arg, no chain",
+			args:     []*Argument{epicIDArg},
+			hasChain: false,
+			want:     true,
+		},
+		{
+			name:     "not epic-driven: epic_id arg with chain",
+			args:     []*Argument{epicIDArg},
+			hasChain: true,
+			want:     false,
+		},
+		{
+			name:     "not epic-driven: multiple args",
+			args:     []*Argument{epicIDArg, goalArg},
+			hasChain: false,
+			want:     false,
+		},
+		{
+			name:     "not epic-driven: different arg name",
+			args:     []*Argument{goalArg},
+			hasChain: false,
+			want:     false,
+		},
+		{
+			name:     "not epic-driven: no args",
+			args:     nil,
+			hasChain: false,
+			want:     false,
+		},
+		{
+			name:     "not epic-driven: standard workflow with chain",
+			args:     []*Argument{goalArg},
+			hasChain: true,
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var chain *Chain
+			if tt.hasChain {
+				chain, err = NewChain().
+					Node("step1", "Step 1", "step1.md").
+					Build()
+				require.NoError(t, err)
+			}
+
+			reg := newRegistration("workflow", "test", "v1", "Test", "Desc", "", "", "", chain, nil, tt.args, SourceBuiltIn)
+			require.Equal(t, tt.want, reg.IsEpicDriven())
+		})
+	}
+}

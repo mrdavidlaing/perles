@@ -116,3 +116,21 @@ func (r *Registration) Arguments() []*Argument {
 func (r *Registration) Source() Source {
 	return r.source
 }
+
+// IsEpicDriven returns true if this workflow uses an existing epic from the tracker
+// rather than creating one. An epic-driven workflow has a single "epic_id" argument
+// and no DAG nodes (tasks come from the BD tracker).
+func (r *Registration) IsEpicDriven() bool {
+	// Must have exactly one argument named "epic_id"
+	if len(r.arguments) != 1 {
+		return false
+	}
+	if r.arguments[0].Key() != "epic_id" {
+		return false
+	}
+	// Must have no nodes (or empty DAG)
+	if r.dag != nil && len(r.dag.Nodes()) > 0 {
+		return false
+	}
+	return true
+}

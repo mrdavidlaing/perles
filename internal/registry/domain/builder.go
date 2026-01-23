@@ -100,7 +100,8 @@ func (b *Builder) Source(s Source) *Builder {
 	return b
 }
 
-// Build creates the registration, validating required fields
+// Build creates the registration, validating required fields.
+// Note: dag can be nil for epic-driven workflows where the DAG comes from an external source.
 func (b *Builder) Build() (*Registration, error) {
 	if b.namespace == "" {
 		return nil, ErrEmptyNamespace
@@ -111,9 +112,7 @@ func (b *Builder) Build() (*Registration, error) {
 	if b.version == "" {
 		return nil, ErrEmptyVersion
 	}
-	if b.dag == nil {
-		return nil, ErrEmptyChain
-	}
+	// Note: b.dag may be nil for epic-driven workflows
 
 	return newRegistration(b.namespace, b.key, b.version, b.name, b.description, b.epicTemplate, b.systemPrompt, b.artifactPath, b.dag, b.labels, b.arguments, b.source), nil
 }

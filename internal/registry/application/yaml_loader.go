@@ -304,19 +304,23 @@ func buildRegistrationFromDefWithSource(def WorkflowDef, source registry.Source)
 		return nil, fmt.Errorf("registration %s/%s requires 'system_prompt' field (orchestration workflows must specify system prompt template)", def.Namespace, def.Key)
 	}
 
-	// Build the chain from node definitions
-	chainBuilder := registry.NewChain()
-	for i, node := range def.Nodes {
-		opts, err := buildNodeOptions(node)
-		if err != nil {
-			return nil, fmt.Errorf("node %d (%s): %w", i, node.Key, err)
+	// Build the chain from node definitions (skip for epic-driven workflows which have no nodes)
+	var chain *registry.Chain
+	if !isEpicDrivenWorkflow(&def) {
+		chainBuilder := registry.NewChain()
+		for i, node := range def.Nodes {
+			opts, err := buildNodeOptions(node)
+			if err != nil {
+				return nil, fmt.Errorf("node %d (%s): %w", i, node.Key, err)
+			}
+			chainBuilder = chainBuilder.Node(node.Key, node.Name, node.Template, opts...)
 		}
-		chainBuilder = chainBuilder.Node(node.Key, node.Name, node.Template, opts...)
-	}
 
-	chain, err := chainBuilder.Build()
-	if err != nil {
-		return nil, fmt.Errorf("build chain: %w", err)
+		var err error
+		chain, err = chainBuilder.Build()
+		if err != nil {
+			return nil, fmt.Errorf("build chain: %w", err)
+		}
 	}
 
 	// Build arguments from definitions
@@ -384,14 +388,33 @@ func buildArguments(defs []ArgumentDef) ([]*registry.Argument, error) {
 }
 
 // isOrchestrationWorkflow checks if the workflow definition is an orchestration workflow.
-// Orchestration workflows have at least one node with an assignee field.
+// Orchestration workflows have at least one node with an assignee field, OR are epic-driven.
 func isOrchestrationWorkflow(def *WorkflowDef) bool {
+	// Epic-driven workflows are orchestration workflows
+	if isEpicDrivenWorkflow(def) {
+		return true
+	}
+	// Standard orchestration: at least one node with assignee
 	for _, node := range def.Nodes {
 		if node.Assignee != "" {
 			return true
 		}
 	}
 	return false
+}
+
+// isEpicDrivenWorkflow checks if the workflow uses an existing epic from the tracker.
+// An epic-driven workflow has a single "epic_id" argument and no nodes.
+func isEpicDrivenWorkflow(def *WorkflowDef) bool {
+	// Must have exactly one argument named "epic_id"
+	if len(def.Arguments) != 1 {
+		return false
+	}
+	if def.Arguments[0].Key != "epic_id" {
+		return false
+	}
+	// Must have no nodes
+	return len(def.Nodes) == 0
 }
 
 // buildNodeOptions converts NodeDef inputs/outputs/after/assignee into NodeOption functions.

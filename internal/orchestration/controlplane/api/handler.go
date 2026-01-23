@@ -196,8 +196,19 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var epicID string
 	var initialPrompt string
 
-	// If WorkflowCreator is available, create epic + tasks in beads first
-	if h.workflowCreator != nil {
+	// Check if this is an epic-driven workflow (uses existing epic from tracker)
+	isEpicDriven := false
+	if h.registryService != nil {
+		if reg, err := h.registryService.GetByKey("workflow", req.TemplateID); err == nil {
+			isEpicDriven = reg.IsEpicDriven()
+		}
+	}
+
+	if isEpicDriven {
+		// Epic-driven workflow: use the provided epic_id directly, skip workflowCreator
+		epicID = req.Args["epic_id"]
+	} else if h.workflowCreator != nil {
+		// Standard workflow: create epic + tasks in beads first
 		// Use name as feature slug, or derive from templateID if empty
 		feature := req.Name
 		if feature == "" {

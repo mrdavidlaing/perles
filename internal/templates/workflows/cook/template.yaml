@@ -1,0 +1,17 @@
+registry:
+  # Cook Workflow - Epic-driven sequential task execution
+  # This workflow uses an existing epic from the BD tracker rather than creating one.
+  - namespace: "workflow"
+    key: "cook"
+    version: "v1"
+    name: "Cook"
+    description: "Sequential task execution with code review and worker cycling for an existing epic"
+    system_prompt: "v1-cook-instructions.md"
+    labels:
+      - "category:work"
+    arguments:
+      - key: "epic_id"
+        label: "Epic ID"
+        description: "The epic ID to work on (e.g., perles-abc1)"
+        type: "text"
+        required: true

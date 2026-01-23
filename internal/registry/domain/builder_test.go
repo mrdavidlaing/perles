@@ -120,14 +120,16 @@ func TestBuilder_Build_EmptyVersion(t *testing.T) {
 	require.ErrorIs(t, err, ErrEmptyVersion)
 }
 
-func TestBuilder_Build_EmptyChain(t *testing.T) {
+func TestBuilder_Build_NilChain_Allowed(t *testing.T) {
+	// Nil chains are allowed for epic-driven workflows where the DAG comes from an external source
 	reg, err := NewBuilder("workflow").
 		Key("key").
 		Version("v1").
 		Build()
 
-	require.Nil(t, reg)
-	require.ErrorIs(t, err, ErrEmptyChain)
+	require.NoError(t, err)
+	require.NotNil(t, reg)
+	require.Nil(t, reg.DAG())
 }
 
 func TestBuilder_FluentChaining(t *testing.T) {

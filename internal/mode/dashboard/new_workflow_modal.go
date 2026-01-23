@@ -391,18 +391,32 @@ func (m *NewWorkflowModal) createWorkflowAsync(values map[string]any) tea.Cmd {
 		var epicID string
 		var initialPrompt string
 
-		// Use name as feature slug, or derive from templateID if empty
-		feature := name
-		if feature == "" {
-			feature = templateID
+		// Check if this is an epic-driven workflow (uses existing epic from tracker)
+		isEpicDriven := false
+		if m.registryService != nil {
+			if reg, err := m.registryService.GetByKey("workflow", templateID); err == nil {
+				isEpicDriven = reg.IsEpicDriven()
+			}
 		}
 
-		result, err := m.workflowCreator.CreateWithArgs(feature, templateID, args)
-		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("create epic: %w", err)}
-		}
+		if isEpicDriven {
+			// Epic-driven workflow: use the provided epic_id directly, skip workflowCreator
+			epicID = args["epic_id"]
+		} else {
+			// Standard workflow: create epic and tasks via workflowCreator
+			// Use name as feature slug, or derive from templateID if empty
+			feature := name
+			if feature == "" {
+				feature = templateID
+			}
 
-		epicID = result.Epic.ID
+			result, err := m.workflowCreator.CreateWithArgs(feature, templateID, args)
+			if err != nil {
+				return ErrorMsg{Err: fmt.Errorf("create epic: %w", err)}
+			}
+
+			epicID = result.Epic.ID
+		}
 
 		// Build coordinator prompt: instructions template + epic ID section
 		initialPrompt = m.buildCoordinatorPrompt(templateID, epicID)
