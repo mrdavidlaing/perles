@@ -38,6 +38,12 @@ type WorkflowUIState struct {
 	MessageScrollPercent     float64
 	WorkerScrollPercents     map[string]float64
 
+	// Notification state
+	// HasNotification is set to true when a ProcessUserNotification event is received.
+	// This is used to highlight the workflow row in the dashboard to draw user attention.
+	// Cleared when the user selects the row and presses Enter.
+	HasNotification bool
+
 	// Cache metadata
 	LastUpdated time.Time
 }

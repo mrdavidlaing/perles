@@ -1,7 +1,7 @@
 ╭─ Workflows ──────────────────────────────────────────────╮
-│#   St  Name                             Workers     Tokens│
-│1   ▶   This is an extremely long wo...        3     125000│
-│2   ⏸   Another very long name that ...        1      45000│
+│#   St Name                             Workers     Tokens│
+│1   ▶  This is an extremely long wo...        3     125000│
+│2   ⏸  Another very long name that ...        1      45000│
 │                                                          │
 │                                                          │
 │                                                          │

@@ -343,6 +343,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logOverlay, cmd = m.logOverlay.Update(msg)
 		return m, cmd
 
+	case controlplane.ControlPlaneEvent:
+		// Forward ControlPlane events to dashboard even when not in dashboard mode.
+		// This keeps the dashboard's cached UI state updated in the background.
+		if m.dashboard.IsInitialized() && m.currentMode != mode.ModeDashboard {
+			result, cmd := m.dashboard.Update(msg)
+			m.dashboard = result.(dashboard.Model)
+			return m, cmd
+		}
+
 	case tea.KeyMsg:
 		if m.debugMode && key.Matches(msg, keys.Component.Close) {
 			m.logOverlay.Toggle()
@@ -357,8 +366,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		// Handle Ctrl+W to toggle chat panel (not in orchestration mode)
-		if key.Matches(msg, keys.App.ToggleChatPanel) && m.currentMode != mode.ModeOrchestration {
+		// Handle Ctrl+W to toggle chat panel (not in orchestration or dashboard mode)
+		// Dashboard mode has its own coordinator panel toggle
+		if key.Matches(msg, keys.App.ToggleChatPanel) && m.currentMode != mode.ModeOrchestration && m.currentMode != mode.ModeDashboard {
 			return m.handleToggleChatPanel()
 		}
 
@@ -546,7 +556,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Create dashboard model
+		// Reuse existing dashboard if initialized (preserves cached state), otherwise create new
+		if m.dashboard.IsInitialized() {
+			m.dashboard = m.dashboard.SetSize(m.width, m.height).(dashboard.Model)
+			// Just refresh the workflow list - event subscription is still active
+			return m, m.dashboard.RefreshWorkflows()
+		}
+
+		// First time: create dashboard model
 		m.dashboard = dashboard.New(dashboard.Config{
 			ControlPlane:       m.controlPlane,
 			Services:           m.services,
@@ -562,9 +579,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dashboard.QuitMsg:
 		log.Info(log.CatMode, "Switching mode", "from", "dashboard", "to", "kanban")
 
-		// Clean up dashboard resources
-		m.dashboard.Cleanup()
-
+		// Don't cleanup dashboard - keep event subscription alive so cache stays updated
 		m.currentMode = mode.ModeKanban
 
 		// Calculate main content width based on chatpanel state

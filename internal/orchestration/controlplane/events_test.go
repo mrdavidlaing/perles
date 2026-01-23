@@ -152,7 +152,7 @@ func TestClassifyEvent_UnknownEvents(t *testing.T) {
 		{
 			name: "UnknownEventType",
 			event: events.ProcessEvent{
-				Type: events.ProcessReady, // Ready events are not specifically mapped
+				Type: events.ProcessEventType("unknown_type"), // Truly unknown event type
 				Role: events.RoleWorker,
 			},
 		},
@@ -232,6 +232,94 @@ func TestClassifyEvent_WorkflowComplete(t *testing.T) {
 	}
 	result := ClassifyEvent(event)
 	require.Equal(t, EventWorkflowCompleted, result)
+}
+
+func TestClassifyEvent_ReadyWorkingEvents(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    events.ProcessEvent
+		expected EventType
+	}{
+		{
+			name: "CoordinatorReady",
+			event: events.ProcessEvent{
+				Type:   events.ProcessReady,
+				Role:   events.RoleCoordinator,
+				Status: events.ProcessStatusReady,
+			},
+			expected: EventCoordinatorOutput,
+		},
+		{
+			name: "CoordinatorWorking",
+			event: events.ProcessEvent{
+				Type:   events.ProcessWorking,
+				Role:   events.RoleCoordinator,
+				Status: events.ProcessStatusWorking,
+			},
+			expected: EventCoordinatorOutput,
+		},
+		{
+			name: "WorkerReady",
+			event: events.ProcessEvent{
+				Type:   events.ProcessReady,
+				Role:   events.RoleWorker,
+				Status: events.ProcessStatusReady,
+			},
+			expected: EventWorkerOutput,
+		},
+		{
+			name: "WorkerWorking",
+			event: events.ProcessEvent{
+				Type:   events.ProcessWorking,
+				Role:   events.RoleWorker,
+				Status: events.ProcessStatusWorking,
+			},
+			expected: EventWorkerOutput,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ClassifyEvent(tc.event)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestClassifyEvent_ProcessIncoming(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    events.ProcessEvent
+		expected EventType
+	}{
+		{
+			name: "CoordinatorIncoming",
+			event: events.ProcessEvent{
+				Type:    events.ProcessIncoming,
+				Role:    events.RoleCoordinator,
+				Message: "User message",
+				Sender:  "user",
+			},
+			expected: EventCoordinatorIncoming,
+		},
+		{
+			name: "WorkerIncoming",
+			event: events.ProcessEvent{
+				Type:    events.ProcessIncoming,
+				Role:    events.RoleWorker,
+				Message: "Task assignment",
+				Sender:  "coordinator",
+			},
+			expected: EventWorkerIncoming,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ClassifyEvent(tc.event)
+			require.Equal(t, tc.expected, result)
+		})
+	}
 }
 
 func TestIsLifecycleEvent(t *testing.T) {

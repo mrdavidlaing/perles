@@ -98,6 +98,11 @@ type ColumnConfig struct {
 	MaxWidth int        // Maximum width (0 = no limit)
 	Align    lipgloss.Position
 
+	// HideBelow hides this column when total table width falls below this threshold.
+	// Set to 0 to always show the column (default behavior).
+	// Useful for responsive layouts where less important columns are hidden when space is limited.
+	HideBelow int
+
 	// Render provides cell content rendering.
 	// Required for all columns - the table does not support reflection-based value extraction.
 	// Signature: (rowData any, colKey string, width int, selected bool) -> string

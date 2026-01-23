@@ -82,4 +82,18 @@ func calculateColumnWidths(cols []ColumnConfig, totalWidth int) []int {
 }
 
 // minColumnWidth is the minimum width for any column to ensure at least "…" can be displayed.
-const minColumnWidth = 3
+// Note: 2 is sufficient for icon columns (emoji width), while text columns typically need 3 for "…".
+const minColumnWidth = 2
+
+// filterVisibleColumns returns only the columns that should be visible at the given table width.
+// Columns with HideBelow > 0 are hidden when totalWidth < HideBelow.
+func filterVisibleColumns(cols []ColumnConfig, totalWidth int) []ColumnConfig {
+	visible := make([]ColumnConfig, 0, len(cols))
+	for _, col := range cols {
+		if col.HideBelow > 0 && totalWidth < col.HideBelow {
+			continue // Hide this column
+		}
+		visible = append(visible, col)
+	}
+	return visible
+}

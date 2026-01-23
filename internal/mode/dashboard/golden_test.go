@@ -12,7 +12,9 @@ import (
 
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
+	"github.com/zjrosen/perles/internal/orchestration/events"
 	appreg "github.com/zjrosen/perles/internal/registry/application"
+	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 )
 
 // testNow is a fixed reference time for golden tests to ensure reproducible timestamps.
@@ -629,6 +631,73 @@ func TestDashboard_View_Golden_WithEpicIDColumn(t *testing.T) {
 	m := createGoldenTestModel(t, workflows)
 	m.width = 120
 	m.height = 20
+	view := m.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
+func TestDashboard_View_Golden_WithCoordinatorPanel(t *testing.T) {
+	// Test dashboard with coordinator chat panel open (35% width on right side)
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflowWithDetails(
+			"wf-001",
+			"Running workflow with coordinator",
+			controlplane.WorkflowRunning,
+			2, 50000,
+		),
+		createTestWorkflowWithDetails(
+			"wf-002",
+			"Another workflow",
+			controlplane.WorkflowPending,
+			0, 0,
+		),
+	}
+	m := createGoldenTestModel(t, workflows)
+	m.width = 120
+	m.height = 25
+
+	// Open coordinator panel for selected workflow (Ready status - no messages yet)
+	panel := NewCoordinatorPanel()
+	panelWidth := CoordinatorPanelWidth
+	panel.SetSize(panelWidth, m.height)
+	panel.SetWorkflow(workflows[0].ID, nil) // nil state = no messages, default status
+	m.coordinatorPanel = panel
+	m.showCoordinatorPanel = true
+
+	view := m.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
+func TestDashboard_View_Golden_WithCoordinatorPanelMessages(t *testing.T) {
+	// Test coordinator panel with messages and Working status (blue border)
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflowWithDetails(
+			"wf-001",
+			"Workflow with active chat",
+			controlplane.WorkflowRunning,
+			2, 50000,
+		),
+	}
+	m := createGoldenTestModel(t, workflows)
+	m.width = 120
+	m.height = 25
+
+	// Create coordinator panel with Working status and messages
+	state := &WorkflowUIState{
+		CoordinatorMessages: []chatrender.Message{
+			{Role: "user", Content: "Start working on the authentication feature"},
+			{Role: "assistant", Content: "I'll begin implementing the authentication feature. First, let me analyze the codebase."},
+			{Role: "assistant", Content: "Looking at the middleware...", IsToolCall: true},
+		},
+		CoordinatorStatus:     events.ProcessStatusWorking,
+		CoordinatorQueueCount: 0,
+	}
+
+	panel := NewCoordinatorPanel()
+	panel.SetSize(CoordinatorPanelWidth, m.height)
+	panel.SetWorkflow(workflows[0].ID, state)
+	m.coordinatorPanel = panel
+	m.showCoordinatorPanel = true
+
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))
 }

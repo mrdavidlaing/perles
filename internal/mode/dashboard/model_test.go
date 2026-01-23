@@ -1656,3 +1656,232 @@ func TestModel_StartWorkflow_ReturnsErrorMessage(t *testing.T) {
 
 	mockCP.AssertExpectations(t)
 }
+
+// === Tests: Panel selection stability when workflows are reloaded ===
+
+func TestModel_CoordinatorPanel_TwoWorkflowsEventRouting(t *testing.T) {
+	// Test that events for workflow 1 continue updating the panel after workflow 2 is created
+	// because selection follows wf-1 to its new index.
+
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+	m.selectedIndex = 0
+
+	// Open coordinator panel for wf-1
+	m.showCoordinatorPanel = true
+	m.coordinatorPanel = NewCoordinatorPanel()
+	uiState := m.getOrCreateUIState("wf-1")
+	m.coordinatorPanel.SetWorkflow("wf-1", uiState)
+
+	// Now add a second workflow (simulating what happens when user creates new workflow)
+	// Workflows are sorted newest-first, so wf-2 becomes index 0, wf-1 moves to index 1
+	updatedWorkflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-2", "Workflow 2", controlplane.WorkflowRunning),
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	// Simulate workflowsLoadedMsg (triggered by lifecycle event)
+	result, _ := m.Update(workflowsLoadedMsg{workflows: updatedWorkflows})
+	m = result.(Model)
+
+	// Selection should follow wf-1 to its new index (1)
+	require.Equal(t, 1, m.selectedIndex, "selection follows wf-1 to new index")
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.SelectedWorkflow().ID)
+
+	// Panel should still show wf-1
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.coordinatorPanel.workflowID)
+
+	// Send an event for wf-1 - should update the panel
+	event := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: "coord-1",
+			Role:      events.RoleCoordinator,
+			Output:    "Message for workflow 1",
+			Delta:     false,
+		},
+	}
+	result, _ = m.Update(event)
+	m = result.(Model)
+
+	// Cache for wf-1 should be updated
+	require.Len(t, m.workflowUIState["wf-1"].CoordinatorMessages, 1)
+
+	// Panel should ALSO be updated (it's still showing wf-1)
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.coordinatorPanel.workflowID)
+	require.Len(t, m.coordinatorPanel.coordinatorMessages, 1,
+		"panel should receive the message since it's still showing wf-1")
+}
+
+func TestModel_WorkflowsLoaded_PreservesSelectionByID(t *testing.T) {
+	// When workflows are reloaded (e.g., after new workflow created),
+	// the selection should follow the workflow ID, not stay at the same index.
+	// This prevents the bug where the panel silently switches to a new workflow.
+
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+	m.selectedIndex = 0
+
+	// Verify initial selection
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.SelectedWorkflow().ID)
+
+	// Now wf-2 is created and appears at index 0 (newest-first sort)
+	// wf-1 moves to index 1
+	updatedWorkflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-2", "Workflow 2", controlplane.WorkflowPending),
+		workflows[0], // wf-1 is now at index 1
+	}
+
+	// Simulate workflowsLoadedMsg
+	result, _ := m.Update(workflowsLoadedMsg{workflows: updatedWorkflows})
+	m = result.(Model)
+
+	// EXPECTED: Selection should have moved to follow wf-1
+	// (Currently fails - this is what the fix should achieve)
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.SelectedWorkflow().ID,
+		"selection should follow workflow ID, not stay at index 0")
+	require.Equal(t, 1, m.selectedIndex,
+		"selectedIndex should update to wf-1's new position")
+}
+
+func TestModel_CoordinatorPanel_PanelStaysOnWorkflowAfterReload(t *testing.T) {
+	// This test verifies the FIXED behavior:
+	// 1. User is viewing wf-1, panel is open
+	// 2. User creates wf-2 (which becomes index 0 due to newest-first sort)
+	// 3. Selection follows wf-1 to its new index (1)
+	// 4. Panel continues showing wf-1's messages
+
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+	m.selectedIndex = 0
+
+	// Open coordinator panel for wf-1 and receive some messages
+	m.showCoordinatorPanel = true
+	m.coordinatorPanel = NewCoordinatorPanel()
+	uiState := m.getOrCreateUIState("wf-1")
+	m.coordinatorPanel.SetWorkflow("wf-1", uiState)
+
+	// Simulate wf-1 receiving a message
+	event1 := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessOutput,
+			ProcessID: "coord-1",
+			Role:      events.RoleCoordinator,
+			Output:    "Hello from wf-1",
+			Delta:     false,
+		},
+	}
+	result, _ := m.Update(event1)
+	m = result.(Model)
+
+	// Panel should be showing wf-1 with message
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.coordinatorPanel.workflowID)
+	require.Len(t, m.coordinatorPanel.coordinatorMessages, 1)
+
+	// Now wf-2 is created and appears at index 0 (newest-first sort)
+	updatedWorkflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-2", "Workflow 2", controlplane.WorkflowPending),
+		workflows[0], // wf-1 is now at index 1
+	}
+
+	// Simulate workflowsLoadedMsg
+	result, _ = m.Update(workflowsLoadedMsg{workflows: updatedWorkflows})
+	m = result.(Model)
+
+	// FIXED: Selection should have moved to follow wf-1
+	require.Equal(t, 1, m.selectedIndex, "selectedIndex should move to follow wf-1")
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.SelectedWorkflow().ID, "selection still points to wf-1")
+
+	// Panel should still be showing wf-1 with its message
+	require.Equal(t, controlplane.WorkflowID("wf-1"), m.coordinatorPanel.workflowID,
+		"panel should still show wf-1")
+	require.Len(t, m.coordinatorPanel.coordinatorMessages, 1,
+		"panel should still have wf-1's message")
+}
+
+// === Unit Tests: User Notification ===
+
+func TestModel_UserNotification_SetsFlag(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Initially no notification
+	require.False(t, m.workflowUIState["wf-1"] != nil && m.workflowUIState["wf-1"].HasNotification)
+
+	// Simulate receiving a user notification event
+	event := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventUserNotification,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type: events.ProcessUserNotification,
+		},
+	}
+	m.updateCachedUIState(event)
+
+	// Notification flag should be set
+	require.NotNil(t, m.workflowUIState["wf-1"])
+	require.True(t, m.workflowUIState["wf-1"].HasNotification)
+}
+
+func TestModel_UserNotification_ClearedOnEnter(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Set notification flag
+	state := m.getOrCreateUIState("wf-1")
+	state.HasNotification = true
+	require.True(t, m.workflowUIState["wf-1"].HasNotification)
+
+	// Press Enter on the workflow
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = result.(Model)
+
+	// Notification flag should be cleared
+	require.False(t, m.workflowUIState["wf-1"].HasNotification)
+}
+
+func TestModel_UserNotification_NotClearedByNavigation(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+		createTestWorkflow("wf-2", "Workflow 2", controlplane.WorkflowPending),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Set notification flag on wf-2
+	state := m.getOrCreateUIState("wf-2")
+	state.HasNotification = true
+
+	// Navigate to wf-2 (j key)
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = result.(Model)
+	require.Equal(t, 1, m.selectedIndex)
+
+	// Notification should still be there (only cleared on Enter)
+	require.True(t, m.workflowUIState["wf-2"].HasNotification)
+
+	// Press Enter to clear it
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = result.(Model)
+
+	require.False(t, m.workflowUIState["wf-2"].HasNotification)
+}

@@ -85,8 +85,11 @@ func (m Model) renderTable(selectedIndex int) string {
 		return ""
 	}
 
-	// Calculate column widths
-	widths := calculateColumnWidths(m.config.Columns, innerWidth)
+	// Filter columns based on width thresholds (responsive hiding)
+	visibleColumns := filterVisibleColumns(m.config.Columns, m.width)
+
+	// Calculate column widths for visible columns only
+	widths := calculateColumnWidths(visibleColumns, innerWidth)
 
 	// Determine content height available for rows
 	contentHeight := innerHeight
@@ -105,7 +108,7 @@ func (m Model) renderTable(selectedIndex int) string {
 
 		// Header row
 		if m.config.ShowHeader {
-			headerLine := renderHeader(m.config.Columns, widths)
+			headerLine := renderHeader(visibleColumns, widths)
 			// Style header with muted color
 			headerStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)
 			headerLine = headerStyle.Render(headerLine)
@@ -113,10 +116,10 @@ func (m Model) renderTable(selectedIndex int) string {
 		}
 
 		// Data rows
-		visibleRows := min(len(m.rows), contentHeight)
-		for i := range visibleRows {
+		dataRowCount := min(len(m.rows), contentHeight)
+		for i := range dataRowCount {
 			selected := i == selectedIndex
-			rowLine := renderRow(m.rows[i], m.config.Columns, widths, selected, innerWidth)
+			rowLine := renderRow(m.rows[i], visibleColumns, widths, selected, innerWidth)
 			lines = append(lines, rowLine)
 		}
 

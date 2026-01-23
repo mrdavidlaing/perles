@@ -116,13 +116,13 @@ func TestCalculateColumnWidths_NarrowTotal(t *testing.T) {
 
 		// Total 50, minus 2 separators = 48
 		// Fixed: 30 + 30 = 60, but only 48 available
-		// Flex column gets minimum width (3)
+		// Flex column gets minimum width (2)
 		widths := calculateColumnWidths(cols, 50)
 
 		require.Len(t, widths, 3)
 		require.Equal(t, 30, widths[0], "fixed columns retain their width")
 		require.Equal(t, 30, widths[1], "fixed columns retain their width")
-		require.Equal(t, 3, widths[2], "flex column gets minimum width")
+		require.Equal(t, 2, widths[2], "flex column gets minimum width")
 	})
 
 	t.Run("Very narrow total gives minimum to all flex", func(t *testing.T) {
@@ -132,12 +132,12 @@ func TestCalculateColumnWidths_NarrowTotal(t *testing.T) {
 		}
 
 		// Total 5, minus 1 separator = 4
-		// 4 / 2 = 2 each, but minimum is 3
+		// 4 / 2 = 2 each, which equals the minimum
 		widths := calculateColumnWidths(cols, 5)
 
 		require.Len(t, widths, 2)
-		require.Equal(t, 3, widths[0], "should enforce minimum width")
-		require.Equal(t, 3, widths[1], "should enforce minimum width")
+		require.Equal(t, 2, widths[0], "should enforce minimum width")
+		require.Equal(t, 2, widths[1], "should enforce minimum width")
 	})
 
 	t.Run("Zero total gives minimum to all", func(t *testing.T) {
@@ -149,7 +149,7 @@ func TestCalculateColumnWidths_NarrowTotal(t *testing.T) {
 		widths := calculateColumnWidths(cols, 0)
 
 		require.Len(t, widths, 2)
-		require.Equal(t, 3, widths[0], "flex column gets minimum")
+		require.Equal(t, 2, widths[0], "flex column gets minimum")
 		require.Equal(t, 10, widths[1], "fixed column retains width")
 	})
 }
@@ -225,6 +225,6 @@ func TestCalculateColumnWidths_FixedTooSmall(t *testing.T) {
 	widths := calculateColumnWidths(cols, 50)
 
 	require.Len(t, widths, 2)
-	require.Equal(t, 3, widths[0], "fixed width below minimum should be enforced to minimum")
+	require.Equal(t, 2, widths[0], "fixed width below minimum should be enforced to minimum")
 	require.Equal(t, 10, widths[1], "normal fixed width unchanged")
 }

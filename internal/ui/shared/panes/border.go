@@ -531,14 +531,22 @@ func buildTabTitleTopBorder(tabs []Tab, activeTab int, innerWidth int, borderSty
 	result.WriteString(borderStyle.Render(borderTopLeft + borderHorizontal + " "))
 
 	// Render each tab label with appropriate style
+	// If label contains ANSI escape codes (pre-styled), don't apply additional styling
+	// This allows callers to pre-style labels with colored indicators + muted text
 	for i, label := range labels {
-		var style lipgloss.Style
-		if i == activeTab {
-			style = activeStyle
+		if strings.Contains(label, "\x1b[") {
+			// Pre-styled label - use as-is
+			result.WriteString(label)
 		} else {
-			style = inactiveStyle
+			// Plain text - apply active/inactive styling
+			var style lipgloss.Style
+			if i == activeTab {
+				style = activeStyle
+			} else {
+				style = inactiveStyle
+			}
+			result.WriteString(style.Render(label))
 		}
-		result.WriteString(style.Render(label))
 
 		// Add separator after all but the last tab
 		if i < numTabs-1 {

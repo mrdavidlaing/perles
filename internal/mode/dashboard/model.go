@@ -27,6 +27,7 @@ import (
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 	"github.com/zjrosen/perles/internal/ui/shared/table"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
+	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
 )
 
 // heartbeatRefreshInterval is how often to refresh the view for heartbeat display updates.
@@ -69,6 +70,10 @@ type Model struct {
 	// Per-workflow UI state cache (kept for future detail view)
 	workflowUIState map[controlplane.WorkflowID]*WorkflowUIState
 
+	// Coordinator chat panel (shown on right side when toggled)
+	coordinatorPanel     *CoordinatorPanel
+	showCoordinatorPanel bool
+
 	// Event subscription (global - all workflows)
 	eventCh     <-chan controlplane.ControlPlaneEvent
 	unsubscribe func()
@@ -89,8 +94,9 @@ type Model struct {
 
 // WorkflowTableRow wraps a workflow with its display index for table rendering.
 type WorkflowTableRow struct {
-	Index    int                            // 1-based row number
-	Workflow *controlplane.WorkflowInstance // The workflow data
+	Index           int                            // 1-based row number
+	Workflow        *controlplane.WorkflowInstance // The workflow data
+	HasNotification bool                           // Whether this workflow has a pending notification
 }
 
 // Config holds configuration for creating a dashboard Model.
@@ -194,9 +200,61 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 			m.newWorkflowModal = m.newWorkflowModal.SetSize(msg.Width, msg.Height)
 			return m, nil
 
+		case controlplane.ControlPlaneEvent:
+			// Handle control plane events even when modal is open to maintain event subscription.
+			// This is critical: the listenForEvents() goroutine must be restarted after each event,
+			// otherwise we stop receiving events entirely.
+			return m.handleControlPlaneEvent(msg)
+
 		default:
 			var cmd tea.Cmd
 			m.newWorkflowModal, cmd = m.newWorkflowModal.Update(msg)
+			return m, cmd
+		}
+	}
+
+	// If coordinator panel is open, handle mouse events for scrolling (regardless of focus)
+	if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+		if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+			// Forward mouse events for scrolling
+			var cmd tea.Cmd
+			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(mouseMsg)
+			return m, cmd
+		}
+	}
+
+	// If coordinator panel is open and focused, delegate key events to it
+	if m.showCoordinatorPanel && m.coordinatorPanel != nil && m.coordinatorPanel.IsFocused() {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			// Always allow ctrl+c to quit, even when panel is focused
+			if keyMsg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
+
+			// Handle escape - blur panel to return focus to workflow table
+			// In insert mode, ESC switches to normal mode (handled by vimtextarea)
+			// In normal mode, ESC returns focus to workflow table (doesn't close panel)
+			if keyMsg.String() == "esc" && m.coordinatorPanel.IsInputInNormalMode() {
+				m.coordinatorPanel.Blur()
+				return m, nil
+			}
+
+			// Tab switches focus back to workflows table
+			if keyMsg.String() == "tab" {
+				m.coordinatorPanel.Blur()
+				return m, nil
+			}
+
+			// ctrl+w toggles (closes) the panel
+			if keyMsg.String() == "ctrl+w" {
+				m.showCoordinatorPanel = false
+				m.coordinatorPanel = nil
+				return m, nil
+			}
+
+			// Forward all key events to panel (including ESC for vim mode switching)
+			var cmd tea.Cmd
+			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(msg)
 			return m, cmd
 		}
 	}
@@ -207,12 +265,47 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 		return m.handleKeyMsg(msg)
 
 	case workflowsLoadedMsg:
+		// Preserve selection by workflow ID when list is reloaded.
+		// Workflows are sorted newest-first, so indices change when new workflows are created.
+		// Without this, the panel silently switches to a different workflow.
+		previouslySelectedID := controlplane.WorkflowID("")
+		if m.SelectedWorkflow() != nil {
+			previouslySelectedID = m.SelectedWorkflow().ID
+		}
+
 		m.workflows = msg.workflows
 		m.workflowList = m.workflowList.SetWorkflows(m.workflows)
 		m.resourceSummary = m.resourceSummary.Update(m.workflows)
+
+		// Find the previously selected workflow's new index in the reordered list
+		if previouslySelectedID != "" {
+			for i, wf := range m.workflows {
+				if wf.ID == previouslySelectedID {
+					m.selectedIndex = i
+					break
+				}
+			}
+			// If not found (workflow was removed), clamp to valid range
+			if m.selectedIndex >= len(m.workflows) {
+				m.selectedIndex = max(0, len(m.workflows)-1)
+			}
+		}
+
 		// Load cached state for initial selection if needed
 		if len(m.workflows) > 0 {
 			m.loadSelectedWorkflowState()
+		}
+		// Open coordinator panel by default if not already open
+		if !m.showCoordinatorPanel && len(m.workflows) > 0 {
+			m.openCoordinatorPanelForSelected()
+		} else if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+			// Panel is already open - sync it with current selection
+			// (workflow list may have been reordered after new workflow created)
+			wf := m.SelectedWorkflow()
+			if wf != nil {
+				uiState := m.getOrCreateUIState(wf.ID)
+				m.coordinatorPanel.SetWorkflow(wf.ID, uiState)
+			}
 		}
 		return m, nil
 
@@ -227,9 +320,26 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 	case StartWorkflowFailedMsg:
 		return m.handleStartWorkflowFailed(msg)
 
+	case CoordinatorPanelSubmitMsg:
+		// Send message to coordinator
+		return m, m.sendToCoordinator(msg.WorkflowID, msg.Content)
+
+	case vimtextarea.SubmitMsg:
+		// Forward to coordinator panel if open
+		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+			var cmd tea.Cmd
+			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Update coordinator panel size if visible
+		if m.coordinatorPanel != nil {
+			m.coordinatorPanel.SetSize(CoordinatorPanelWidth, m.height)
+		}
 		return m, nil
 	}
 
@@ -274,6 +384,17 @@ func (m *Model) Cleanup() {
 	if m.cancel != nil {
 		m.cancel()
 	}
+}
+
+// IsInitialized returns true if the dashboard has been initialized with a control plane.
+func (m Model) IsInitialized() bool {
+	return m.controlPlane != nil
+}
+
+// RefreshWorkflows returns a command to reload the workflow list.
+// Used when re-entering dashboard mode to ensure the list is current.
+func (m Model) RefreshWorkflows() tea.Cmd {
+	return m.loadWorkflows()
 }
 
 // === Internal message types ===
@@ -420,11 +541,87 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
 	case "n", "N": // New workflow (always starts immediately)
 		return m.openNewWorkflowModal()
 
+	case "ctrl+w": // Toggle coordinator chat panel
+		return m.toggleCoordinatorPanel()
+
+	case "[": // Previous tab in coordinator panel
+		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+			m.coordinatorPanel.PrevTab()
+			return m, nil
+		}
+		return m, nil
+
+	case "]": // Next tab in coordinator panel
+		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+			m.coordinatorPanel.NextTab()
+			return m, nil
+		}
+		return m, nil
+
+	case "enter": // Focus coordinator panel for selected workflow
+		// Clear notification flag for the selected workflow
+		wf := m.SelectedWorkflow()
+		if wf != nil {
+			if uiState, exists := m.workflowUIState[wf.ID]; exists {
+				uiState.HasNotification = false
+			}
+		}
+
+		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+			m.coordinatorPanel.Focus()
+			return m, nil
+		}
+		// If panel not open, open it and focus
+		m.openCoordinatorPanelForSelected()
+		if m.coordinatorPanel != nil {
+			m.coordinatorPanel.Focus()
+		}
+		return m, nil
+
+	case "tab": // Focus coordinator panel if open
+		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+			m.coordinatorPanel.Focus()
+			return m, nil
+		}
+		return m, nil
+
 	case "q", "ctrl+c":
 		return m, func() tea.Msg { return QuitMsg{} }
 	}
 
 	return m, nil
+}
+
+// toggleCoordinatorPanel toggles the coordinator chat panel for the selected workflow.
+func (m Model) toggleCoordinatorPanel() (mode.Controller, tea.Cmd) {
+	if m.showCoordinatorPanel {
+		// Close the panel
+		m.showCoordinatorPanel = false
+		m.coordinatorPanel = nil
+		return m, nil
+	}
+
+	m.openCoordinatorPanelForSelected()
+	return m, nil
+}
+
+// openCoordinatorPanelForSelected opens the coordinator panel for the currently selected workflow.
+func (m *Model) openCoordinatorPanelForSelected() {
+	wf := m.SelectedWorkflow()
+	if wf == nil {
+		return
+	}
+
+	// Create new panel
+	panel := NewCoordinatorPanel()
+	panel.SetSize(CoordinatorPanelWidth, m.height)
+
+	// Load cached state for this workflow (ensures state exists)
+	uiState := m.getOrCreateUIState(wf.ID)
+	panel.SetWorkflow(wf.ID, uiState)
+
+	m.coordinatorPanel = panel
+	m.showCoordinatorPanel = true
 }
 
 // getFilteredWorkflows returns workflows after applying the current filter.
@@ -452,6 +649,13 @@ func (m Model) handleControlPlaneEvent(event controlplane.ControlPlaneEvent) (mo
 	// Update cached UI state for this workflow (even if not currently selected)
 	if event.WorkflowID != "" {
 		m.updateCachedUIState(event)
+
+		// If coordinator panel is showing for this workflow, update it with new state
+		if m.showCoordinatorPanel && m.coordinatorPanel != nil && m.coordinatorPanel.workflowID == event.WorkflowID {
+			// updateCachedUIState already called getOrCreateUIState, so state exists
+			uiState := m.getOrCreateUIState(event.WorkflowID)
+			m.coordinatorPanel.SetWorkflow(event.WorkflowID, uiState)
+		}
 	}
 
 	// For other events, just continue listening
@@ -490,14 +694,80 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 
 	// Update the appropriate fields based on event type
 	switch event.Type {
+	case controlplane.EventCoordinatorSpawned:
+		// Coordinator started - set initial status to Ready
+		if payload, ok := event.Payload.(events.ProcessEvent); ok {
+			uiState.CoordinatorStatus = payload.Status
+			uiState.CoordinatorQueueCount = payload.QueueCount
+		}
+
 	case controlplane.EventCoordinatorOutput:
 		if payload, ok := event.Payload.(events.ProcessEvent); ok {
-			m.appendCoordinatorMessageToCache(uiState, payload)
+			// Handle Ready/Working state transitions
+			switch payload.Type {
+			case events.ProcessReady:
+				uiState.CoordinatorStatus = events.ProcessStatusReady
+			case events.ProcessWorking:
+				uiState.CoordinatorStatus = events.ProcessStatusWorking
+			case events.ProcessOutput:
+				// Output events - append message to chat
+				m.appendCoordinatorMessageToCache(uiState, payload)
+			default:
+				// For other event types, use the Status field if present
+				if payload.Status != "" {
+					uiState.CoordinatorStatus = payload.Status
+				}
+				// Still append output if present
+				if payload.Output != "" {
+					m.appendCoordinatorMessageToCache(uiState, payload)
+				}
+			}
+			// Always update queue count
+			uiState.CoordinatorQueueCount = payload.QueueCount
+		}
+
+	case controlplane.EventCoordinatorIncoming:
+		// User message delivered to coordinator - add as user message
+		if payload, ok := event.Payload.(events.ProcessEvent); ok {
+			if payload.Message != "" {
+				uiState.CoordinatorMessages = append(uiState.CoordinatorMessages, chatrender.Message{
+					Role:    "user",
+					Content: payload.Message,
+				})
+			}
 		}
 
 	case controlplane.EventWorkerOutput:
 		if payload, ok := event.Payload.(events.ProcessEvent); ok {
-			m.appendWorkerMessageToCache(uiState, payload)
+			workerID := payload.ProcessID
+			// Ensure worker exists in cache
+			if !slices.Contains(uiState.WorkerIDs, workerID) {
+				m.addWorkerToCache(uiState, workerID)
+			}
+			// Update worker status based on event type
+			switch payload.Type {
+			case events.ProcessReady:
+				uiState.WorkerStatus[workerID] = events.ProcessStatusReady
+			case events.ProcessWorking:
+				uiState.WorkerStatus[workerID] = events.ProcessStatusWorking
+			case events.ProcessOutput:
+				// Output events - append message to chat
+				m.appendWorkerMessageToCache(uiState, payload)
+			default:
+				// For other event types, use the Status field if present
+				if payload.Status != "" {
+					uiState.WorkerStatus[workerID] = payload.Status
+				}
+				// Still append output if present
+				if payload.Output != "" {
+					m.appendWorkerMessageToCache(uiState, payload)
+				}
+			}
+			// Update phase and queue count
+			if payload.Phase != nil {
+				uiState.WorkerPhases[workerID] = *payload.Phase
+			}
+			uiState.WorkerQueueCounts[workerID] = payload.QueueCount
 		}
 
 	case controlplane.EventWorkerSpawned:
@@ -510,10 +780,32 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 			m.removeWorkerFromCache(uiState, payload.ProcessID)
 		}
 
+	case controlplane.EventWorkerIncoming:
+		// Message delivered to worker (from coordinator) - add as coordinator message
+		if payload, ok := event.Payload.(events.ProcessEvent); ok {
+			workerID := payload.ProcessID
+			if payload.Message != "" {
+				// Ensure worker exists in cache
+				if !slices.Contains(uiState.WorkerIDs, workerID) {
+					m.addWorkerToCache(uiState, workerID)
+				}
+				messages := uiState.WorkerMessages[workerID]
+				messages = append(messages, chatrender.Message{
+					Role:    "coordinator",
+					Content: payload.Message,
+				})
+				uiState.WorkerMessages[workerID] = messages
+			}
+		}
+
 	case controlplane.EventMessagePosted:
 		if payload, ok := event.Payload.(message.Event); ok {
 			uiState.MessageEntries = append(uiState.MessageEntries, payload.Entry)
 		}
+
+	case controlplane.EventUserNotification:
+		// Set notification flag to highlight this workflow row
+		uiState.HasNotification = true
 	}
 
 	// Update timestamp (handle nil Clock for tests)
@@ -524,6 +816,11 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 
 // appendCoordinatorMessageToCache appends a coordinator message to the cached UI state.
 func (m *Model) appendCoordinatorMessageToCache(state *WorkflowUIState, payload events.ProcessEvent) {
+	// Skip empty output (status change signals without actual content)
+	if payload.Output == "" {
+		return
+	}
+
 	isToolCall := strings.HasPrefix(payload.Output, "🔧")
 
 	// Handle streaming deltas by appending to the last message if same role
@@ -545,6 +842,11 @@ func (m *Model) appendCoordinatorMessageToCache(state *WorkflowUIState, payload 
 
 // appendWorkerMessageToCache appends a worker message to the cached UI state.
 func (m *Model) appendWorkerMessageToCache(state *WorkflowUIState, payload events.ProcessEvent) {
+	// Skip empty output (status change signals without actual content)
+	if payload.Output == "" {
+		return
+	}
+
 	workerID := payload.ProcessID
 	isToolCall := strings.HasPrefix(payload.Output, "🔧")
 	messages := state.WorkerMessages[workerID]
@@ -722,6 +1024,16 @@ func (m *Model) handleWorkflowSelectionChange(newIndex int) {
 
 	// Load cached state for the new selection
 	m.loadSelectedWorkflowState()
+
+	// Update coordinator panel if open
+	if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+		wf := m.SelectedWorkflow()
+		if wf != nil {
+			// Use getOrCreateUIState to ensure we have valid state (loadSelectedWorkflowState already called above)
+			uiState := m.getOrCreateUIState(wf.ID)
+			m.coordinatorPanel.SetWorkflow(wf.ID, uiState)
+		}
+	}
 }
 
 // getOrCreateUIState returns the cached UI state for a workflow, creating if needed.
@@ -774,4 +1086,12 @@ func (m *Model) isWorkflowRunning(id controlplane.WorkflowID) bool {
 		}
 	}
 	return false
+}
+
+// truncate truncates a string to maxLen characters, adding "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

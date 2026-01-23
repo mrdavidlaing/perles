@@ -25,11 +25,13 @@ const (
 	EventCoordinatorSpawned  EventType = "coordinator.spawned"
 	EventCoordinatorReplaced EventType = "coordinator.replaced"
 	EventCoordinatorOutput   EventType = "coordinator.output"
+	EventCoordinatorIncoming EventType = "coordinator.incoming"
 
 	// Worker events
-	EventWorkerSpawned EventType = "worker.spawned"
-	EventWorkerRetired EventType = "worker.retired"
-	EventWorkerOutput  EventType = "worker.output"
+	EventWorkerSpawned  EventType = "worker.spawned"
+	EventWorkerRetired  EventType = "worker.retired"
+	EventWorkerOutput   EventType = "worker.output"
+	EventWorkerIncoming EventType = "worker.incoming"
 
 	// Task events
 	EventTaskAssigned  EventType = "task.assigned"
@@ -38,6 +40,9 @@ const (
 
 	// Message events
 	EventMessagePosted EventType = "message.posted"
+
+	// User notification events
+	EventUserNotification EventType = "user.notification"
 
 	// Health events
 	EventHealthUnhealthy  EventType = "health.unhealthy"
@@ -147,6 +152,13 @@ func ClassifyEvent(v2Event any) EventType {
 		}
 		return EventWorkerOutput
 
+	case events.ProcessReady, events.ProcessWorking:
+		// Ready/Working state transitions - classify by role
+		if processEvent.Role == events.RoleCoordinator {
+			return EventCoordinatorOutput
+		}
+		return EventWorkerOutput
+
 	case events.ProcessWorkflowComplete:
 		return EventWorkflowCompleted
 
@@ -156,6 +168,15 @@ func ClassifyEvent(v2Event any) EventType {
 			return EventTaskFailed
 		}
 		return EventUnknown
+
+	case events.ProcessUserNotification:
+		return EventUserNotification
+
+	case events.ProcessIncoming:
+		if processEvent.Role == events.RoleCoordinator {
+			return EventCoordinatorIncoming
+		}
+		return EventWorkerIncoming
 
 	default:
 		return EventUnknown
@@ -183,7 +204,8 @@ func (t EventType) IsCoordinatorEvent() bool {
 	switch t {
 	case EventCoordinatorSpawned,
 		EventCoordinatorReplaced,
-		EventCoordinatorOutput:
+		EventCoordinatorOutput,
+		EventCoordinatorIncoming:
 		return true
 	default:
 		return false
@@ -195,7 +217,8 @@ func (t EventType) IsWorkerEvent() bool {
 	switch t {
 	case EventWorkerSpawned,
 		EventWorkerRetired,
-		EventWorkerOutput:
+		EventWorkerOutput,
+		EventWorkerIncoming:
 		return true
 	default:
 		return false

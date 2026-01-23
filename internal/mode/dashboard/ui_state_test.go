@@ -610,6 +610,68 @@ func TestModel_Cleanup_UnsubscribesFromGlobal(t *testing.T) {
 	require.True(t, globalUnsubscribeCalled, "global unsubscribe should be called on cleanup")
 }
 
+func TestModel_GlobalEvent_CoordinatorStatusFromProcessReadyWorking(t *testing.T) {
+	// Verify that ProcessReady and ProcessWorking events update CoordinatorStatus
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	mockCP := newMockControlPlane()
+	mockCP.On("List", mock.Anything, mock.Anything).Return(workflows, nil).Maybe()
+
+	globalEventCh := make(chan controlplane.ControlPlaneEvent)
+	close(globalEventCh)
+	mockCP.On("Subscribe", mock.Anything).Return((<-chan controlplane.ControlPlaneEvent)(globalEventCh), func() {}).Maybe()
+
+	cfg := Config{
+		ControlPlane: mockCP,
+		Services:     mode.Services{},
+	}
+
+	m := New(cfg)
+	m.workflows = workflows
+	m.selectedIndex = 0
+	m = m.SetSize(100, 40).(Model)
+
+	// Initial state should have empty status
+	state := m.getOrCreateUIState("wf-1")
+	require.Equal(t, events.ProcessStatus(""), state.CoordinatorStatus, "initial status should be empty")
+
+	// Simulate ProcessWorking event (classified as EventCoordinatorOutput)
+	eventWorking := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:   events.ProcessWorking,
+			Role:   events.RoleCoordinator,
+			Status: events.ProcessStatusWorking,
+		},
+	}
+	result, _ := m.Update(eventWorking)
+	m = result.(Model)
+
+	// Verify status updated to Working
+	state = m.getOrCreateUIState("wf-1")
+	require.Equal(t, events.ProcessStatusWorking, state.CoordinatorStatus, "status should be Working after ProcessWorking event")
+
+	// Simulate ProcessReady event (classified as EventCoordinatorOutput)
+	eventReady := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:   events.ProcessReady,
+			Role:   events.RoleCoordinator,
+			Status: events.ProcessStatusReady,
+		},
+	}
+	result, _ = m.Update(eventReady)
+	m = result.(Model)
+
+	// Verify status updated to Ready
+	state = m.getOrCreateUIState("wf-1")
+	require.Equal(t, events.ProcessStatusReady, state.CoordinatorStatus, "status should be Ready after ProcessReady event")
+}
+
 func TestModel_WorkflowSelectionChange_SameIndexNoOp(t *testing.T) {
 	workflows := []*controlplane.WorkflowInstance{
 		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),

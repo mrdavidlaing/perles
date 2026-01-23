@@ -525,6 +525,7 @@ func (m Model) renderDashboardContent() string {
 	actionsCol.WriteString(renderBinding(keys.Dashboard.Start))
 	actionsCol.WriteString(renderBinding(keys.Dashboard.Stop))
 	actionsCol.WriteString(renderBinding(keys.Dashboard.New))
+	actionsCol.WriteString(renderBinding(keys.Dashboard.CoordinatorChat))
 	actionsCol.WriteString(renderBinding(keys.Dashboard.Help))
 	actionsCol.WriteString(renderBinding(keys.Dashboard.Quit))
 

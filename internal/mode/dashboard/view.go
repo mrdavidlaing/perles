@@ -38,19 +38,28 @@ const (
 	statusStopped   = "STOPPED"
 )
 
+// CoordinatorPanelWidth is the fixed width for the coordinator chat panel.
+// Matches the chatpanel width for consistency across the application.
+const CoordinatorPanelWidth = 50
+
 // createWorkflowTableConfig creates the table configuration for the workflow list.
 // The render callbacks close over the model to access controlPlane and services.Clock.
 func (m Model) createWorkflowTableConfig() table.TableConfig {
 	return table.TableConfig{
 		Columns: []table.ColumnConfig{
 			{
-				Key:    "index",
-				Header: "#",
-				Width:  3,
-				Type:   table.ColumnTypeNumber,
+				Key:    "notify",
+				Header: "🔔",
+				Width:  2, // Bell emoji is 2 characters wide
+				Type:   table.ColumnTypeIcon,
 				Render: func(row any, _ string, _ int, _ bool) string {
 					r := row.(WorkflowTableRow)
-					return fmt.Sprintf("%d", r.Index)
+					if r.HasNotification {
+						return lipgloss.NewStyle().
+							Foreground(lipgloss.AdaptiveColor{Light: "#FF6B6B", Dark: "#FFD700"}).
+							Render("🔔")
+					}
+					return "  " // Two spaces to match column width
 				},
 			},
 			{
@@ -79,10 +88,11 @@ func (m Model) createWorkflowTableConfig() table.TableConfig {
 				},
 			},
 			{
-				Key:    "epicid",
-				Header: "EpicID",
-				Width:  16,
-				Type:   table.ColumnTypeText,
+				Key:       "epicid",
+				Header:    "EpicID",
+				Width:     16,
+				Type:      table.ColumnTypeText,
+				HideBelow: 100, // Hide when table width < 100 (e.g., coordinator panel open)
 				Render: func(row any, _ string, w int, _ bool) string {
 					r := row.(WorkflowTableRow)
 					epicID := r.Workflow.EpicID
@@ -96,10 +106,11 @@ func (m Model) createWorkflowTableConfig() table.TableConfig {
 				},
 			},
 			{
-				Key:    "workdir",
-				Header: "WorkDir",
-				Width:  23,
-				Type:   table.ColumnTypeText,
+				Key:       "workdir",
+				Header:    "WorkDir",
+				Width:     23,
+				Type:      table.ColumnTypeText,
+				HideBelow: 120, // Hide when table width < 120 (e.g., coordinator panel open)
 				Render: func(row any, _ string, w int, _ bool) string {
 					r := row.(WorkflowTableRow)
 					wf := r.Workflow
@@ -171,10 +182,11 @@ func (m Model) createWorkflowTableConfig() table.TableConfig {
 				},
 			},
 			{
-				Key:    "started",
-				Header: "Started",
-				Width:  14, // "01/02 03:04PM" = 13 chars + 1 padding
-				Type:   table.ColumnTypeDate,
+				Key:       "started",
+				Header:    "Started",
+				Width:     14, // "01/02 03:04PM" = 13 chars + 1 padding
+				Type:      table.ColumnTypeDate,
+				HideBelow: 110, // Hide when table width < 110 (e.g., coordinator panel open)
 				Render: func(row any, _ string, _ int, _ bool) string {
 					r := row.(WorkflowTableRow)
 					return m.getStartedDisplay(r.Workflow)
@@ -219,11 +231,30 @@ func (m *Model) renderView() string {
 	footerHeight := lipgloss.Height(footer)
 	contentHeight := max(m.height-headerHeight-footerHeight, 5)
 
-	// Content section - bordered workflow table
-	content := m.renderBorderedWorkflowTable(m.width, contentHeight)
+	var mainContent string
+
+	// Check if coordinator panel is visible
+	if m.showCoordinatorPanel && m.coordinatorPanel != nil {
+		// Split layout: workflow table on left, coordinator panel on right
+		panelWidth := CoordinatorPanelWidth
+		tableWidth := m.width - panelWidth
+
+		// Render workflow table (narrower)
+		tableView := m.renderBorderedWorkflowTable(tableWidth, contentHeight)
+
+		// Render coordinator panel
+		m.coordinatorPanel.SetSize(panelWidth, contentHeight)
+		panelView := m.coordinatorPanel.View()
+
+		// Join horizontally
+		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, tableView, panelView)
+	} else {
+		// Full width workflow table
+		mainContent = m.renderBorderedWorkflowTable(m.width, contentHeight)
+	}
 
 	// Compose the layout with JoinVertical
-	view := lipgloss.JoinVertical(lipgloss.Left, content, footer)
+	view := lipgloss.JoinVertical(lipgloss.Left, mainContent, footer)
 
 	// Use Place to position content in a fixed-size container
 	// This ensures the layout fills the entire terminal with footer at bottom
@@ -237,9 +268,15 @@ func (m Model) renderBorderedWorkflowTable(width, height int) string {
 	// Convert workflows to table rows
 	rows := make([]any, len(filtered))
 	for i, wf := range filtered {
+		// Check if this workflow has a pending notification
+		hasNotification := false
+		if uiState, exists := m.workflowUIState[wf.ID]; exists {
+			hasNotification = uiState.HasNotification
+		}
 		rows[i] = WorkflowTableRow{
-			Index:    i + 1,
-			Workflow: wf,
+			Index:           i + 1,
+			Workflow:        wf,
+			HasNotification: hasNotification,
 		}
 	}
 
@@ -260,6 +297,7 @@ func (m Model) renderActionHints() string {
 		fmt.Sprintf("%s start", keyStyle.Render("[s]")),
 		fmt.Sprintf("%s stop", keyStyle.Render("[x]")),
 		fmt.Sprintf("%s new", keyStyle.Render("[n]")),
+		fmt.Sprintf("%s chat", keyStyle.Render("[ctrl+w]")),
 		fmt.Sprintf("%s help", keyStyle.Render("[?]")),
 		fmt.Sprintf("%s quit", keyStyle.Render("[q]")),
 	}

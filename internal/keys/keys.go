@@ -500,21 +500,22 @@ func FullHelp() [][]key.Binding {
 
 // Dashboard contains keybindings specific to dashboard mode.
 var Dashboard = struct {
-	Up          key.Binding
-	Down        key.Binding
-	Left        key.Binding
-	Right       key.Binding
-	Tab         key.Binding
-	GotoTop     key.Binding
-	GotoBottom  key.Binding
-	Enter       key.Binding
-	Start       key.Binding
-	Stop        key.Binding
-	New         key.Binding
-	Filter      key.Binding
-	ClearFilter key.Binding
-	Help        key.Binding
-	Quit        key.Binding
+	Up              key.Binding
+	Down            key.Binding
+	Left            key.Binding
+	Right           key.Binding
+	Tab             key.Binding
+	GotoTop         key.Binding
+	GotoBottom      key.Binding
+	Enter           key.Binding
+	Start           key.Binding
+	Stop            key.Binding
+	New             key.Binding
+	Filter          key.Binding
+	ClearFilter     key.Binding
+	Help            key.Binding
+	Quit            key.Binding
+	CoordinatorChat key.Binding
 }{
 	Up: key.NewBinding(
 		key.WithKeys("k", "up"),
@@ -575,6 +576,10 @@ var Dashboard = struct {
 	Quit: key.NewBinding(
 		key.WithKeys("q"),
 		key.WithHelp("q", "quit"),
+	),
+	CoordinatorChat: key.NewBinding(
+		key.WithKeys("ctrl+w"),
+		key.WithHelp("ctrl+w", "coordinator chat"),
 	),
 }
 
