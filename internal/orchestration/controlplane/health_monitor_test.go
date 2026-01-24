@@ -256,63 +256,6 @@ func TestHealthMonitor_EventBus_TriggersHeartbeatOnAnyEvent(t *testing.T) {
 	monitor.Stop()
 }
 
-func TestHealthMonitor_EventBus_TriggersProgressOnPhaseTransition(t *testing.T) {
-	clock := newMockClock(time.Now())
-	eventBus := pubsub.NewBroker[ControlPlaneEvent]()
-	defer eventBus.Close()
-
-	monitor := NewHealthMonitor(HealthMonitorConfig{
-		Policy:        DefaultHealthPolicy(),
-		CheckInterval: 1 * time.Second,
-		Clock:         clock,
-		EventBus:      eventBus,
-	})
-
-	workflowID := WorkflowID("workflow-1")
-	monitor.TrackWorkflow(workflowID)
-
-	// Record initial timestamps
-	initialStatus, _ := monitor.GetStatus(workflowID)
-	initialProgressAt := initialStatus.LastProgressAt
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	err := monitor.Start(ctx)
-	require.NoError(t, err)
-
-	// Wait for subscription
-	time.Sleep(10 * time.Millisecond)
-
-	// Advance clock so we can detect the progress update
-	clock.Advance(1 * time.Second)
-
-	// Publish a phase transition event (indicates progress)
-	implementingPhase := events.ProcessPhaseImplementing
-	processEvent := events.ProcessEvent{
-		Type:      events.ProcessStatusChange,
-		ProcessID: string(workflowID),
-		Role:      events.RoleWorker,
-		Status:    events.ProcessStatusWorking,
-		Phase:     &implementingPhase,
-	}
-	cpEvent := ControlPlaneEvent{
-		WorkflowID: workflowID,
-		Payload:    processEvent,
-	}
-	eventBus.Publish(pubsub.UpdatedEvent, cpEvent)
-
-	// Wait for event to be processed
-	time.Sleep(20 * time.Millisecond)
-
-	// Should have updated progress timestamp
-	status, ok := monitor.GetStatus(workflowID)
-	require.True(t, ok)
-	require.True(t, status.LastProgressAt.After(initialProgressAt))
-
-	monitor.Stop()
-}
-
 func TestHealthMonitor_Stop_CleanlyShutsDownCheckLoop(t *testing.T) {
 	monitor := NewHealthMonitor(HealthMonitorConfig{
 		Policy:        DefaultHealthPolicy(),
@@ -533,53 +476,6 @@ func TestHealthMonitor_RecordProgress_AutoTracksUnknownWorkflow(t *testing.T) {
 	require.Equal(t, workflowID, status.WorkflowID)
 }
 
-func TestHealthMonitor_EventBus_StatusChangeToWorkingIsProgress(t *testing.T) {
-	clock := newMockClock(time.Now())
-	eventBus := pubsub.NewBroker[ControlPlaneEvent]()
-	defer eventBus.Close()
-
-	monitor := NewHealthMonitor(HealthMonitorConfig{
-		Policy:        DefaultHealthPolicy(),
-		CheckInterval: 1 * time.Second,
-		Clock:         clock,
-		EventBus:      eventBus,
-	})
-
-	workflowID := WorkflowID("workflow-1")
-	monitor.TrackWorkflow(workflowID)
-
-	initialStatus, _ := monitor.GetStatus(workflowID)
-	initialProgressAt := initialStatus.LastProgressAt
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	err := monitor.Start(ctx)
-	require.NoError(t, err)
-	time.Sleep(10 * time.Millisecond)
-
-	clock.Advance(1 * time.Second)
-
-	// Status change to Working is progress
-	processEvent := events.ProcessEvent{
-		Type:      events.ProcessStatusChange,
-		ProcessID: string(workflowID),
-		Role:      events.RoleCoordinator,
-		Status:    events.ProcessStatusWorking,
-	}
-	cpEvent := ControlPlaneEvent{
-		WorkflowID: workflowID,
-		Payload:    processEvent,
-	}
-	eventBus.Publish(pubsub.UpdatedEvent, cpEvent)
-	time.Sleep(20 * time.Millisecond)
-
-	status, _ := monitor.GetStatus(workflowID)
-	require.True(t, status.LastProgressAt.After(initialProgressAt))
-
-	monitor.Stop()
-}
-
 func TestHealthMonitor_EventBus_WorkflowCompleteUntracksWorkflow(t *testing.T) {
 	clock := newMockClock(time.Now())
 	eventBus := pubsub.NewBroker[ControlPlaneEvent]()
@@ -658,40 +554,26 @@ func TestIsProgressEvent(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "status change to working is progress",
+			name: "worker output is progress",
 			event: events.ProcessEvent{
-				Type:   events.ProcessStatusChange,
-				Status: events.ProcessStatusWorking,
+				Type: events.ProcessOutput,
+				Role: events.RoleWorker,
 			},
 			expected: true,
 		},
 		{
-			name: "status change to ready is progress",
+			name: "coordinator output is not progress",
 			event: events.ProcessEvent{
-				Type:   events.ProcessStatusChange,
-				Status: events.ProcessStatusReady,
-			},
-			expected: true,
-		},
-		{
-			name: "workflow complete is not progress (handled separately to untrack)",
-			event: events.ProcessEvent{
-				Type: events.ProcessWorkflowComplete,
+				Type: events.ProcessOutput,
+				Role: events.RoleCoordinator,
 			},
 			expected: false,
 		},
 		{
-			name: "phase transition is progress",
+			name: "status change is not progress",
 			event: events.ProcessEvent{
-				Type:  events.ProcessStatusChange,
-				Phase: func() *events.ProcessPhase { p := events.ProcessPhaseImplementing; return &p }(),
-			},
-			expected: true,
-		},
-		{
-			name: "output is not progress",
-			event: events.ProcessEvent{
-				Type: events.ProcessOutput,
+				Type:   events.ProcessStatusChange,
+				Status: events.ProcessStatusWorking,
 			},
 			expected: false,
 		},
@@ -717,4 +599,108 @@ func TestIsProgressEvent(t *testing.T) {
 			require.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestHealthMonitor_EventBus_WorkerOutputResetsRecovery(t *testing.T) {
+	clock := newMockClock(time.Now())
+	eventBus := pubsub.NewBroker[ControlPlaneEvent]()
+	defer eventBus.Close()
+
+	monitor := NewHealthMonitor(HealthMonitorConfig{
+		Policy:        DefaultHealthPolicy(),
+		CheckInterval: 1 * time.Second,
+		Clock:         clock,
+		EventBus:      eventBus,
+	})
+
+	workflowID := WorkflowID("workflow-1")
+	monitor.TrackWorkflow(workflowID)
+
+	// Set RecoveryCount to 2 to simulate previous recovery attempts
+	m := monitor.(*defaultHealthMonitor)
+	m.mu.Lock()
+	m.statuses[workflowID].RecoveryCount = 2
+	m.mu.Unlock()
+
+	status, _ := monitor.GetStatus(workflowID)
+	require.Equal(t, 2, status.RecoveryCount, "precondition: recovery count should be 2")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := monitor.Start(ctx)
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+
+	// Publish worker output event - should reset recovery via RecordProgress
+	processEvent := events.ProcessEvent{
+		Type:      events.ProcessOutput,
+		ProcessID: string(workflowID),
+		Role:      events.RoleWorker,
+		Output:    "worker is doing work",
+	}
+	cpEvent := ControlPlaneEvent{
+		WorkflowID: workflowID,
+		Payload:    processEvent,
+	}
+	eventBus.Publish(pubsub.UpdatedEvent, cpEvent)
+	time.Sleep(20 * time.Millisecond)
+
+	// Recovery count should be reset to 0
+	status, _ = monitor.GetStatus(workflowID)
+	require.Equal(t, 0, status.RecoveryCount, "worker output should reset recovery count")
+
+	monitor.Stop()
+}
+
+func TestHealthMonitor_EventBus_CoordinatorOutputDoesNotResetRecovery(t *testing.T) {
+	clock := newMockClock(time.Now())
+	eventBus := pubsub.NewBroker[ControlPlaneEvent]()
+	defer eventBus.Close()
+
+	monitor := NewHealthMonitor(HealthMonitorConfig{
+		Policy:        DefaultHealthPolicy(),
+		CheckInterval: 1 * time.Second,
+		Clock:         clock,
+		EventBus:      eventBus,
+	})
+
+	workflowID := WorkflowID("workflow-1")
+	monitor.TrackWorkflow(workflowID)
+
+	// Set RecoveryCount to 2 to simulate previous recovery attempts
+	m := monitor.(*defaultHealthMonitor)
+	m.mu.Lock()
+	m.statuses[workflowID].RecoveryCount = 2
+	m.mu.Unlock()
+
+	status, _ := monitor.GetStatus(workflowID)
+	require.Equal(t, 2, status.RecoveryCount, "precondition: recovery count should be 2")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := monitor.Start(ctx)
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+
+	// Publish coordinator output event - should NOT reset recovery (only heartbeat)
+	processEvent := events.ProcessEvent{
+		Type:      events.ProcessOutput,
+		ProcessID: string(workflowID),
+		Role:      events.RoleCoordinator,
+		Output:    "coordinator responding to nudge",
+	}
+	cpEvent := ControlPlaneEvent{
+		WorkflowID: workflowID,
+		Payload:    processEvent,
+	}
+	eventBus.Publish(pubsub.UpdatedEvent, cpEvent)
+	time.Sleep(20 * time.Millisecond)
+
+	// Recovery count should remain unchanged (coordinator output only triggers heartbeat)
+	status, _ = monitor.GetStatus(workflowID)
+	require.Equal(t, 2, status.RecoveryCount, "coordinator output should NOT reset recovery count")
+
+	monitor.Stop()
 }

@@ -130,12 +130,14 @@ func TestDefaultHealthPolicy(t *testing.T) {
 	policy := DefaultHealthPolicy()
 
 	require.Equal(t, 2*time.Minute, policy.HeartbeatTimeout)
-	require.Equal(t, 5*time.Minute, policy.ProgressTimeout)
+	require.Equal(t, 2*time.Minute, policy.ProgressTimeout)
 	require.Equal(t, 3, policy.MaxRecoveries)
-	require.Equal(t, 30*time.Second, policy.RecoveryBackoff)
-	require.False(t, policy.EnableAutoNudge)
+	require.Equal(t, 2*time.Minute, policy.RecoveryBackoff)
+	require.True(t, policy.EnableAutoNudge)
+	require.Equal(t, 3, policy.MaxNudges)
 	require.False(t, policy.EnableAutoReplace)
 	require.False(t, policy.EnableAutoPause)
+	require.False(t, policy.EnableAutoFail)
 
 	err := policy.Validate()
 	require.NoError(t, err, "default policy should be valid")
@@ -221,12 +223,12 @@ func TestHealthStatus_NeedsRecovery_FalseWhenInBackoff(t *testing.T) {
 func TestHealthStatus_NeedsRecovery_TrueAfterBackoff(t *testing.T) {
 	status := NewHealthStatus(WorkflowID("test-id"))
 	status.LastProgressAt = time.Now().Add(-6 * time.Minute) // stuck
-	// Simulate a recovery attempt that happened in the past
-	pastRecovery := time.Now().Add(-31 * time.Second)
+	// Simulate a recovery attempt that happened in the past (beyond 2 minute backoff)
+	pastRecovery := time.Now().Add(-3 * time.Minute)
 	status.LastRecoveryAt = &pastRecovery
 	status.RecoveryCount = 1
 
-	policy := DefaultHealthPolicy() // RecoveryBackoff = 30s
+	policy := DefaultHealthPolicy() // RecoveryBackoff = 2 minutes
 	require.True(t, status.NeedsRecovery(policy))
 }
 

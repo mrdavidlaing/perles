@@ -42,19 +42,25 @@ type HealthPolicy struct {
 	// EnableAutoPause enables automatic pausing of workflows after repeated
 	// recovery failures.
 	EnableAutoPause bool
+
+	// EnableAutoFail enables automatic failure of workflows after max recoveries
+	// are exhausted. When false (default), workflows enter limbo state instead
+	// of failing, emitting HealthStillStuck events periodically.
+	EnableAutoFail bool
 }
 
 // DefaultHealthPolicy returns a HealthPolicy with sensible defaults.
 func DefaultHealthPolicy() HealthPolicy {
 	return HealthPolicy{
 		HeartbeatTimeout:  2 * time.Minute,
-		ProgressTimeout:   5 * time.Minute,
+		ProgressTimeout:   2 * time.Minute,
 		MaxRecoveries:     3,
-		RecoveryBackoff:   30 * time.Second,
-		EnableAutoNudge:   false,
-		MaxNudges:         2,
+		RecoveryBackoff:   2 * time.Minute,
+		EnableAutoNudge:   true,
+		MaxNudges:         3,
 		EnableAutoReplace: false,
 		EnableAutoPause:   false,
+		EnableAutoFail:    false,
 	}
 }
 

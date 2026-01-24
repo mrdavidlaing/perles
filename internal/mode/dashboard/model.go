@@ -985,11 +985,11 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 		}
 
 	case controlplane.EventCoordinatorIncoming:
-		// User message delivered to coordinator - add as user message
+		// Message delivered to coordinator - use sender from event
 		if payload, ok := event.Payload.(events.ProcessEvent); ok {
 			if payload.Message != "" {
 				uiState.CoordinatorMessages = append(uiState.CoordinatorMessages, chatrender.Message{
-					Role:    "user",
+					Role:    payload.Sender,
 					Content: payload.Message,
 				})
 			}

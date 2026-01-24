@@ -208,9 +208,17 @@ func (e *defaultRecoveryExecutor) executeNudge(ctx context.Context, inst *Workfl
 		return fmt.Errorf("workflow infrastructure not available")
 	}
 
-	// Create nudge message
-	nudgeMessage := "[SYSTEM] Health check: The workflow appears to be making slow progress. " +
-		"Please confirm you are still actively working on the task, or report if you are blocked."
+	// Create nudge message with actionable guidance
+	nudgeMessage := `[SYSTEM] Automatic System Health Check: No worker output detected recently.
+
+Please diagnose using these tools:
+1. Use query_workflow_state to check worker statuses
+2. Use read_message_log to review recent activity
+
+Based on what you find:
+- If workers are still in "working" state → No action needed, they're actively processing
+- If waiting for user input or action → You MUST call the notify_user to alert the user, then end your turn
+- If workers are idle/stuck → if they were supposed to be working on a task investigate and determine if we need to send a message to a worker.`
 
 	// Submit send-to-process command for the coordinator
 	cmd := command.NewSendToProcessCommand(
@@ -344,9 +352,13 @@ func DetermineRecoveryActionAt(status *HealthStatus, policy HealthPolicy, now ti
 		return RecoveryAction(-1)
 	}
 
-	// Check if max recoveries exceeded - fail the workflow
+	// Check if max recoveries exceeded
 	if status.RecoveryCount >= policy.MaxRecoveries {
-		return RecoveryFail
+		if policy.EnableAutoFail {
+			return RecoveryFail
+		}
+		// No auto-fail - enter limbo state (no action, will emit HealthStillStuck)
+		return RecoveryAction(-1)
 	}
 
 	// Calculate MaxNudges with default
@@ -385,6 +397,9 @@ func DetermineRecoveryActionAt(status *HealthStatus, policy HealthPolicy, now ti
 		return RecoveryAction(-1)
 	}
 
-	// Phase 4: Fail (beyond pause attempts)
-	return RecoveryFail
+	// Phase 4: Fail (beyond pause attempts, only if enabled)
+	if policy.EnableAutoFail {
+		return RecoveryFail
+	}
+	return RecoveryAction(-1)
 }

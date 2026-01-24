@@ -740,7 +740,7 @@ func (m Model) handleCoordinatorProcessEvent(evt events.ProcessEvent) Model {
 
 	case events.ProcessIncoming:
 		if evt.Message != "" {
-			m = m.AddChatMessage("user", evt.Message, false)
+			m = m.AddChatMessage(evt.Sender, evt.Message, false)
 		}
 
 	case events.ProcessTokenUsage:

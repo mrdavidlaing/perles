@@ -153,9 +153,14 @@ func (h *SendToProcessHandler) handleWithSpan(_ context.Context, sendCmd *comman
 	}
 
 	// Determine sender based on command source
-	sender := repository.SenderUser
-	if sendCmd.Source() == command.SourceMCPTool {
+	var sender repository.SenderType
+	switch sendCmd.Source() {
+	case command.SourceMCPTool:
 		sender = repository.SenderCoordinator
+	case command.SourceInternal:
+		sender = repository.SenderSystem
+	default:
+		sender = repository.SenderUser
 	}
 
 	// Always enqueue the message first - queue is the single path for all messages

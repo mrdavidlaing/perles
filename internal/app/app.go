@@ -1279,11 +1279,11 @@ func (m *Model) createControlPlane() controlplane.ControlPlane {
 	healthMonitor := controlplane.NewHealthMonitor(controlplane.HealthMonitorConfig{
 		Policy: controlplane.HealthPolicy{
 			HeartbeatTimeout:  2 * time.Minute,
-			ProgressTimeout:   5 * time.Minute,
+			ProgressTimeout:   2 * time.Minute,
 			MaxRecoveries:     3,
-			RecoveryBackoff:   30 * time.Second,
+			RecoveryBackoff:   2 * time.Minute,
 			EnableAutoNudge:   true,
-			MaxNudges:         2, // Nudge twice before escalation
+			MaxNudges:         3,
 			EnableAutoReplace: false,
 			EnableAutoPause:   false,
 		},

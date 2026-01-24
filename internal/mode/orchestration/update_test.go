@@ -2588,6 +2588,7 @@ func TestHandleCoordinatorProcessEvent_ProcessIncoming(t *testing.T) {
 		ProcessID: "coordinator",
 		Role:      events.RoleCoordinator,
 		Message:   "User message to coordinator",
+		Sender:    "user",
 	}
 
 	m = m.handleCoordinatorProcessEvent(evt)

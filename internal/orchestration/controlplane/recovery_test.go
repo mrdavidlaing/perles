@@ -185,7 +185,7 @@ func TestRecoveryExecutor_Nudge_SendsMessageToCoordinator(t *testing.T) {
 	sendCmd, ok := commands[0].(*command.SendToProcessCommand)
 	require.True(t, ok)
 	require.Equal(t, repository.CoordinatorID, sendCmd.ProcessID)
-	require.Contains(t, sendCmd.Content, "Health check")
+	require.Contains(t, sendCmd.Content, "System Health Check")
 
 	// Wait for async events
 	time.Sleep(50 * time.Millisecond)
@@ -421,10 +421,31 @@ func TestDetermineRecoveryAction_MaxRecoveriesExceeded_ReturnsFail(t *testing.T)
 		EnableAutoNudge:   true,
 		EnableAutoReplace: true,
 		EnableAutoPause:   true,
+		EnableAutoFail:    true, // Must be enabled to get RecoveryFail
 	}
 
 	action := DetermineRecoveryAction(status, policy)
 	require.Equal(t, RecoveryFail, action)
+}
+
+func TestDetermineRecoveryAction_MaxRecoveriesExceeded_ReturnsNoAction_WhenAutoFailDisabled(t *testing.T) {
+	// Stuck and at max recoveries, but EnableAutoFail is false
+	status := &HealthStatus{
+		WorkflowID:     "wf-1",
+		LastProgressAt: time.Now().Add(-10 * time.Minute), // stuck
+		RecoveryCount:  3,                                 // At max
+	}
+	policy := HealthPolicy{
+		MaxRecoveries:     3,
+		ProgressTimeout:   5 * time.Minute,
+		EnableAutoNudge:   true,
+		EnableAutoReplace: true,
+		EnableAutoPause:   true,
+		EnableAutoFail:    false, // Workflow enters limbo instead of failing
+	}
+
+	action := DetermineRecoveryAction(status, policy)
+	require.Equal(t, RecoveryAction(-1), action, "should return no action when auto-fail disabled")
 }
 
 func TestDetermineRecoveryAction_FirstRecovery_ReturnsNudge(t *testing.T) {
@@ -681,6 +702,7 @@ func TestHealthMonitor_MaxRecoveriesLeadsToFailAction(t *testing.T) {
 		EnableAutoNudge:   true,
 		EnableAutoReplace: true,
 		EnableAutoPause:   true,
+		EnableAutoFail:    true, // Required to get RecoveryFail
 	}
 
 	monitor := NewHealthMonitor(HealthMonitorConfig{
@@ -822,6 +844,7 @@ func TestHealthMonitor_FullRecoverySequence_Integration(t *testing.T) {
 		EnableAutoNudge:   true,
 		EnableAutoReplace: true,
 		EnableAutoPause:   true,
+		EnableAutoFail:    true, // Required to get RecoveryFail
 	}
 
 	monitor := NewHealthMonitor(HealthMonitorConfig{

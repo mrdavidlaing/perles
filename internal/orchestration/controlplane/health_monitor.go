@@ -38,7 +38,7 @@ type HealthMonitor interface {
 	RecordHeartbeat(id WorkflowID)
 
 	// RecordProgress records forward progress for the specified workflow.
-	// This updates both LastProgressAt and LastHeartbeatAt.
+	// This updates both LastProgressAt and LastHeartbeatAt, and resets recovery attempts.
 	RecordProgress(id WorkflowID)
 
 	// TrackWorkflow starts tracking a new workflow.
@@ -318,8 +318,18 @@ func (m *defaultHealthMonitor) runHealthCheck() {
 	policy := m.policy
 
 	for id, status := range m.statuses {
-		// Check heartbeat timeout
 		timeSinceHeartbeat := now.Sub(status.LastHeartbeatAt)
+		timeSinceProgress := now.Sub(status.LastProgressAt)
+
+		log.Debug(log.CatOrch, "Health check tick",
+			"workflow_id", id,
+			"time_since_progress", timeSinceProgress.Truncate(time.Second),
+			"time_since_heartbeat", timeSinceHeartbeat.Truncate(time.Second),
+			"progress_timeout", policy.ProgressTimeout,
+			"recovery_count", status.RecoveryCount,
+			"is_stuck", timeSinceProgress > policy.ProgressTimeout)
+
+		// Check heartbeat timeout
 		if timeSinceHeartbeat > policy.HeartbeatTimeout {
 			if status.IsHealthy {
 				status.IsHealthy = false
@@ -330,7 +340,6 @@ func (m *defaultHealthMonitor) runHealthCheck() {
 
 		// Check progress timeout (stuck detection)
 		// Stuck is computed from LastProgressAt vs ProgressTimeout
-		timeSinceProgress := now.Sub(status.LastProgressAt)
 		if timeSinceProgress > policy.ProgressTimeout {
 			// Emit "stuck suspected" event only once (when RecoveryCount is 0)
 			if status.RecoveryCount == 0 {
@@ -349,16 +358,35 @@ func (m *defaultHealthMonitor) runHealthCheck() {
 func (m *defaultHealthMonitor) triggerRecoveryIfNeeded(id WorkflowID, status *HealthStatus, policy HealthPolicy, now time.Time) {
 	// Skip if no recovery executor is configured
 	if m.recoveryExecutor == nil {
+		log.Debug(log.CatOrch, "Recovery skipped: no executor configured", "workflow_id", id)
 		return
 	}
 
 	// Check if recovery is needed based on status and policy (using our clock)
-	if !status.NeedsRecoveryAt(policy, now) {
+	needsRecovery := status.NeedsRecoveryAt(policy, now)
+	var timeSinceLastRecovery time.Duration
+	if status.LastRecoveryAt != nil {
+		timeSinceLastRecovery = now.Sub(*status.LastRecoveryAt)
+	}
+	log.Debug(log.CatOrch, "Recovery check",
+		"workflow_id", id,
+		"needs_recovery", needsRecovery,
+		"recovery_count", status.RecoveryCount,
+		"max_recoveries", policy.MaxRecoveries,
+		"time_since_last_recovery", timeSinceLastRecovery.Truncate(time.Second),
+		"recovery_backoff", policy.RecoveryBackoff)
+
+	if !needsRecovery {
 		return
 	}
 
 	// Determine the appropriate recovery action
 	action := DetermineRecoveryActionAt(status, policy, now)
+	log.Debug(log.CatOrch, "Recovery action determined",
+		"workflow_id", id,
+		"action", action,
+		"action_valid", action >= 0)
+
 	if action < 0 {
 		// No recovery action available - emit "still stuck" event periodically
 		// to provide visibility into limbo state (once per backoff period)
@@ -441,7 +469,6 @@ func (m *defaultHealthMonitor) processEvent(event pubsub.Event[ControlPlaneEvent
 		return
 	}
 
-	// Classify the event
 	if isProgressEvent(processEvent) {
 		m.RecordProgress(workflowID)
 	} else {
@@ -451,20 +478,8 @@ func (m *defaultHealthMonitor) processEvent(event pubsub.Event[ControlPlaneEvent
 }
 
 // isProgressEvent determines if an event represents forward progress.
-// Progress events indicate meaningful workflow advancement (not just activity).
-// Note: ProcessWorkflowComplete is handled separately (untracks workflow).
+// Progress events indicate meaningful workflow advancement and reset the stuck timer.
+// Only worker output counts as progress - coordinator output could be a nudge response.
 func isProgressEvent(event events.ProcessEvent) bool {
-	// Any phase transition is progress (workers only)
-	if event.Phase != nil {
-		return true
-	}
-
-	switch event.Type {
-	case events.ProcessStatusChange:
-		// Status transitions to/from working represent progress
-		return event.Status == events.ProcessStatusWorking ||
-			event.Status == events.ProcessStatusReady
-	default:
-		return false
-	}
+	return event.Type == events.ProcessOutput && event.Role == events.RoleWorker
 }
