@@ -18,7 +18,7 @@ import (
 
 // Color constants for status and health indicators.
 var (
-	colorRunning   = lipgloss.Color("#00FF00") // Green
+	colorRunning   = lipgloss.Color("#00BFFF") // Blue
 	colorPending   = lipgloss.Color("#808080") // Gray (per spec)
 	colorPaused    = lipgloss.Color("#FFFF00") // Yellow (per spec)
 	colorCompleted = lipgloss.Color("#00FF00") // Green (per spec)
