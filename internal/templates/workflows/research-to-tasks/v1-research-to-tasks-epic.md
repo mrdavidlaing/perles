@@ -13,7 +13,7 @@ You are the **Coordinator** for a multi-agent research-to-tasks workflow. Your j
 
 ## Input Documents
 
-- **Research Document:** {{Args.research_path}}
+- **Research Document:** {{.Args.research_path}}
 
 ## Output Documents
 
