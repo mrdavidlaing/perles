@@ -1,0 +1,94 @@
+registry:
+  # Quick Plan Workflow - Streamlined research and planning cycle
+  # 4 workers: Researcher, Proposal Reviewer, Planner, Task Reviewer
+  - namespace: "workflow"
+    key: "quick-plan"
+    version: "v1"
+    name: "Quick Plan"
+    description: "Streamlined research and planning cycle with review gates. Research, review, task breakdown, and approval - produces a proposal and beads epic with tasks."
+    epic_template: "v1-quick-plan-epic.md"
+    system_prompt: "v1-epic-instructions.md"
+    path: "docs/proposals"
+    labels:
+      - "category:planning"
+    arguments:
+      - key: "goal"
+        label: "Goal"
+        description: "What do you want to build or accomplish?"
+        type: "textarea"
+        required: true
+    nodes:
+      # Phase 1: Researcher creates proposal
+      - key: "research"
+        name: "Research & Write Proposal"
+        assignee: "worker-1"
+        template: "v1-quick-plan-research.md"
+        outputs:
+          - key: "proposal"
+            file: "{{.Date}}-{{.Slug}}-proposal.md"
+
+      # Phase 2: Proposal review
+      - key: "proposal-review"
+        name: "Review Proposal"
+        assignee: "worker-2"
+        template: "v1-quick-plan-proposal-review.md"
+        inputs:
+          - key: "proposal"
+            file: "{{.Date}}-{{.Slug}}-proposal.md"
+        after:
+          - "research"
+
+      # Phase 2B: Address proposal feedback (if needed)
+      - key: "proposal-revisions"
+        name: "Address Proposal Feedback"
+        assignee: "worker-1"
+        template: "v1-quick-plan-proposal-revisions.md"
+        inputs:
+          - key: "proposal"
+            file: "{{.Date}}-{{.Slug}}-proposal.md"
+        after:
+          - "proposal-review"
+
+      # Phase 3: Task breakdown
+      - key: "task-breakdown"
+        name: "Create Epic & Tasks"
+        assignee: "worker-3"
+        template: "v1-quick-plan-task-breakdown.md"
+        inputs:
+          - key: "proposal"
+            file: "{{.Date}}-{{.Slug}}-proposal.md"
+        after:
+          - "proposal-revisions"
+
+      # Phase 4: Task review
+      - key: "task-review"
+        name: "Review Tasks"
+        assignee: "worker-4"
+        template: "v1-quick-plan-task-review.md"
+        inputs:
+          - key: "proposal"
+            file: "{{.Date}}-{{.Slug}}-proposal.md"
+        after:
+          - "task-breakdown"
+
+      # Phase 4B: Address task feedback (if needed)
+      - key: "task-revisions"
+        name: "Address Task Feedback"
+        assignee: "worker-3"
+        template: "v1-quick-plan-task-revisions.md"
+        inputs:
+          - key: "proposal"
+            file: "{{.Date}}-{{.Slug}}-proposal.md"
+        after:
+          - "task-review"
+
+      # Phase 5: Final summary
+      - key: "summary"
+        name: "Final Summary"
+        assignee: "worker-1"
+        template: "v1-quick-plan-summary.md"
+        inputs:
+          - key: "proposal"
+            file: "{{.Date}}-{{.Slug}}-proposal.md"
+        after:
+          - "task-revisions"
