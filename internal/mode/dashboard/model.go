@@ -557,11 +557,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
 
 	case "enter": // Focus coordinator panel for selected workflow
 		// Clear notification flag for the selected workflow
-		wf := m.SelectedWorkflow()
-		if wf != nil {
-			if uiState, exists := m.workflowUIState[wf.ID]; exists {
-				uiState.HasNotification = false
-			}
+		if wf := m.SelectedWorkflow(); wf != nil {
+			m.clearNotificationForWorkflow(wf.ID)
 		}
 
 		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
@@ -599,6 +596,8 @@ func (m Model) handleMouseMsg(msg tea.MouseMsg) (mode.Controller, tea.Cmd) {
 			zoneID := makeWorkflowZoneID(i)
 			if z := zone.Get(zoneID); z != nil && z.InBounds(msg) {
 				m.handleWorkflowSelectionChange(i)
+				// Clear notification flag for the clicked workflow
+				m.clearNotificationForWorkflow(filtered[i].ID)
 				return m, nil
 			}
 		}
@@ -1073,6 +1072,14 @@ func (m *Model) handleWorkflowSelectionChange(newIndex int) {
 			uiState := m.getOrCreateUIState(wf.ID)
 			m.coordinatorPanel.SetWorkflow(wf.ID, uiState)
 		}
+	}
+}
+
+// clearNotificationForWorkflow clears the notification flag for a workflow.
+// Called when user interacts with a workflow row (Enter key or mouse click).
+func (m *Model) clearNotificationForWorkflow(workflowID controlplane.WorkflowID) {
+	if uiState, exists := m.workflowUIState[workflowID]; exists {
+		uiState.HasNotification = false
 	}
 }
 

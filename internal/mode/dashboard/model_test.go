@@ -1885,3 +1885,63 @@ func TestModel_UserNotification_NotClearedByNavigation(t *testing.T) {
 
 	require.False(t, m.workflowUIState["wf-2"].HasNotification)
 }
+
+func TestModel_UserNotification_ClearedOnMouseClick(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+		createTestWorkflow("wf-2", "Workflow 2", controlplane.WorkflowPending),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Set notification flag on wf-2
+	state := m.getOrCreateUIState("wf-2")
+	state.HasNotification = true
+	require.True(t, m.workflowUIState["wf-2"].HasNotification)
+
+	// Simulate what handleMouseMsg does when a row is clicked:
+	// 1. Change selection to the clicked row
+	// 2. Clear notification via the helper method
+	// (Zone bounds aren't registered in unit tests, so we test the logic directly)
+	m.handleWorkflowSelectionChange(1)
+	m.clearNotificationForWorkflow("wf-2")
+
+	// Notification flag should be cleared
+	require.False(t, m.workflowUIState["wf-2"].HasNotification)
+}
+
+func TestModel_ClearNotificationForWorkflow(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Set notification flag
+	state := m.getOrCreateUIState("wf-1")
+	state.HasNotification = true
+	require.True(t, m.workflowUIState["wf-1"].HasNotification)
+
+	// Clear notification using helper
+	m.clearNotificationForWorkflow("wf-1")
+
+	// Notification flag should be cleared
+	require.False(t, m.workflowUIState["wf-1"].HasNotification)
+}
+
+func TestModel_ClearNotificationForWorkflow_NoOpIfNoState(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Don't create UI state - clearNotificationForWorkflow should not panic
+	require.Nil(t, m.workflowUIState["wf-1"])
+
+	// Should be a no-op, not panic
+	m.clearNotificationForWorkflow("wf-1")
+
+	// State should still be nil (not created)
+	require.Nil(t, m.workflowUIState["wf-1"])
+}
