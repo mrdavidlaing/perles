@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -13,6 +14,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
+	"github.com/zjrosen/perles/internal/orchestration/metrics"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
@@ -60,6 +62,10 @@ type CoordinatorPanel struct {
 	workerPhases    map[string]events.ProcessPhase  // Phase per worker
 	workerQueues    map[string]int                  // Queue count per worker
 	workerDirty     map[string]bool                 // Dirty flag per worker
+
+	// Token metrics for display
+	coordinatorMetrics *metrics.TokenMetrics
+	workerMetrics      map[string]*metrics.TokenMetrics
 
 	// Focus state
 	focused bool
@@ -136,6 +142,7 @@ func NewCoordinatorPanel() *CoordinatorPanel {
 		workerPhases:        make(map[string]events.ProcessPhase),
 		workerQueues:        make(map[string]int),
 		workerDirty:         make(map[string]bool),
+		workerMetrics:       make(map[string]*metrics.TokenMetrics),
 		focused:             false,
 	}
 }
@@ -161,10 +168,12 @@ func (p *CoordinatorPanel) SetWorkflow(workflowID controlplane.WorkflowID, state
 		p.coordinatorMessages = make([]chatrender.Message, 0)
 		p.coordinatorStatus = events.ProcessStatusPending
 		p.coordinatorQueue = 0
+		p.coordinatorMetrics = nil
 		p.coordinatorDirty = true
 		p.messageEntries = make([]message.Entry, 0)
 		p.messageDirty = true
 		p.workerIDs = make([]string, 0)
+		clear(p.workerMetrics)
 		return
 	}
 
@@ -175,6 +184,7 @@ func (p *CoordinatorPanel) SetWorkflow(workflowID controlplane.WorkflowID, state
 	}
 	p.coordinatorStatus = state.CoordinatorStatus
 	p.coordinatorQueue = state.CoordinatorQueueCount
+	p.coordinatorMetrics = state.CoordinatorMetrics
 
 	// Sync message log state
 	if workflowChanged || len(state.MessageEntries) != len(p.messageEntries) {
@@ -206,6 +216,12 @@ func (p *CoordinatorPanel) SetWorkflow(workflowID controlplane.WorkflowID, state
 		p.workerStatus[wid] = state.WorkerStatus[wid]
 		p.workerPhases[wid] = state.WorkerPhases[wid]
 		p.workerQueues[wid] = state.WorkerQueueCounts[wid]
+	}
+
+	// Sync worker metrics (clear first to avoid stale entries from previous workflow)
+	clear(p.workerMetrics)
+	if state.WorkerMetrics != nil {
+		maps.Copy(p.workerMetrics, state.WorkerMetrics)
 	}
 
 	// If the active tab is a worker tab that no longer exists, reset to coordinator
@@ -342,6 +358,7 @@ func (p *CoordinatorPanel) View() string {
 		ActiveTab:   p.activeTab,
 		BorderColor: borderColor,
 		BottomLeft:  bottomLeft,
+		BottomRight: p.getActiveMetricsDisplay(),
 	})
 
 	// Render input pane with zone mark for click detection
@@ -454,6 +471,26 @@ func (p *CoordinatorPanel) getActiveBottomIndicators() string {
 			workerID := p.workerIDs[workerIdx]
 			queueCount := p.workerQueues[workerID]
 			return chatrender.FormatQueueCount(queueCount)
+		}
+		return ""
+	}
+}
+
+// getActiveMetricsDisplay returns the metrics display string for the active tab.
+// Returns formatted token usage (e.g., "27k/200k") for coordinator or worker tabs,
+// or empty string for the message log tab or when no metrics are available.
+func (p *CoordinatorPanel) getActiveMetricsDisplay() string {
+	switch p.activeTab {
+	case TabCoordinator:
+		return chatrender.FormatMetricsDisplay(p.coordinatorMetrics)
+	case TabMessages:
+		return "" // No metrics for message log
+	default:
+		// Worker tab
+		workerIdx := p.activeTab - TabFirstWorker
+		if workerIdx >= 0 && workerIdx < len(p.workerIDs) {
+			workerID := p.workerIDs[workerIdx]
+			return chatrender.FormatMetricsDisplay(p.workerMetrics[workerID])
 		}
 		return ""
 	}

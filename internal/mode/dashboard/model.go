@@ -24,6 +24,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
+	"github.com/zjrosen/perles/internal/orchestration/metrics"
 	appreg "github.com/zjrosen/perles/internal/registry/application"
 	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/modals/help"
@@ -970,6 +971,11 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 			case events.ProcessOutput:
 				// Output events - append message to chat
 				m.appendCoordinatorMessageToCache(uiState, payload)
+			case events.ProcessTokenUsage:
+				// Token usage events - update metrics
+				if payload.Metrics != nil {
+					uiState.CoordinatorMetrics = payload.Metrics
+				}
 			default:
 				// For other event types, use the Status field if present
 				if payload.Status != "" {
@@ -1011,6 +1017,14 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 			case events.ProcessOutput:
 				// Output events - append message to chat
 				m.appendWorkerMessageToCache(uiState, payload)
+			case events.ProcessTokenUsage:
+				// Token usage events - update metrics
+				if payload.Metrics != nil {
+					if uiState.WorkerMetrics == nil {
+						uiState.WorkerMetrics = make(map[string]*metrics.TokenMetrics)
+					}
+					uiState.WorkerMetrics[workerID] = payload.Metrics
+				}
 			default:
 				// For other event types, use the Status field if present
 				if payload.Status != "" {

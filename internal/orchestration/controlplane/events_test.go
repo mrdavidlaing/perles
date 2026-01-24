@@ -286,6 +286,38 @@ func TestClassifyEvent_ReadyWorkingEvents(t *testing.T) {
 	}
 }
 
+func TestClassifyEvent_ProcessTokenUsage(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    events.ProcessEvent
+		expected EventType
+	}{
+		{
+			name: "CoordinatorTokenUsage",
+			event: events.ProcessEvent{
+				Type: events.ProcessTokenUsage,
+				Role: events.RoleCoordinator,
+			},
+			expected: EventCoordinatorOutput,
+		},
+		{
+			name: "WorkerTokenUsage",
+			event: events.ProcessEvent{
+				Type: events.ProcessTokenUsage,
+				Role: events.RoleWorker,
+			},
+			expected: EventWorkerOutput,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ClassifyEvent(tc.event)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestClassifyEvent_ProcessIncoming(t *testing.T) {
 	tests := []struct {
 		name     string

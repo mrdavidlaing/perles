@@ -7,6 +7,7 @@ import (
 
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/events"
+	"github.com/zjrosen/perles/internal/orchestration/metrics"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 )
 
@@ -281,4 +282,311 @@ func TestCoordinatorPanel_FormatWorkerTabLabel(t *testing.T) {
 	require.Equal(t, "W99", panel.formatWorkerTabLabel("worker-99"))
 	require.Equal(t, "custom", panel.formatWorkerTabLabel("custom"))
 	require.Equal(t, "longla", panel.formatWorkerTabLabel("longlabel")) // truncates to 6 chars
+}
+
+func TestSetWorkflow_SyncsMetrics(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	coordinatorMetrics := &metrics.TokenMetrics{
+		TokensUsed:  27000,
+		TotalTokens: 200000,
+	}
+	workerMetrics := map[string]*metrics.TokenMetrics{
+		"worker-1": {TokensUsed: 15000, TotalTokens: 200000},
+		"worker-2": {TokensUsed: 8000, TotalTokens: 200000},
+	}
+
+	state := &WorkflowUIState{
+		CoordinatorMetrics: coordinatorMetrics,
+		WorkerIDs:          []string{"worker-1", "worker-2"},
+		WorkerStatus:       make(map[string]events.ProcessStatus),
+		WorkerPhases:       make(map[string]events.ProcessPhase),
+		WorkerMessages:     make(map[string][]chatrender.Message),
+		WorkerMetrics:      workerMetrics,
+		WorkerQueueCounts:  make(map[string]int),
+	}
+
+	panel.SetWorkflow("wf-123", state)
+
+	// Verify coordinator metrics synced
+	require.Equal(t, coordinatorMetrics, panel.coordinatorMetrics)
+	require.Equal(t, 27000, panel.coordinatorMetrics.TokensUsed)
+	require.Equal(t, 200000, panel.coordinatorMetrics.TotalTokens)
+
+	// Verify worker metrics synced
+	require.Len(t, panel.workerMetrics, 2)
+	require.Equal(t, 15000, panel.workerMetrics["worker-1"].TokensUsed)
+	require.Equal(t, 8000, panel.workerMetrics["worker-2"].TokensUsed)
+}
+
+func TestSetWorkflow_ClearsStaleMetrics(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	// First workflow with worker-1 and worker-2
+	state1 := &WorkflowUIState{
+		CoordinatorMetrics: &metrics.TokenMetrics{TokensUsed: 10000, TotalTokens: 200000},
+		WorkerIDs:          []string{"worker-1", "worker-2"},
+		WorkerStatus:       make(map[string]events.ProcessStatus),
+		WorkerPhases:       make(map[string]events.ProcessPhase),
+		WorkerMessages:     make(map[string][]chatrender.Message),
+		WorkerMetrics: map[string]*metrics.TokenMetrics{
+			"worker-1": {TokensUsed: 5000, TotalTokens: 200000},
+			"worker-2": {TokensUsed: 3000, TotalTokens: 200000},
+		},
+		WorkerQueueCounts: make(map[string]int),
+	}
+	panel.SetWorkflow("wf-1", state1)
+
+	// Verify first workflow metrics
+	require.Len(t, panel.workerMetrics, 2)
+	require.NotNil(t, panel.workerMetrics["worker-1"])
+	require.NotNil(t, panel.workerMetrics["worker-2"])
+
+	// Second workflow with only worker-3 (different set of workers)
+	state2 := &WorkflowUIState{
+		CoordinatorMetrics: &metrics.TokenMetrics{TokensUsed: 20000, TotalTokens: 200000},
+		WorkerIDs:          []string{"worker-3"},
+		WorkerStatus:       make(map[string]events.ProcessStatus),
+		WorkerPhases:       make(map[string]events.ProcessPhase),
+		WorkerMessages:     make(map[string][]chatrender.Message),
+		WorkerMetrics: map[string]*metrics.TokenMetrics{
+			"worker-3": {TokensUsed: 7000, TotalTokens: 200000},
+		},
+		WorkerQueueCounts: make(map[string]int),
+	}
+	panel.SetWorkflow("wf-2", state2)
+
+	// Verify old workers' metrics are cleared and new worker metrics are set
+	require.Len(t, panel.workerMetrics, 1, "should only have 1 worker metrics after switching workflows")
+	require.Nil(t, panel.workerMetrics["worker-1"], "worker-1 metrics should be cleared")
+	require.Nil(t, panel.workerMetrics["worker-2"], "worker-2 metrics should be cleared")
+	require.NotNil(t, panel.workerMetrics["worker-3"], "worker-3 metrics should be set")
+	require.Equal(t, 7000, panel.workerMetrics["worker-3"].TokensUsed)
+
+	// Verify coordinator metrics updated
+	require.Equal(t, 20000, panel.coordinatorMetrics.TokensUsed)
+}
+
+func TestGetActiveMetricsDisplay_Coordinator(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	// Set up coordinator with metrics
+	state := &WorkflowUIState{
+		CoordinatorMetrics: &metrics.TokenMetrics{
+			TokensUsed:  27000,
+			TotalTokens: 200000,
+		},
+	}
+	panel.SetWorkflow("wf-123", state)
+	panel.activeTab = TabCoordinator
+
+	result := panel.getActiveMetricsDisplay()
+
+	// FormatMetricsDisplay returns formatted string like "27k/200k"
+	require.NotEmpty(t, result)
+	require.Contains(t, result, "27k")
+	require.Contains(t, result, "200k")
+}
+
+func TestGetActiveMetricsDisplay_Worker(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	// Set up with workers and metrics
+	state := &WorkflowUIState{
+		WorkerIDs:    []string{"worker-1", "worker-2"},
+		WorkerStatus: make(map[string]events.ProcessStatus),
+		WorkerPhases: make(map[string]events.ProcessPhase),
+		WorkerMetrics: map[string]*metrics.TokenMetrics{
+			"worker-1": {TokensUsed: 15000, TotalTokens: 200000},
+			"worker-2": {TokensUsed: 8000, TotalTokens: 200000},
+		},
+		WorkerMessages:    make(map[string][]chatrender.Message),
+		WorkerQueueCounts: make(map[string]int),
+	}
+	panel.SetWorkflow("wf-123", state)
+
+	// Select worker-1 tab (TabFirstWorker + 0)
+	panel.activeTab = TabFirstWorker
+
+	result := panel.getActiveMetricsDisplay()
+
+	// Should show worker-1's metrics (15k/200k)
+	require.NotEmpty(t, result)
+	require.Contains(t, result, "15k")
+	require.Contains(t, result, "200k")
+
+	// Select worker-2 tab (TabFirstWorker + 1)
+	panel.activeTab = TabFirstWorker + 1
+
+	result = panel.getActiveMetricsDisplay()
+
+	// Should show worker-2's metrics (8k/200k)
+	require.NotEmpty(t, result)
+	require.Contains(t, result, "8k")
+	require.Contains(t, result, "200k")
+}
+
+func TestGetActiveMetricsDisplay_Messages(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	// Set up with coordinator metrics
+	state := &WorkflowUIState{
+		CoordinatorMetrics: &metrics.TokenMetrics{
+			TokensUsed:  27000,
+			TotalTokens: 200000,
+		},
+	}
+	panel.SetWorkflow("wf-123", state)
+
+	// Select messages tab
+	panel.activeTab = TabMessages
+
+	result := panel.getActiveMetricsDisplay()
+
+	// Should return empty string for message log tab
+	require.Empty(t, result)
+}
+
+func TestGetActiveMetricsDisplay_NilMetrics(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	// Set up without any metrics (nil)
+	state := &WorkflowUIState{
+		CoordinatorMetrics: nil,
+		WorkerIDs:          []string{"worker-1"},
+		WorkerStatus:       make(map[string]events.ProcessStatus),
+		WorkerPhases:       make(map[string]events.ProcessPhase),
+		WorkerMessages:     make(map[string][]chatrender.Message),
+		WorkerMetrics:      nil, // nil map
+		WorkerQueueCounts:  make(map[string]int),
+	}
+	panel.SetWorkflow("wf-123", state)
+
+	// Coordinator tab with nil metrics
+	panel.activeTab = TabCoordinator
+	result := panel.getActiveMetricsDisplay()
+	require.Empty(t, result, "should return empty string for nil coordinator metrics")
+
+	// Worker tab with nil metrics map
+	panel.activeTab = TabFirstWorker
+	result = panel.getActiveMetricsDisplay()
+	require.Empty(t, result, "should return empty string for nil worker metrics")
+}
+
+func TestGetActiveMetricsDisplay_InvalidWorkerTab(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	// Set up with only one worker
+	state := &WorkflowUIState{
+		WorkerIDs:    []string{"worker-1"},
+		WorkerStatus: make(map[string]events.ProcessStatus),
+		WorkerPhases: make(map[string]events.ProcessPhase),
+		WorkerMetrics: map[string]*metrics.TokenMetrics{
+			"worker-1": {TokensUsed: 15000, TotalTokens: 200000},
+		},
+		WorkerMessages:    make(map[string][]chatrender.Message),
+		WorkerQueueCounts: make(map[string]int),
+	}
+	panel.SetWorkflow("wf-123", state)
+
+	// Try to access worker tab index that doesn't exist (worker-2 at index 1)
+	panel.activeTab = TabFirstWorker + 5 // Invalid index
+
+	result := panel.getActiveMetricsDisplay()
+
+	// Should return empty string for invalid worker index (no panic)
+	require.Empty(t, result)
+}
+
+func TestView_ShowsMetricsInBottomRight(t *testing.T) {
+	panel := NewCoordinatorPanel()
+	panel.SetSize(60, 20)
+
+	// Set up coordinator with metrics
+	state := &WorkflowUIState{
+		CoordinatorMetrics: &metrics.TokenMetrics{
+			TokensUsed:  27000,
+			TotalTokens: 200000,
+		},
+		CoordinatorStatus: events.ProcessStatusWorking,
+	}
+	panel.SetWorkflow("wf-123", state)
+	panel.activeTab = TabCoordinator
+
+	view := panel.View()
+
+	// Verify the metrics string appears in the rendered output
+	// FormatMetricsDisplay returns "27k/200k" for these values
+	require.Contains(t, view, "27k/200k", "metrics should appear in View() output")
+}
+
+func TestView_MetricsFitInPanelWidth(t *testing.T) {
+	panel := NewCoordinatorPanel()
+
+	// Use exactly 60-char width as specified in task
+	panel.SetSize(60, 20)
+
+	// Set up with both queue count (BottomLeft) and metrics (BottomRight)
+	state := &WorkflowUIState{
+		CoordinatorMetrics: &metrics.TokenMetrics{
+			TokensUsed:  27000,
+			TotalTokens: 200000,
+		},
+		CoordinatorStatus:     events.ProcessStatusWorking,
+		CoordinatorQueueCount: 3, // Will show "[3 queued]" in BottomLeft
+	}
+	panel.SetWorkflow("wf-123", state)
+	panel.activeTab = TabCoordinator
+
+	view := panel.View()
+
+	// Verify both queue count and metrics appear without truncation
+	// FormatQueueCount returns "[N queued]" format
+	require.Contains(t, view, "[3 queued]", "queue count should appear in BottomLeft")
+	require.Contains(t, view, "27k/200k", "metrics should appear in BottomRight")
+
+	// Verify no line exceeds panel width (basic overflow check)
+	lines := splitLines(view)
+	for _, line := range lines {
+		// Use visual width (ANSI codes don't count toward visual width)
+		// We just verify no obvious overflow - actual visual rendering is what matters
+		require.LessOrEqual(t, visualWidth(line), 60,
+			"no line should exceed panel width of 60 characters")
+	}
+}
+
+// splitLines splits a string into lines
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
+}
+
+// visualWidth calculates the visual width of a string, ignoring ANSI escape codes
+func visualWidth(s string) int {
+	width := 0
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if r == 'm' {
+				inEscape = false
+			}
+			continue
+		}
+		width++
+	}
+	return width
 }

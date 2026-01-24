@@ -896,3 +896,175 @@ func TestModel_TreeStateEvicted_CleanedUpProperly(t *testing.T) {
 
 	require.GreaterOrEqual(t, evictedCount, 2, "At least 2 workflows should have been evicted")
 }
+
+// === Unit Tests: ProcessTokenUsage Event Handling ===
+
+func TestUpdateCachedUIState_ProcessTokenUsage_Coordinator(t *testing.T) {
+	// Verify that ProcessTokenUsage events with coordinator role populate CoordinatorMetrics
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	mockCP := newMockControlPlane()
+	mockCP.On("List", mock.Anything, mock.Anything).Return(workflows, nil).Maybe()
+
+	globalEventCh := make(chan controlplane.ControlPlaneEvent)
+	close(globalEventCh)
+	mockCP.On("Subscribe", mock.Anything).Return((<-chan controlplane.ControlPlaneEvent)(globalEventCh), func() {}).Maybe()
+
+	cfg := Config{
+		ControlPlane: mockCP,
+		Services:     mode.Services{},
+	}
+
+	m := New(cfg)
+	m.workflows = workflows
+	m.selectedIndex = 0
+	m = m.SetSize(100, 40).(Model)
+
+	// Initial state should have nil metrics
+	state := m.getOrCreateUIState("wf-1")
+	require.Nil(t, state.CoordinatorMetrics, "initial CoordinatorMetrics should be nil")
+
+	// Simulate ProcessTokenUsage event for coordinator (wrapped in EventCoordinatorOutput)
+	tokenEvent := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:    events.ProcessTokenUsage,
+			Role:    events.RoleCoordinator,
+			Metrics: &metrics.TokenMetrics{TokensUsed: 5000, TotalTokens: 200000},
+		},
+	}
+	result, _ := m.Update(tokenEvent)
+	m = result.(Model)
+
+	// Verify CoordinatorMetrics is populated
+	state = m.getOrCreateUIState("wf-1")
+	require.NotNil(t, state.CoordinatorMetrics, "CoordinatorMetrics should be populated after ProcessTokenUsage event")
+	require.Equal(t, 5000, state.CoordinatorMetrics.TokensUsed)
+	require.Equal(t, 200000, state.CoordinatorMetrics.TotalTokens)
+}
+
+func TestUpdateCachedUIState_ProcessTokenUsage_Worker(t *testing.T) {
+	// Verify that ProcessTokenUsage events with worker role populate WorkerMetrics[workerID]
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	mockCP := newMockControlPlane()
+	mockCP.On("List", mock.Anything, mock.Anything).Return(workflows, nil).Maybe()
+
+	globalEventCh := make(chan controlplane.ControlPlaneEvent)
+	close(globalEventCh)
+	mockCP.On("Subscribe", mock.Anything).Return((<-chan controlplane.ControlPlaneEvent)(globalEventCh), func() {}).Maybe()
+
+	cfg := Config{
+		ControlPlane: mockCP,
+		Services:     mode.Services{},
+	}
+
+	m := New(cfg)
+	m.workflows = workflows
+	m.selectedIndex = 0
+	m = m.SetSize(100, 40).(Model)
+
+	// Initial state should have empty worker metrics
+	state := m.getOrCreateUIState("wf-1")
+	require.NotNil(t, state.WorkerMetrics, "WorkerMetrics map should be initialized")
+	require.Nil(t, state.WorkerMetrics["worker-1"], "initial worker-1 metrics should be nil")
+
+	// Simulate ProcessTokenUsage event for worker (wrapped in EventWorkerOutput)
+	tokenEvent := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventWorkerOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessTokenUsage,
+			Role:      events.RoleWorker,
+			ProcessID: "worker-1",
+			Metrics:   &metrics.TokenMetrics{TokensUsed: 1500, TotalTokens: 100000},
+		},
+	}
+	result, _ := m.Update(tokenEvent)
+	m = result.(Model)
+
+	// Verify WorkerMetrics[worker-1] is populated
+	state = m.getOrCreateUIState("wf-1")
+	require.NotNil(t, state.WorkerMetrics["worker-1"], "WorkerMetrics[worker-1] should be populated after ProcessTokenUsage event")
+	require.Equal(t, 1500, state.WorkerMetrics["worker-1"].TokensUsed)
+	require.Equal(t, 100000, state.WorkerMetrics["worker-1"].TotalTokens)
+}
+
+func TestUpdateCachedUIState_ProcessTokenUsage_NilMetrics(t *testing.T) {
+	// Verify nil metrics don't cause panic or overwrite existing metrics
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	mockCP := newMockControlPlane()
+	mockCP.On("List", mock.Anything, mock.Anything).Return(workflows, nil).Maybe()
+
+	globalEventCh := make(chan controlplane.ControlPlaneEvent)
+	close(globalEventCh)
+	mockCP.On("Subscribe", mock.Anything).Return((<-chan controlplane.ControlPlaneEvent)(globalEventCh), func() {}).Maybe()
+
+	cfg := Config{
+		ControlPlane: mockCP,
+		Services:     mode.Services{},
+	}
+
+	m := New(cfg)
+	m.workflows = workflows
+	m.selectedIndex = 0
+	m = m.SetSize(100, 40).(Model)
+
+	// First, set some metrics
+	state := m.getOrCreateUIState("wf-1")
+	state.CoordinatorMetrics = &metrics.TokenMetrics{TokensUsed: 3000, TotalTokens: 200000}
+	state.WorkerMetrics["worker-1"] = &metrics.TokenMetrics{TokensUsed: 1000, TotalTokens: 100000}
+
+	// Simulate ProcessTokenUsage event with nil metrics for coordinator
+	nilCoordEvent := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:    events.ProcessTokenUsage,
+			Role:    events.RoleCoordinator,
+			Metrics: nil, // nil metrics
+		},
+	}
+
+	// Should not panic
+	require.NotPanics(t, func() {
+		result, _ := m.Update(nilCoordEvent)
+		m = result.(Model)
+	})
+
+	// Existing metrics should be preserved (not overwritten with nil)
+	state = m.getOrCreateUIState("wf-1")
+	require.NotNil(t, state.CoordinatorMetrics, "existing CoordinatorMetrics should be preserved when nil event received")
+	require.Equal(t, 3000, state.CoordinatorMetrics.TokensUsed)
+
+	// Simulate ProcessTokenUsage event with nil metrics for worker
+	nilWorkerEvent := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventWorkerOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:      events.ProcessTokenUsage,
+			Role:      events.RoleWorker,
+			ProcessID: "worker-1",
+			Metrics:   nil, // nil metrics
+		},
+	}
+
+	// Should not panic
+	require.NotPanics(t, func() {
+		result, _ := m.Update(nilWorkerEvent)
+		m = result.(Model)
+	})
+
+	// Existing worker metrics should be preserved
+	state = m.getOrCreateUIState("wf-1")
+	require.NotNil(t, state.WorkerMetrics["worker-1"], "existing WorkerMetrics should be preserved when nil event received")
+	require.Equal(t, 1000, state.WorkerMetrics["worker-1"].TokensUsed)
+}
