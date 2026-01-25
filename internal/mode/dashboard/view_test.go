@@ -375,7 +375,7 @@ func TestFooterHintsAreStatic(t *testing.T) {
 	require.Contains(t, footer, "tab", "footer should have tab cycle hint")
 	require.Contains(t, footer, "new", "footer should have new hint")
 	require.Contains(t, footer, "start", "footer should have start hint")
-	require.Contains(t, footer, "stop", "footer should have stop hint")
+	require.Contains(t, footer, "pause", "footer should have pause hint")
 	require.Contains(t, footer, "help", "footer should have help hint")
 	require.Contains(t, footer, "quit", "footer should have quit hint")
 }

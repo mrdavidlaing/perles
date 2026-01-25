@@ -349,7 +349,7 @@ func (m Model) renderActionHints() string {
 		fmt.Sprintf("%s cycle", keyStyle.Render("tab")),
 		fmt.Sprintf("%s new", keyStyle.Render("n")),
 		fmt.Sprintf("%s start", keyStyle.Render("s")),
-		fmt.Sprintf("%s stop", keyStyle.Render("x")),
+		fmt.Sprintf("%s pause", keyStyle.Render("x")),
 		fmt.Sprintf("%s help", keyStyle.Render("?")),
 		fmt.Sprintf("%s quit", keyStyle.Render("q")),
 	}

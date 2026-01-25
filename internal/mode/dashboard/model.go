@@ -834,9 +834,11 @@ func (m Model) handleMouseMsg(msg tea.MouseMsg) (mode.Controller, tea.Cmd) {
 				}
 			}
 
-			// Check chat input zone - clicking focuses the input
+			// Check chat input zone - clicking focuses the input and updates dashboard focus
 			if z := zone.Get(zoneChatInput); z != nil && z.InBounds(msg) {
+				m.focus = FocusCoordinator
 				m.coordinatorPanel.Focus()
+				m.updateComponentFocusStates()
 				return m, nil
 			}
 		}
