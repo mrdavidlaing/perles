@@ -40,6 +40,43 @@ const (
 // CoordinatorPanelWidth is the fixed width for the coordinator chat panel.
 const CoordinatorPanelWidth = 65
 
+// Epic tree layout constants - adjust these to tweak the tree/details split.
+const (
+	epicTreeWidthPercent = 45
+	epicTreeMinWidth     = 20
+	epicDetailsMinWidth  = 20
+	minWidthForDetails   = 80
+)
+
+// epicTreeLayout holds calculated widths for the tree/details split.
+type epicTreeLayout struct {
+	treeWidth    int
+	detailsWidth int
+	showDetails  bool
+}
+
+// calculateEpicTreeLayout computes the tree/details width split.
+func calculateEpicTreeLayout(availableWidth int) epicTreeLayout {
+	showDetails := availableWidth >= minWidthForDetails
+	if !showDetails {
+		return epicTreeLayout{treeWidth: availableWidth, detailsWidth: 0, showDetails: false}
+	}
+
+	treeWidth := availableWidth * epicTreeWidthPercent / 100
+	detailsWidth := availableWidth - treeWidth
+
+	if treeWidth < epicTreeMinWidth {
+		treeWidth = epicTreeMinWidth
+		detailsWidth = availableWidth - treeWidth
+	}
+	if detailsWidth < epicDetailsMinWidth {
+		detailsWidth = epicDetailsMinWidth
+		treeWidth = availableWidth - detailsWidth
+	}
+
+	return epicTreeLayout{treeWidth: treeWidth, detailsWidth: detailsWidth, showDetails: true}
+}
+
 // createWorkflowTableConfig creates the table configuration for the workflow list.
 // The render callbacks close over the model to access controlPlane and services.Clock.
 func (m Model) createWorkflowTableConfig() table.TableConfig {
@@ -534,39 +571,15 @@ func (m Model) renderEpicSection(width, height int) string {
 		return emptyStyle.Render("Epic has no child tasks yet")
 	}
 
-	// Minimum width threshold to show details pane (tree + details needs at least 80 chars)
-	const minWidthForDetails = 80
-
-	// Determine if we should show details pane based on available width
-	showDetails := width >= minWidthForDetails
-
-	var treeWidth, detailsWidth int
-	if showDetails {
-		// Calculate widths: 40% tree, 60% details
-		treeWidth = width * 40 / 100
-		detailsWidth = width - treeWidth
-
-		// Ensure minimum widths
-		if treeWidth < 20 {
-			treeWidth = 20
-			detailsWidth = width - treeWidth
-		}
-		if detailsWidth < 20 {
-			detailsWidth = 20
-			treeWidth = width - detailsWidth
-		}
-	} else {
-		// Narrow width: only show tree pane
-		treeWidth = width
-		detailsWidth = 0
-	}
+	// Calculate tree/details layout
+	layout := calculateEpicTreeLayout(width)
 
 	// Set sizes for tree
-	m.epicTree.SetSize(treeWidth-2, height-2) // -2 for borders
+	m.epicTree.SetSize(layout.treeWidth-2, height-2) // -2 for borders
 
 	// Render tree pane with border
 	treeContent := m.epicTree.View()
-	treePaneStyle := m.getEpicPaneBorderConfig(EpicFocusTree, treeWidth, height, "Epic")
+	treePaneStyle := m.getEpicPaneBorderConfig(EpicFocusTree, layout.treeWidth, height, "Epic")
 
 	// Calculate progress bar for tree pane
 	var progressBar string
@@ -587,13 +600,13 @@ func (m Model) renderEpicSection(width, height int) string {
 	}))
 
 	// If not showing details, just return the tree pane
-	if !showDetails {
+	if !layout.showDetails {
 		return treePane
 	}
 
 	// Set details size and render
 	if m.hasEpicDetail {
-		m.epicDetails = m.epicDetails.SetSize(detailsWidth-2, height-2)
+		m.epicDetails = m.epicDetails.SetSize(layout.detailsWidth-2, height-2)
 	}
 
 	// Render details pane with border
@@ -607,7 +620,7 @@ func (m Model) renderEpicSection(width, height int) string {
 			PaddingLeft(1)
 		detailsContent = emptyStyle.Render("Select an issue to view details")
 	}
-	detailsPaneStyle := m.getEpicPaneBorderConfig(EpicFocusDetails, detailsWidth, height, "Details")
+	detailsPaneStyle := m.getEpicPaneBorderConfig(EpicFocusDetails, layout.detailsWidth, height, "Details")
 
 	detailsPane := zone.Mark(zoneEpicDetails, panes.BorderedPane(panes.BorderConfig{
 		Content:            detailsContent,

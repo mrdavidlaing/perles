@@ -159,11 +159,8 @@ func (m *Model) calculateEpicDetailsSize() (int, int) {
 		epicWidth = m.width - CoordinatorPanelWidth
 	}
 
-	// 40%/60% split for tree/details
-	treeWidth := epicWidth * 40 / 100
-	detailsWidth := epicWidth - treeWidth
-
-	return detailsWidth - 2, epicSectionHeight - 2
+	layout := calculateEpicTreeLayout(epicWidth)
+	return layout.detailsWidth - 2, epicSectionHeight - 2
 }
 
 // triggerEpicTreeLoad determines if an epic tree load should be triggered

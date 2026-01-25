@@ -459,16 +459,15 @@ func (m Model) SetSize(width, height int) mode.Controller {
 				epicWidth = width - CoordinatorPanelWidth
 			}
 
-			// 40%/60% split for tree/details
-			treeWidth := epicWidth * 40 / 100
-			detailsWidth := epicWidth - treeWidth
+			// Calculate tree/details layout
+			layout := calculateEpicTreeLayout(epicWidth)
 
 			// Set tree size
-			m.epicTree.SetSize(treeWidth-2, epicSectionHeight-2)
+			m.epicTree.SetSize(layout.treeWidth-2, epicSectionHeight-2)
 
 			// Set details size if available
 			if m.hasEpicDetail {
-				m.epicDetails = m.epicDetails.SetSize(detailsWidth-2, epicSectionHeight-2)
+				m.epicDetails = m.epicDetails.SetSize(layout.detailsWidth-2, epicSectionHeight-2)
 			}
 		}
 	}
