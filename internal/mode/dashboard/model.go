@@ -1233,7 +1233,19 @@ func (m Model) startSelectedWorkflow() (mode.Controller, tea.Cmd) {
 		return m, nil
 	}
 	if wf.State != controlplane.WorkflowPending {
-		return m, nil // Can only start pending workflows
+		// Show warning toast for already running/paused workflows
+		var msg string
+		switch wf.State {
+		case controlplane.WorkflowRunning:
+			msg = "Workflow is already running"
+		case controlplane.WorkflowPaused:
+			msg = "Workflow is paused. Press 's' again to resume."
+		default:
+			msg = "Cannot start workflow in current state"
+		}
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: msg, Style: toaster.StyleWarn}
+		}
 	}
 
 	return m, m.startWorkflow(wf.ID)
@@ -1266,7 +1278,19 @@ func (m Model) pauseSelectedWorkflow() (mode.Controller, tea.Cmd) {
 		return m, nil
 	}
 	if !workflow.IsRunning() {
-		return m, nil // Can only pause running workflows
+		// Show warning toast for already paused/pending workflows
+		var msg string
+		switch workflow.State {
+		case controlplane.WorkflowPaused:
+			msg = "Workflow is already paused"
+		case controlplane.WorkflowPending:
+			msg = "Workflow hasn't started yet. Press 's' to start."
+		default:
+			msg = "Cannot pause workflow in current state"
+		}
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: msg, Style: toaster.StyleWarn}
+		}
 	}
 
 	return m, func() tea.Msg {

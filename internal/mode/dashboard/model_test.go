@@ -230,10 +230,16 @@ func TestModel_PauseAction_DoesNotPauseNonRunningWorkflows(t *testing.T) {
 
 	m, _ := createTestModel(t, workflows)
 
-	// Press x on a completed workflow - should do nothing
+	// Press x on a completed workflow - should show warning toast
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	m = result.(Model)
-	require.Nil(t, cmd) // No command since workflow is not running
+	require.NotNil(t, cmd) // Returns toast command
+
+	// Execute the command and verify it returns a toast message
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "expected ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "Cannot pause")
 }
 
 func TestModel_ResumeAction_CallsControlPlaneResume(t *testing.T) {
@@ -275,10 +281,16 @@ func TestModel_StartAction_DoesNotResumeNonPausedWorkflows(t *testing.T) {
 
 	m, _ := createTestModel(t, workflows)
 
-	// Press s on a running workflow - should do nothing
+	// Press s on a running workflow - should show warning toast
 	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	m = result.(Model)
-	require.Nil(t, cmd) // No command since workflow is already running
+	require.NotNil(t, cmd) // Returns toast command
+
+	// Execute the command and verify it returns a toast message
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "expected ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "already running")
 }
 
 // === Unit Tests: Event Handling ===
