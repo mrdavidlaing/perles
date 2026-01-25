@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zjrosen/perles/internal/orchestration/events"
+	"github.com/zjrosen/perles/internal/orchestration/v2/processor"
 )
 
 // EventType categorizes control plane events.
@@ -48,6 +49,9 @@ const (
 	EventHealthStuck      EventType = "health.stuck"
 	EventHealthRecovering EventType = "health.recovering"
 	EventHealthRecovered  EventType = "health.recovered"
+
+	// Command log events (for debug mode)
+	EventCommandLog EventType = "command.log"
 
 	// Unknown event type for unclassified events
 	EventUnknown EventType = "unknown"
@@ -114,10 +118,15 @@ type WorkflowPausedPayload struct {
 	TriggeredBy string
 }
 
-// ClassifyEvent maps a v2 ProcessEvent to the appropriate ControlPlane EventType.
+// ClassifyEvent maps a v2 ProcessEvent or CommandLogEvent to the appropriate ControlPlane EventType.
 // It inspects the event's Type and Role to determine the correct classification.
 // Unknown events are mapped to EventUnknown.
 func ClassifyEvent(v2Event any) EventType {
+	// Check for CommandLogEvent first (debug mode command logging)
+	if _, ok := v2Event.(processor.CommandLogEvent); ok {
+		return EventCommandLog
+	}
+
 	processEvent, ok := v2Event.(events.ProcessEvent)
 	if !ok {
 		return EventUnknown

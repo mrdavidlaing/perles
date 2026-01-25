@@ -12,7 +12,7 @@ import (
 )
 
 func TestNewCoordinatorPanel(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	require.NotNil(t, panel)
 	require.False(t, panel.IsFocused(), "panel should be unfocused by default")
@@ -22,7 +22,7 @@ func TestNewCoordinatorPanel(t *testing.T) {
 }
 
 func TestCoordinatorPanel_SetWorkflow(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	state := &WorkflowUIState{
 		CoordinatorMessages: []chatrender.Message{
@@ -43,7 +43,7 @@ func TestCoordinatorPanel_SetWorkflow(t *testing.T) {
 }
 
 func TestCoordinatorPanel_SetWorkflow_SameWorkflowNewMessages(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Set initial state
 	state := &WorkflowUIState{
@@ -66,7 +66,7 @@ func TestCoordinatorPanel_SetWorkflow_SameWorkflowNewMessages(t *testing.T) {
 }
 
 func TestCoordinatorPanel_Focus(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 	panel.Blur()
 
 	require.False(t, panel.IsFocused())
@@ -77,7 +77,7 @@ func TestCoordinatorPanel_Focus(t *testing.T) {
 }
 
 func TestCoordinatorPanel_SetSize(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	panel.SetSize(100, 50)
 
@@ -86,7 +86,7 @@ func TestCoordinatorPanel_SetSize(t *testing.T) {
 }
 
 func TestCoordinatorPanel_View_EmptyMessages(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 	panel.SetSize(80, 20)
 	panel.SetWorkflow("wf-123", nil)
 
@@ -164,7 +164,7 @@ func TestRenderChatContent_FiltersEmptyMessages(t *testing.T) {
 }
 
 func TestNewCoordinatorPanel_InputStartsUnfocused(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Verify the input starts unfocused (focus is given on explicit Focus() call)
 	require.False(t, panel.input.Focused())
@@ -177,7 +177,7 @@ func TestNewCoordinatorPanel_InputStartsUnfocused(t *testing.T) {
 }
 
 func TestCoordinatorPanel_TabNavigation(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Initially on TabCoordinator
 	require.Equal(t, TabCoordinator, panel.ActiveTab())
@@ -195,8 +195,29 @@ func TestCoordinatorPanel_TabNavigation(t *testing.T) {
 	require.Equal(t, TabMessages, panel.ActiveTab(), "should wrap to last tab")
 }
 
+func TestCoordinatorPanel_TabNavigationDebugMode(t *testing.T) {
+	panel := NewCoordinatorPanel(true, false) // debug mode, no vim
+
+	// Initially on TabCoordinator
+	require.Equal(t, TabCoordinator, panel.ActiveTab())
+
+	// Tab forward through: Coordinator -> Messages -> CmdLog
+	panel.NextTab()
+	require.Equal(t, TabMessages, panel.ActiveTab())
+	panel.NextTab()
+	require.Equal(t, 2, panel.ActiveTab(), "should be on command log tab")
+
+	// Tab wraps back to coordinator
+	panel.NextTab()
+	require.Equal(t, TabCoordinator, panel.ActiveTab())
+
+	// Tab backward from coordinator wraps to command log
+	panel.PrevTab()
+	require.Equal(t, 2, panel.ActiveTab(), "should wrap to command log tab")
+}
+
 func TestCoordinatorPanel_TabNavigationWithWorkers(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Set workflow with workers
 	state := &WorkflowUIState{
@@ -224,7 +245,7 @@ func TestCoordinatorPanel_TabNavigationWithWorkers(t *testing.T) {
 }
 
 func TestCoordinatorPanel_SetWorkflow_SyncsWorkerData(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	state := &WorkflowUIState{
 		WorkerIDs: []string{"worker-1", "worker-2"},
@@ -252,7 +273,7 @@ func TestCoordinatorPanel_SetWorkflow_SyncsWorkerData(t *testing.T) {
 }
 
 func TestCoordinatorPanel_SetWorkflow_ResetsTabWhenWorkerRemoved(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Initial state with workers
 	state := &WorkflowUIState{
@@ -276,7 +297,7 @@ func TestCoordinatorPanel_SetWorkflow_ResetsTabWhenWorkerRemoved(t *testing.T) {
 }
 
 func TestCoordinatorPanel_FormatWorkerTabLabel(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	require.Equal(t, "W1", panel.formatWorkerTabLabel("worker-1"))
 	require.Equal(t, "W99", panel.formatWorkerTabLabel("worker-99"))
@@ -285,7 +306,7 @@ func TestCoordinatorPanel_FormatWorkerTabLabel(t *testing.T) {
 }
 
 func TestSetWorkflow_SyncsMetrics(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	coordinatorMetrics := &metrics.TokenMetrics{
 		TokensUsed:  27000,
@@ -320,7 +341,7 @@ func TestSetWorkflow_SyncsMetrics(t *testing.T) {
 }
 
 func TestSetWorkflow_ClearsStaleMetrics(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// First workflow with worker-1 and worker-2
 	state1 := &WorkflowUIState{
@@ -368,7 +389,7 @@ func TestSetWorkflow_ClearsStaleMetrics(t *testing.T) {
 }
 
 func TestGetActiveMetricsDisplay_Coordinator(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Set up coordinator with metrics
 	state := &WorkflowUIState{
@@ -389,7 +410,7 @@ func TestGetActiveMetricsDisplay_Coordinator(t *testing.T) {
 }
 
 func TestGetActiveMetricsDisplay_Worker(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Set up with workers and metrics
 	state := &WorkflowUIState{
@@ -427,7 +448,7 @@ func TestGetActiveMetricsDisplay_Worker(t *testing.T) {
 }
 
 func TestGetActiveMetricsDisplay_Messages(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Set up with coordinator metrics
 	state := &WorkflowUIState{
@@ -448,7 +469,7 @@ func TestGetActiveMetricsDisplay_Messages(t *testing.T) {
 }
 
 func TestGetActiveMetricsDisplay_NilMetrics(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Set up without any metrics (nil)
 	state := &WorkflowUIState{
@@ -474,7 +495,7 @@ func TestGetActiveMetricsDisplay_NilMetrics(t *testing.T) {
 }
 
 func TestGetActiveMetricsDisplay_InvalidWorkerTab(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Set up with only one worker
 	state := &WorkflowUIState{
@@ -499,7 +520,7 @@ func TestGetActiveMetricsDisplay_InvalidWorkerTab(t *testing.T) {
 }
 
 func TestView_ShowsMetricsInBottomRight(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 	panel.SetSize(60, 20)
 
 	// Set up coordinator with metrics
@@ -521,7 +542,7 @@ func TestView_ShowsMetricsInBottomRight(t *testing.T) {
 }
 
 func TestView_MetricsFitInPanelWidth(t *testing.T) {
-	panel := NewCoordinatorPanel()
+	panel := NewCoordinatorPanel(false, false)
 
 	// Use exactly 60-char width as specified in task
 	panel.SetSize(60, 20)

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
@@ -67,6 +69,12 @@ type CoordinatorPanel struct {
 	coordinatorMetrics *metrics.TokenMetrics
 	workerMetrics      map[string]*metrics.TokenMetrics
 
+	// Command log state (for debug mode)
+	commandLogViewport viewport.Model
+	commandLogEntries  []CommandLogEntry
+	commandLogDirty    bool
+	debugMode          bool // When true, show command log tab
+
 	// Focus state
 	focused bool
 
@@ -113,11 +121,40 @@ var (
 	errorBorderStyle       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF6B6B", Dark: "#FF8787"})
 )
 
+// Command log pane styles (matches orchestration mode command_pane.go)
+var (
+	commandTimestampStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#666666", Dark: "#696969"})
+
+	commandSourceStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#8888FF", Dark: "#9999FF"})
+
+	commandTypeStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#CCCCCC", Dark: "#AAAAAA"})
+
+	commandSuccessStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#43BF6D"})
+
+	commandFailStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#FF6B6B", Dark: "#FF8787"})
+
+	commandDurationStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#888888", Dark: "#777777"})
+
+	commandIDStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#555555", Dark: "#666666"})
+
+	commandTraceIDStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#777777", Dark: "#555555"})
+)
+
 // NewCoordinatorPanel creates a new coordinator panel.
 // The panel starts unfocused - use Focus() to give it input focus.
-func NewCoordinatorPanel() *CoordinatorPanel {
+// If debugMode is true, the command log tab is shown.
+// If vimMode is true, vim keybindings are enabled in the input.
+func NewCoordinatorPanel(debugMode, vimMode bool) *CoordinatorPanel {
 	input := vimtextarea.New(vimtextarea.Config{
-		VimEnabled:  true,
+		VimEnabled:  vimMode,
 		DefaultMode: vimtextarea.ModeInsert,
 		Placeholder: "Message coordinator...",
 		CharLimit:   0,
@@ -143,6 +180,10 @@ func NewCoordinatorPanel() *CoordinatorPanel {
 		workerQueues:        make(map[string]int),
 		workerDirty:         make(map[string]bool),
 		workerMetrics:       make(map[string]*metrics.TokenMetrics),
+		commandLogViewport:  viewport.New(0, 0),
+		commandLogEntries:   make([]CommandLogEntry, 0),
+		commandLogDirty:     true,
+		debugMode:           debugMode,
 		focused:             false,
 	}
 }
@@ -224,18 +265,36 @@ func (p *CoordinatorPanel) SetWorkflow(workflowID controlplane.WorkflowID, state
 		maps.Copy(p.workerMetrics, state.WorkerMetrics)
 	}
 
+	// Sync command log state (only relevant in debug mode)
+	if p.debugMode {
+		if workflowChanged || len(state.CommandLogEntries) != len(p.commandLogEntries) {
+			p.commandLogEntries = state.CommandLogEntries
+			p.commandLogDirty = true
+		}
+	}
+
 	// If the active tab is a worker tab that no longer exists, reset to coordinator
-	if p.activeTab >= TabFirstWorker {
-		workerIdx := p.activeTab - TabFirstWorker
+	firstWorker := p.firstWorkerTabIndex()
+	if p.activeTab >= firstWorker {
+		workerIdx := p.activeTab - firstWorker
 		if workerIdx >= len(p.workerIDs) {
 			p.activeTab = TabCoordinator
 		}
 	}
 }
 
-// tabCount returns the total number of tabs (coordinator + messages + workers).
+// tabCount returns the total number of tabs (coordinator + messages + [cmdlog] + workers).
 func (p *CoordinatorPanel) tabCount() int {
-	return TabFirstWorker + len(p.workerIDs)
+	return p.firstWorkerTabIndex() + len(p.workerIDs)
+}
+
+// firstWorkerTabIndex returns the tab index where worker tabs start.
+// This accounts for the optional command log tab in debug mode.
+func (p *CoordinatorPanel) firstWorkerTabIndex() int {
+	if p.debugMode {
+		return 3 // Coordinator(0), Messages(1), CommandLog(2), Workers(3+)
+	}
+	return TabFirstWorker // Coordinator(0), Messages(1), Workers(2+)
 }
 
 // NextTab switches to the next tab.
@@ -396,9 +455,23 @@ func (p *CoordinatorPanel) buildTabs(contentHeight int) []panes.Tab {
 		ZoneID:  makeTabZoneID(TabMessages),
 	})
 
+	// Tab 2 (debug mode only): Command Log
+	if p.debugMode {
+		cmdLogLabel := "CmdLog"
+		if p.activeTab != 2 {
+			cmdLogLabel = mutedStyle.Render(cmdLogLabel)
+		}
+		tabs = append(tabs, panes.Tab{
+			Label:   cmdLogLabel,
+			Content: p.renderCommandLogContent(contentHeight),
+			ZoneID:  makeTabZoneID(2),
+		})
+	}
+
 	// Dynamic worker tabs with status indicators
+	firstWorker := p.firstWorkerTabIndex()
 	for i, workerID := range p.workerIDs {
-		tabIndex := TabFirstWorker + i
+		tabIndex := firstWorker + i
 		status := p.workerStatus[workerID]
 		indicator, indicatorStyle := chatrender.StatusIndicator(status)
 		label := p.formatTabLabel(indicator, indicatorStyle, p.formatWorkerTabLabel(workerID), p.activeTab == tabIndex, mutedStyle)
@@ -575,6 +648,115 @@ func (p *CoordinatorPanel) renderWorkerContent(workerID string, height int) stri
 	p.workerViewports[workerID] = vp
 	p.workerDirty[workerID] = false
 	return vp.View()
+}
+
+// renderCommandLogContent renders the command log content for the viewport.
+// This is shown in debug mode to display command processing activity.
+func (p *CoordinatorPanel) renderCommandLogContent(height int) string {
+	vpWidth := max(p.width-2, 1)
+	vpHeight := max(height-2, 1)
+
+	content := p.renderCommandLogEntries(vpWidth)
+	content = padContentToBottom(content, vpHeight)
+
+	// Update viewport
+	wasAtBottom := p.commandLogViewport.AtBottom()
+	p.commandLogViewport.Width = vpWidth
+	p.commandLogViewport.Height = vpHeight
+	p.commandLogViewport.SetContent(content)
+	if wasAtBottom {
+		p.commandLogViewport.GotoBottom()
+	}
+
+	p.commandLogDirty = false
+	return p.commandLogViewport.View()
+}
+
+// renderCommandLogEntries renders the command log entries for the viewport.
+// Format: "15:04:05 [source] command_type (id) ✓/✗ [traceID] (duration)"
+func (p *CoordinatorPanel) renderCommandLogEntries(wrapWidth int) string {
+	if len(p.commandLogEntries) == 0 {
+		emptyStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)
+		return emptyStyle.Render("No commands processed yet.")
+	}
+
+	var content strings.Builder
+
+	// Display constants
+	const (
+		commandIDDisplayLength = 8
+		traceIDDisplayLength   = 8
+		maxErrorDisplayLength  = 200
+	)
+
+	for _, entry := range p.commandLogEntries {
+		// Format timestamp
+		timestamp := commandTimestampStyle.Render(entry.Timestamp.Format("15:04:05"))
+
+		// Format source in brackets
+		source := commandSourceStyle.Render("[" + string(entry.Source) + "]")
+
+		// Format command type
+		cmdType := commandTypeStyle.Render(string(entry.CommandType))
+
+		// Format shortened command ID (last 8 chars)
+		shortID := entry.CommandID
+		if len(shortID) > commandIDDisplayLength {
+			shortID = shortID[len(shortID)-commandIDDisplayLength:]
+		}
+		cmdID := commandIDStyle.Render("(" + shortID + ")")
+
+		// Format status (success/failure)
+		var status string
+		if entry.Success {
+			status = commandSuccessStyle.Render("✓")
+		} else {
+			// Truncate error message if too long
+			errMsg := entry.Error
+			if len(errMsg) > maxErrorDisplayLength {
+				errMsg = errMsg[:maxErrorDisplayLength] + "..."
+			}
+			if errMsg != "" {
+				status = commandFailStyle.Render("✗ " + errMsg)
+			} else {
+				status = commandFailStyle.Render("✗")
+			}
+		}
+
+		// Format trace ID (abbreviated to first 8 chars, only show when present)
+		var traceIDDisplay string
+		if entry.TraceID != "" {
+			shortTraceID := entry.TraceID
+			if len(shortTraceID) > traceIDDisplayLength {
+				shortTraceID = shortTraceID[:traceIDDisplayLength]
+			}
+			traceIDDisplay = " " + commandTraceIDStyle.Render("["+shortTraceID+"]")
+		}
+
+		// Format duration
+		duration := commandDurationStyle.Render(fmt.Sprintf("(%s)", formatCommandDuration(entry.Duration)))
+
+		// Build the line
+		line := fmt.Sprintf("%s %s %s %s %s%s %s", timestamp, source, cmdType, cmdID, status, traceIDDisplay, duration)
+
+		// Apply ANSI-aware truncation if line exceeds viewport width
+		if ansi.StringWidth(line) > wrapWidth {
+			line = ansi.Truncate(line, wrapWidth-3, "...")
+		}
+
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	return strings.TrimRight(content.String(), "\n")
+}
+
+// formatCommandDuration formats a duration for display in the command log.
+func formatCommandDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
 // renderMessageEntries renders the message log entries (matches orchestration mode).

@@ -656,7 +656,8 @@ func TestDashboard_View_Golden_WithCoordinatorPanel(t *testing.T) {
 	m.height = 25
 
 	// Open coordinator panel for selected workflow (Ready status - no messages yet)
-	panel := NewCoordinatorPanel()
+	// Use vimMode=true to match golden file expectations (shows [INSERT] indicator)
+	panel := NewCoordinatorPanel(false, true)
 	panelWidth := CoordinatorPanelWidth
 	panel.SetSize(panelWidth, m.height)
 	panel.SetWorkflow(workflows[0].ID, nil) // nil state = no messages, default status
@@ -692,7 +693,8 @@ func TestDashboard_View_Golden_WithCoordinatorPanelMessages(t *testing.T) {
 		CoordinatorQueueCount: 0,
 	}
 
-	panel := NewCoordinatorPanel()
+	// Use vimMode=true to match golden file expectations (shows [INSERT] indicator)
+	panel := NewCoordinatorPanel(false, true)
 	panel.SetSize(CoordinatorPanelWidth, m.height)
 	panel.SetWorkflow(workflows[0].ID, state)
 	m.coordinatorPanel = panel

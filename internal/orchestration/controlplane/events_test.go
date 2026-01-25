@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zjrosen/perles/internal/orchestration/events"
+	"github.com/zjrosen/perles/internal/orchestration/v2/processor"
 )
 
 func TestEventTypeConstants(t *testing.T) {
@@ -42,6 +43,8 @@ func TestEventTypeConstants(t *testing.T) {
 		{"HealthStuck", EventHealthStuck, "health.stuck"},
 		{"HealthRecovering", EventHealthRecovering, "health.recovering"},
 		{"HealthRecovered", EventHealthRecovered, "health.recovered"},
+		// Command log events
+		{"CommandLog", EventCommandLog, "command.log"},
 		// Unknown
 		{"Unknown", EventUnknown, "unknown"},
 	}
@@ -231,6 +234,18 @@ func TestClassifyEvent_WorkflowComplete(t *testing.T) {
 	}
 	result := ClassifyEvent(event)
 	require.Equal(t, EventWorkflowCompleted, result)
+}
+
+func TestClassifyEvent_CommandLogEvent(t *testing.T) {
+	event := processor.CommandLogEvent{
+		CommandID:   "cmd-123",
+		CommandType: "spawn_worker",
+		Success:     true,
+		Duration:    time.Millisecond * 100,
+		Timestamp:   time.Now(),
+	}
+	result := ClassifyEvent(event)
+	require.Equal(t, EventCommandLog, result)
 }
 
 func TestClassifyEvent_ReadyWorkingEvents(t *testing.T) {

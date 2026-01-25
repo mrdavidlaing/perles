@@ -572,6 +572,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			GitExecutorFactory: m.services.GitExecutorFactory,
 			WorkDir:            m.services.WorkDir,
 			APIPort:            m.apiServerPort,
+			DebugMode:          m.debugMode,
+			VimMode:            m.services.Config.UI.VimMode,
 		}).SetSize(m.width, m.height).(dashboard.Model)
 
 		return m, m.dashboard.Init()

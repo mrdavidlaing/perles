@@ -6,9 +6,27 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
+	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 	"github.com/zjrosen/perles/internal/ui/tree"
 )
+
+// maxCommandLogEntries is the maximum number of entries to keep in the command log.
+// When exceeded, oldest entries are removed (FIFO eviction).
+const maxCommandLogEntries = 2000
+
+// CommandLogEntry represents a single command in the log.
+// This is used for debug mode command log display.
+type CommandLogEntry struct {
+	Timestamp   time.Time
+	CommandType command.CommandType
+	CommandID   string
+	Source      command.CommandSource
+	Success     bool
+	Error       string // Converted from error for display
+	Duration    time.Duration
+	TraceID     string // Distributed trace ID for correlation (empty if tracing disabled)
+}
 
 // maxCachedWorkflows is the maximum number of workflow UI states to keep in cache.
 // When exceeded, the oldest non-running, non-selected workflow state is evicted.
@@ -52,6 +70,9 @@ type WorkflowUIState struct {
 	TreeMode       tree.TreeMode
 	TreeSelectedID string
 
+	// Command log state (for debug mode)
+	CommandLogEntries []CommandLogEntry
+
 	// Cache metadata
 	LastUpdated time.Time
 }
@@ -70,6 +91,7 @@ func NewWorkflowUIState() *WorkflowUIState {
 		WorkerScrollPercents:     make(map[string]float64),
 		CoordinatorScrollPercent: 0,
 		MessageScrollPercent:     0,
+		CommandLogEntries:        make([]CommandLogEntry, 0),
 		LastUpdated:              time.Time{},
 	}
 }

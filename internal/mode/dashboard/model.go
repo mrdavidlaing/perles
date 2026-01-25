@@ -25,6 +25,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
+	"github.com/zjrosen/perles/internal/orchestration/v2/processor"
 	appreg "github.com/zjrosen/perles/internal/registry/application"
 	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/modals/help"
@@ -132,6 +133,12 @@ type Model struct {
 	// API server port (for display in header)
 	apiPort int
 
+	// Debug mode enables command log tab in coordinator panel
+	debugMode bool
+
+	// Vim mode enables vim keybindings in text input areas
+	vimMode bool
+
 	// Dimensions
 	width  int
 	height int
@@ -163,6 +170,12 @@ type Config struct {
 	// APIPort is the port the HTTP API server is running on.
 	// Shown in the dashboard header for external tool integration.
 	APIPort int
+	// DebugMode enables the command log tab in the coordinator panel.
+	// When true, an additional tab showing command processing activity is displayed.
+	DebugMode bool
+	// VimMode enables vim keybindings in text input areas.
+	// When true, the coordinator panel input uses vim mode.
+	VimMode bool
 }
 
 // New creates a new dashboard mode model with the given configuration.
@@ -187,6 +200,8 @@ func New(cfg Config) Model {
 		gitExecutorFactory: cfg.GitExecutorFactory,
 		workDir:            cfg.WorkDir,
 		apiPort:            cfg.APIPort,
+		debugMode:          cfg.DebugMode,
+		vimMode:            cfg.VimMode,
 	}
 
 	// Initialize the workflow table with config
@@ -887,8 +902,8 @@ func (m *Model) openCoordinatorPanelForSelected() {
 		return
 	}
 
-	// Create new panel
-	panel := NewCoordinatorPanel()
+	// Create new panel (pass debugMode for command log tab, vimMode for input)
+	panel := NewCoordinatorPanel(m.debugMode, m.vimMode)
 	panel.SetSize(CoordinatorPanelWidth, m.height)
 
 	// Load cached state for this workflow (ensures state exists)
@@ -1094,6 +1109,31 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 	case controlplane.EventUserNotification:
 		// Set notification flag to highlight this workflow row
 		uiState.HasNotification = true
+
+	case controlplane.EventCommandLog:
+		// Command log events for debug mode display
+		if payload, ok := event.Payload.(processor.CommandLogEvent); ok {
+			errorStr := ""
+			if payload.Error != nil {
+				errorStr = payload.Error.Error()
+			}
+			entry := CommandLogEntry{
+				Timestamp:   payload.Timestamp,
+				CommandType: payload.CommandType,
+				CommandID:   payload.CommandID,
+				Source:      payload.Source,
+				Success:     payload.Success,
+				Error:       errorStr,
+				Duration:    payload.Duration,
+				TraceID:     payload.TraceID,
+			}
+			uiState.CommandLogEntries = append(uiState.CommandLogEntries, entry)
+
+			// Apply max entry bounds checking (FIFO eviction)
+			if len(uiState.CommandLogEntries) > maxCommandLogEntries {
+				uiState.CommandLogEntries = uiState.CommandLogEntries[1:]
+			}
+		}
 	}
 
 	// Update timestamp (handle nil Clock for tests)
