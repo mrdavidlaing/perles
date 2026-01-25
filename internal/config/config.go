@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/zjrosen/perles/internal/log"
@@ -363,6 +364,22 @@ func DefaultSessionStorageBaseDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".perles", "sessions")
+}
+
+// DefaultDatabasePath returns the default path for the SQLite database.
+// Returns ~/.perles/perles.db in production, or ~/.perles/perles-test.db when
+// running under `go test` (detected via testing.Testing()).
+// Returns empty string if home dir unavailable.
+func DefaultDatabasePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dbName := "perles.db"
+	if testing.Testing() {
+		dbName = "perles-test.db"
+	}
+	return filepath.Join(home, ".perles", dbName)
 }
 
 // DefaultColumns returns the default column configuration matching current behavior.

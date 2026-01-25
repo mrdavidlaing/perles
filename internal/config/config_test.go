@@ -2348,3 +2348,13 @@ func TestIsValidKeyFormat_AllPatterns(t *testing.T) {
 		})
 	}
 }
+
+// Tests for DefaultDatabasePath
+
+func TestDefaultDatabasePath(t *testing.T) {
+	// When running under `go test`, returns perles-test.db to avoid touching production db
+	path := DefaultDatabasePath()
+	require.NotEmpty(t, path, "DefaultDatabasePath should return a path")
+	require.Contains(t, path, ".perles", "Path should contain .perles")
+	require.Contains(t, path, "perles-test.db", "Path should contain perles-test.db when running tests")
+}

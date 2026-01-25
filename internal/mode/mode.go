@@ -10,6 +10,7 @@ import (
 	"github.com/zjrosen/perles/internal/flags"
 	appgit "github.com/zjrosen/perles/internal/git/application"
 	"github.com/zjrosen/perles/internal/mode/shared"
+	domain "github.com/zjrosen/perles/internal/sessions/domain"
 	"github.com/zjrosen/perles/internal/sound"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 )
@@ -68,6 +69,9 @@ type Services struct {
 	// GitExecutorFactory creates git executors for a given path.
 	// Used by orchestration mode to check uncommitted changes in worktrees.
 	GitExecutorFactory func(path string) appgit.GitExecutor
+	// SessionRepository provides access to session persistence.
+	// May be nil if database initialization failed or is not configured.
+	SessionRepository domain.SessionRepository
 }
 
 // ShowToastMsg requests displaying a toast notification.

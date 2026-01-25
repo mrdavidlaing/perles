@@ -2113,3 +2113,68 @@ func TestApp_DashboardQuit_SetsSizeCorrectly(t *testing.T) {
 		require.NotEmpty(t, view, "kanban view should render without panic")
 	})
 }
+
+// =====================================================
+// Database Integration Tests
+// =====================================================
+
+func TestApp_InitializesDatabase(t *testing.T) {
+	// Database uses ~/.perles/perles-test.db when running under `go test`
+	// (automatically detected via testing.Testing())
+	cfg := config.Defaults()
+
+	model, err := NewWithConfig(
+		nil, // client - not needed for database tests
+		cfg,
+		nil, // bqlCache
+		nil, // depGraphCache
+		"",  // dbPath (beads db path)
+		"",  // configPath
+		"/tmp",
+		false, // debugMode
+		nil,   // registryService
+	)
+	require.NoError(t, err, "NewWithConfig should not error")
+	require.NotNil(t, model.db, "database should be initialized")
+	require.NotNil(t, model.services.SessionRepository, "SessionRepository should be available")
+
+	// Verify database file was created at the test path
+	testDBPath := config.DefaultDatabasePath()
+	require.Contains(t, testDBPath, "perles-test.db", "should use test database")
+	_, err = os.Stat(testDBPath)
+	require.NoError(t, err, "database file should exist")
+
+	// Cleanup
+	err = model.Close()
+	require.NoError(t, err, "Close should not error")
+}
+
+func TestApp_Shutdown_ClosesDatabase(t *testing.T) {
+	cfg := config.Defaults()
+
+	model, err := NewWithConfig(
+		nil, // client
+		cfg,
+		nil, // bqlCache
+		nil, // depGraphCache
+		"",  // dbPath
+		"",  // configPath
+		"/tmp",
+		false, // debugMode
+		nil,   // registryService
+	)
+	require.NoError(t, err)
+	require.NotNil(t, model.db, "database should be initialized")
+
+	// Get reference to db before close
+	db := model.db
+
+	// Close the model
+	err = model.Close()
+	require.NoError(t, err, "Close should not error")
+
+	// Verify database connection is closed by attempting an operation
+	// (A closed connection will return an error)
+	_, err = db.Connection().Exec("SELECT 1")
+	require.Error(t, err, "database connection should be closed after model.Close()")
+}

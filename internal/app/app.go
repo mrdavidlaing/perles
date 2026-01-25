@@ -19,6 +19,7 @@ import (
 	"github.com/zjrosen/perles/internal/flags"
 	appgit "github.com/zjrosen/perles/internal/git/application"
 	infragit "github.com/zjrosen/perles/internal/git/infrastructure"
+	"github.com/zjrosen/perles/internal/infrastructure/sqlite"
 	"github.com/zjrosen/perles/internal/keys"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/mode"
@@ -33,6 +34,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
 	appreg "github.com/zjrosen/perles/internal/registry/application"
+	domain "github.com/zjrosen/perles/internal/sessions/domain"
 	"github.com/zjrosen/perles/internal/sound"
 
 	"github.com/zjrosen/perles/internal/ui/shared/chatpanel"
@@ -101,13 +103,18 @@ type Model struct {
 	// API server for control plane (started when dashboard mode enters)
 	apiServer     *api.Server
 	apiServerPort int
+
+	// SQLite database for session persistence (owned by app, closed on shutdown)
+	db *sqlite.DB
 }
 
 // NewWithConfig creates a new application model with the provided configuration.
-// dbPath is the path to the database file for watching changes.
+// dbPath is the path to the beads database file for watching changes.
 // configPath is the path to the config file for saving column changes.
 // debugMode enables the log overlay (Ctrl+X toggle).
 // registryService provides template listing, validation, and epic_driven.md access (can be nil).
+//
+// Returns an error if database initialization fails (fail-fast behavior).
 func NewWithConfig(
 	client *infrabeads.SQLiteClient,
 	cfg config.Config,
@@ -118,7 +125,18 @@ func NewWithConfig(
 	workDir string,
 	debugMode bool,
 	registryService *appreg.RegistryService,
-) Model {
+) (Model, error) {
+	// Initialize SQLite database for session persistence
+	// Path is ~/.perles/perles.db (or perles-test.db when running tests)
+	var db *sqlite.DB
+	if sqliteDBPath := config.DefaultDatabasePath(); sqliteDBPath != "" {
+		var err error
+		db, err = sqlite.NewDB(sqliteDBPath)
+		if err != nil {
+			return Model{}, fmt.Errorf("database initialization failed: %w", err)
+		}
+	}
+
 	// Initialize global zone manager for mouse click detection (bubblezone)
 	zone.NewGlobal()
 
@@ -157,14 +175,25 @@ func NewWithConfig(
 
 	beadsExec := infrabeads.NewBDExecutor(workDir, cfg.ResolvedBeadsDir)
 
-	// Create shared services
+	// Create shared services with session repository from SQLite database
+	var sessionRepo domain.SessionRepository
+	if db != nil {
+		sessionRepo = db.SessionRepository()
+	}
+
+	// Create BQL executor only if client is available (nil when beads DB not present)
+	var bqlExec bql.BQLExecutor
+	if client != nil {
+		bqlExec = bql.NewExecutor(client.DB(), bqlCache, depGraphCache)
+	}
+
 	services := mode.Services{
 		Client:        client,
 		Config:        &cfg,
 		ConfigPath:    configPath,
 		DBPath:        dbPath,
 		WorkDir:       workDir,
-		Executor:      bql.NewExecutor(client.DB(), bqlCache, depGraphCache),
+		Executor:      bqlExec,
 		BeadsExecutor: beadsExec,
 		Clipboard:     shared.SystemClipboard{},
 		Clock:         shared.RealClock{},
@@ -173,6 +202,7 @@ func NewWithConfig(
 		GitExecutorFactory: func(path string) appgit.GitExecutor {
 			return infragit.NewRealExecutor(path)
 		},
+		SessionRepository: sessionRepo,
 	}
 
 	// Create log overlay and start listening if debug mode is enabled
@@ -238,7 +268,8 @@ func NewWithConfig(
 			Title:   "Exit Application?",
 			Message: "Are you sure you want to quit?",
 		}),
-	}
+		db: db,
+	}, nil
 }
 
 // Init implements tea.Model interface.
@@ -1136,6 +1167,14 @@ func (m *Model) Close() error {
 		defer cancel()
 		if err := m.apiServer.Stop(ctx); err != nil {
 			log.Error(log.CatOrch, "Error stopping API server", "error", err)
+		}
+	}
+
+	// Close SQLite database connection
+	if m.db != nil {
+		if err := m.db.Close(); err != nil {
+			log.Error(log.CatDB, "Error closing database", "error", err)
+			return err
 		}
 	}
 

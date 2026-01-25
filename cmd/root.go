@@ -257,7 +257,7 @@ func runApp(cmd *cobra.Command, args []string) error {
 	)
 
 	// Pass config to app with database and config paths (debug for log overlay)
-	model := app.NewWithConfig(
+	model, err := app.NewWithConfig(
 		client,
 		cfg,
 		bqlCache,
@@ -268,6 +268,9 @@ func runApp(cmd *cobra.Command, args []string) error {
 		debug,
 		registryService,
 	)
+	if err != nil {
+		return fmt.Errorf("initializing application: %w", err)
+	}
 	p := tea.NewProgram(
 		&model,
 		tea.WithAltScreen(),
