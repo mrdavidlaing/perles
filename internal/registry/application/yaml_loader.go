@@ -177,6 +177,11 @@ func LoadRegistryFromYAMLWithSource(fsys fs.FS, source registry.Source) ([]*regi
 			}
 			seen[regKey] = path
 
+			// Set default system_prompt for orchestration workflows if not specified
+			if isOrchestrationWorkflow(&def) && def.SystemPrompt == "" {
+				def.SystemPrompt = defaultSystemPrompt
+			}
+
 			// Validate template paths before resolution
 			if err := validateTemplatePath(def.EpicTemplate); err != nil {
 				return fmt.Errorf("workflow %s/%s in %s: %w", def.Namespace, def.Key, path, err)
@@ -297,13 +302,11 @@ func resolveTemplatePath(template, workflowDir string, fsys fs.FS) string {
 	return workflowPath
 }
 
+// defaultSystemPrompt is the default system prompt template for orchestration workflows.
+const defaultSystemPrompt = "v1-epic-instructions.md"
+
 // buildRegistrationFromDefWithSource converts a WorkflowDef into a registry.Registration with a specific source.
 func buildRegistrationFromDefWithSource(def WorkflowDef, source registry.Source) (*registry.Registration, error) {
-	// Validate system_prompt field for orchestration workflows
-	if isOrchestrationWorkflow(&def) && def.SystemPrompt == "" {
-		return nil, fmt.Errorf("registration %s/%s requires 'system_prompt' field (orchestration workflows must specify system prompt template)", def.Namespace, def.Key)
-	}
-
 	// Build the chain from node definitions (skip for epic-driven workflows which have no nodes)
 	var chain *registry.Chain
 	if !isEpicDrivenWorkflow(&def) {

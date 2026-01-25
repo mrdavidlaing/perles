@@ -646,29 +646,33 @@ registry:
 	require.Empty(t, registrations[0].SystemPrompt(), "SystemPrompt() should be empty")
 }
 
-func TestYAMLLoader_EmptySystemPrompt_ErrorForOrchestrationWorkflow(t *testing.T) {
-	// Orchestration workflow (has assignee) without system_prompt should fail
+func TestYAMLLoader_EmptySystemPrompt_DefaultsForOrchestrationWorkflow(t *testing.T) {
+	// Orchestration workflow (has assignee) without system_prompt should use default
 	yamlContent := `
 registry:
   - namespace: "workflow"
-    key: "missing-system-prompt"
+    key: "uses-default-system-prompt"
     version: "v1"
-    name: "Orchestration Without System Prompt"
-    description: "An orchestration workflow missing system_prompt"
+    name: "Orchestration With Default System Prompt"
+    description: "An orchestration workflow using default system_prompt"
     nodes:
       - key: "step1"
         name: "Step 1"
         template: "step1.md"
         assignee: "worker-1"
 `
-	fs := createWorkflowFS(yamlContent, "step1.md")
+	// Create FS with the step1.md template AND the default system prompt at workflows/
+	fsys := fstest.MapFS{
+		"workflows/test/template.yaml":      {Data: []byte(yamlContent)},
+		"workflows/test/step1.md":           {Data: []byte("# Step 1 template")},
+		"workflows/v1-epic-instructions.md": {Data: []byte("# Default system prompt")},
+	}
 
-	_, err := LoadRegistryFromYAML(fs)
-	require.Error(t, err, "LoadRegistryFromYAML() should error for orchestration workflows without system_prompt")
-	require.Contains(t, err.Error(), "requires 'system_prompt' field",
-		"error should mention 'system_prompt' field requirement")
-	require.Contains(t, err.Error(), "workflow/missing-system-prompt",
-		"error should include namespace/key for context")
+	registrations, err := LoadRegistryFromYAML(fsys)
+	require.NoError(t, err, "LoadRegistryFromYAML() should not error when default system_prompt exists")
+	require.Len(t, registrations, 1, "expected 1 registration")
+	require.Equal(t, "workflows/v1-epic-instructions.md", registrations[0].SystemPrompt(),
+		"SystemPrompt() should be set to the default")
 }
 
 func TestIsOrchestrationWorkflow_TrueWhenAssigneePresent(t *testing.T) {
