@@ -717,27 +717,20 @@ func (s *defaultSupervisor) sendResumeContextMessage(inst *WorkflowInstance) err
 		return fmt.Errorf("infrastructure not available")
 	}
 
-	now := time.Now()
-	pauseDuration := now.Sub(inst.PausedAt)
+	message := `[SYSTEM] Automatic System Message 
 
-	message := fmt.Sprintf(`[SYSTEM] The workflow was paused by the user at %s and has now been resumed.
-Current time: %s
-Pause duration: %s
+The workflow was paused by the user and has now been resumed. We are re-orienting to the workflow we were working on.
 
-Please continue from where you left off. Use your MCP tools to query current state:
-- query_worker_state: Check worker availability
-- get_task_status: Check task progress in BD
+Diagnose using these tools:
+1. Use query_workflow_state to check worker statuses
+2. Use read_message_log to review recent activity
 
-If workers were previously working on tasks and their tasks are in progress but the workers status is ready then
-you have to send them a message to continue working on their task since they were paused and they have to now continue.
-Use the send_to_worker(worker_id, message) tool to send a message to the worker.
+Based on what you find:
+- If workers are still in "working" state → No action needed, they're actively processing
+- If waiting for user input or action → You MUST call the notify_user to alert the user, then end your turn
+- If workers are idle/stuck → if they were supposed to be working on a task investigate and determine if we need to send a message to the worker.
 
-If we are waiting for user input then use the notify_user tool that will notify the user they need to respond.
-
-You may ask the user for clarification if you are not sure how to continue.`,
-		inst.PausedAt.Format(time.RFC3339),
-		now.Format(time.RFC3339),
-		pauseDuration.Round(time.Second))
+If you are still unsure how to proceed then you MUST call the notify_user tool and summarize your findings so the user can help unblock you.`
 
 	// Submit send-to-process command for the coordinator
 	sendCmd := command.NewSendToProcessCommand(
