@@ -1,6 +1,6 @@
 ╭─ Workflows ──────────────────────────────────────────────────────────────────────────────────────╮
-│🔔 Status    Name                                      EpicID           Workers  Health   Uptime  │
-│   RUNNING   Running workflow with timestamp           -                1        ❤️ 0s    5m      │
+│🔔 🔒 Status    Name                                   EpicID           Workers  Health   Uptime  │
+│      RUNNING   Running workflow with timestamp        -                1        ❤️ 0s    5m      │
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │

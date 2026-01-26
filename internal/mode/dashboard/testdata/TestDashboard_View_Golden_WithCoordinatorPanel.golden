@@ -1,7 +1,7 @@
 ╭─ Workflows ─────────────────────────────────────────╮╭─ ○ Coord ─ Msgs ──────────────────────────────────────────────╮
-│🔔 Status    Name          Workers  Health   Uptime  ││                                                               │
-│   RUNNING   Running wo... 2        ❤️ 0s    -       ││                                                               │
-│   PENDING   Another wo... 0        -        -       ││                                                               │
+│🔔 🔒 Status    Name       Workers  Health   Uptime  ││                                                               │
+│      RUNNING   Running... 2        ❤️ 0s    -       ││                                                               │
+│      PENDING   Another... 0        -        -       ││                                                               │
 │                                                     ││                                                               │
 │                                                     ││                                                               │
 │                                                     ││                                                               │

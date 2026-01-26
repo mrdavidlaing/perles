@@ -98,6 +98,21 @@ func (m Model) createWorkflowTableConfig() table.TableConfig {
 				},
 			},
 			{
+				Key:    "lock",
+				Header: "🔒",
+				Width:  2, // Lock emoji is 2 characters wide
+				Type:   table.ColumnTypeIcon,
+				Render: func(row any, _ string, _ int, _ bool) string {
+					r := row.(WorkflowTableRow)
+					if r.Workflow.IsLocked {
+						return lipgloss.NewStyle().
+							Foreground(colorPaused). // Yellow warning color
+							Render("🔒")
+					}
+					return "  " // Two spaces to match column width
+				},
+			},
+			{
 				Key:    "status",
 				Header: "Status",
 				Width:  9,
@@ -116,10 +131,6 @@ func (m Model) createWorkflowTableConfig() table.TableConfig {
 				Render: func(row any, _ string, w int, _ bool) string {
 					r := row.(WorkflowTableRow)
 					name := r.Workflow.Name
-					// Prefix with lock emoji if workflow is owned by another process
-					if r.Workflow.IsLocked {
-						name = "🔒 " + name
-					}
 					if lipgloss.Width(name) > w {
 						name = styles.TruncateString(name, w)
 					}

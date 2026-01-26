@@ -1,10 +1,10 @@
 ╭─ Workflows ──────────────────────────────────────────────────────────────────────────────────────╮
-│🔔 Status    Name                                      EpicID           Workers  Health   Uptime  │
-│   RUNNING   Build authentication system               -                3        ❤️ 0s    -       │
-│   PENDING   Fix payment processing bug                -                0        -        -       │
-│   PAUSED    Refactor database layer                   -                1        -        -       │
-│   COMPLETED Deploy to production                      -                0        -        -       │
-│   FAILED    Integration test failure investigation    -                0        -        -       │
+│🔔 🔒 Status    Name                                   EpicID           Workers  Health   Uptime  │
+│      RUNNING   Build authentication system            -                3        ❤️ 0s    -       │
+│      PENDING   Fix payment processing bug             -                0        -        -       │
+│      PAUSED    Refactor database layer                -                1        -        -       │
+│      COMPLETED Deploy to production                   -                0        -        -       │
+│      FAILED    Integration test failure investigation -                0        -        -       │
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │

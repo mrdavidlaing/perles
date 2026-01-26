@@ -1,7 +1,7 @@
 ╭─ Workflows ──────────────────────────────────────────────────────────────────────────────────────╮
-│🔔 Status    Name                                      EpicID           Workers  Health   Uptime  │
-│   RUNNING   First Workflow                            -                2        ❤️ 0s    -       │
-│   PENDING   Second Workflow                           -                0        -        -       │
+│🔔 🔒 Status    Name                                   EpicID           Workers  Health   Uptime  │
+│      RUNNING   First Workflow                         -                2        ❤️ 0s    -       │
+│      PENDING   Second Workflow                        -                0        -        -       │
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

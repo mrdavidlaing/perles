@@ -2427,7 +2427,7 @@ func TestStartSelectedWorkflow_UnlockedWorkflow_Proceeds(t *testing.T) {
 	require.NotNil(t, cmd, "should return a command for start workflow")
 }
 
-func TestWorkflowTableRow_LockedWorkflow_ShowsLockPrefix(t *testing.T) {
+func TestWorkflowTableRow_LockedWorkflow_ShowsLockInColumn(t *testing.T) {
 	// Create a locked workflow
 	wf := createTestWorkflow("wf-locked", "Test Workflow", controlplane.WorkflowRunning)
 	wf.IsLocked = true
@@ -2438,16 +2438,15 @@ func TestWorkflowTableRow_LockedWorkflow_ShowsLockPrefix(t *testing.T) {
 		Workflow: wf,
 	}
 
-	// Simulate what the view render does
+	// Verify name column doesn't have lock prefix
 	name := row.Workflow.Name
-	if row.Workflow.IsLocked {
-		name = "🔒 " + name
-	}
+	require.Equal(t, "Test Workflow", name, "name column should not have lock prefix")
 
-	require.Equal(t, "🔒 Test Workflow", name, "locked workflow should have 🔒 prefix")
+	// Verify lock column would show lock icon (based on IsLocked field)
+	require.True(t, row.Workflow.IsLocked, "workflow should be marked as locked")
 }
 
-func TestWorkflowTableRow_UnlockedWorkflow_NoLockPrefix(t *testing.T) {
+func TestWorkflowTableRow_UnlockedWorkflow_EmptyLockColumn(t *testing.T) {
 	// Create an unlocked workflow
 	wf := createTestWorkflow("wf-unlocked", "Test Workflow", controlplane.WorkflowRunning)
 	wf.IsLocked = false
@@ -2458,13 +2457,12 @@ func TestWorkflowTableRow_UnlockedWorkflow_NoLockPrefix(t *testing.T) {
 		Workflow: wf,
 	}
 
-	// Simulate what the view render does
+	// Verify name column is just the workflow name (no prefix)
 	name := row.Workflow.Name
-	if row.Workflow.IsLocked {
-		name = "🔒 " + name
-	}
+	require.Equal(t, "Test Workflow", name, "name column should be plain workflow name")
 
-	require.Equal(t, "Test Workflow", name, "unlocked workflow should not have 🔒 prefix")
+	// Verify lock column would be empty (based on IsLocked field)
+	require.False(t, row.Workflow.IsLocked, "workflow should not be marked as locked")
 }
 
 // === Unit Tests: Archive Workflow ===
