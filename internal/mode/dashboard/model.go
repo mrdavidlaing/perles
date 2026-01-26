@@ -1221,6 +1221,9 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 				if payload.Metrics != nil {
 					uiState.CoordinatorMetrics = payload.Metrics
 				}
+			case events.ProcessQueueChanged:
+				// Queue changed events - update queue count
+				uiState.CoordinatorQueueCount = payload.QueueCount
 			default:
 				// For other event types, use the Status field if present
 				if payload.Status != "" {
@@ -1231,8 +1234,6 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 					m.appendCoordinatorMessageToCache(uiState, payload)
 				}
 			}
-			// Always update queue count
-			uiState.CoordinatorQueueCount = payload.QueueCount
 		}
 
 	case controlplane.EventCoordinatorIncoming:
@@ -1270,6 +1271,9 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 					}
 					uiState.WorkerMetrics[workerID] = payload.Metrics
 				}
+			case events.ProcessQueueChanged:
+				// Queue changed events - update queue count
+				uiState.WorkerQueueCounts[workerID] = payload.QueueCount
 			default:
 				// For other event types, use the Status field if present
 				if payload.Status != "" {
@@ -1280,11 +1284,10 @@ func (m *Model) updateCachedUIState(event controlplane.ControlPlaneEvent) {
 					m.appendWorkerMessageToCache(uiState, payload)
 				}
 			}
-			// Update phase and queue count
+			// Update phase if present
 			if payload.Phase != nil {
 				uiState.WorkerPhases[workerID] = *payload.Phase
 			}
-			uiState.WorkerQueueCounts[workerID] = payload.QueueCount
 		}
 
 	case controlplane.EventWorkerSpawned:

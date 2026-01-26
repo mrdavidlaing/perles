@@ -1950,6 +1950,89 @@ func TestModel_UserNotification_SetsFlag(t *testing.T) {
 	require.True(t, m.workflowUIState["wf-1"].HasNotification)
 }
 
+func TestModel_QueueCount_UpdatedOnQueueChangedEvent(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Initially no queue count
+	state := m.getOrCreateUIState("wf-1")
+	require.Equal(t, 0, state.CoordinatorQueueCount)
+
+	// Simulate receiving a ProcessQueueChanged event for coordinator
+	event := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:       events.ProcessQueueChanged,
+			Role:       events.RoleCoordinator,
+			QueueCount: 3,
+		},
+	}
+	m.updateCachedUIState(event)
+
+	// Queue count should be updated
+	require.Equal(t, 3, m.workflowUIState["wf-1"].CoordinatorQueueCount)
+}
+
+func TestModel_QueueCount_NotClearedByOtherEvents(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Set initial queue count via ProcessQueueChanged
+	state := m.getOrCreateUIState("wf-1")
+	state.CoordinatorQueueCount = 5
+
+	// Simulate receiving a ProcessOutput event (should NOT clear queue count)
+	event := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventCoordinatorOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:   events.ProcessOutput,
+			Role:   events.RoleCoordinator,
+			Output: "Some output",
+		},
+	}
+	m.updateCachedUIState(event)
+
+	// Queue count should still be 5 (not cleared to 0)
+	require.Equal(t, 5, m.workflowUIState["wf-1"].CoordinatorQueueCount)
+}
+
+func TestModel_WorkerQueueCount_UpdatedOnQueueChangedEvent(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),
+	}
+
+	m, _ := createTestModel(t, workflows)
+
+	// Add a worker to the UI state
+	state := m.getOrCreateUIState("wf-1")
+	state.WorkerIDs = []string{"worker-1"}
+	state.WorkerQueueCounts = map[string]int{}
+
+	// Simulate receiving a ProcessQueueChanged event for worker
+	event := controlplane.ControlPlaneEvent{
+		Type:       controlplane.EventWorkerOutput,
+		WorkflowID: "wf-1",
+		Payload: events.ProcessEvent{
+			Type:       events.ProcessQueueChanged,
+			ProcessID:  "worker-1",
+			Role:       events.RoleWorker,
+			QueueCount: 2,
+		},
+	}
+	m.updateCachedUIState(event)
+
+	// Worker queue count should be updated
+	require.Equal(t, 2, m.workflowUIState["wf-1"].WorkerQueueCounts["worker-1"])
+}
+
 func TestModel_UserNotification_ClearedOnEnter(t *testing.T) {
 	workflows := []*controlplane.WorkflowInstance{
 		createTestWorkflow("wf-1", "Workflow 1", controlplane.WorkflowRunning),

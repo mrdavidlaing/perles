@@ -160,8 +160,8 @@ func ClassifyEvent(v2Event any) EventType {
 		}
 		return EventWorkerOutput
 
-	case events.ProcessReady, events.ProcessWorking, events.ProcessTokenUsage:
-		// Ready/Working/TokenUsage state transitions - classify by role
+	case events.ProcessReady, events.ProcessWorking, events.ProcessTokenUsage, events.ProcessQueueChanged:
+		// Ready/Working/TokenUsage/QueueChanged state transitions - classify by role
 		if processEvent.Role == events.RoleCoordinator {
 			return EventCoordinatorOutput
 		}

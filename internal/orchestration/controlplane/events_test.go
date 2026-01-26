@@ -332,6 +332,40 @@ func TestClassifyEvent_ProcessTokenUsage(t *testing.T) {
 	}
 }
 
+func TestClassifyEvent_ProcessQueueChanged(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    events.ProcessEvent
+		expected EventType
+	}{
+		{
+			name: "CoordinatorQueueChanged",
+			event: events.ProcessEvent{
+				Type:       events.ProcessQueueChanged,
+				Role:       events.RoleCoordinator,
+				QueueCount: 2,
+			},
+			expected: EventCoordinatorOutput,
+		},
+		{
+			name: "WorkerQueueChanged",
+			event: events.ProcessEvent{
+				Type:       events.ProcessQueueChanged,
+				Role:       events.RoleWorker,
+				QueueCount: 3,
+			},
+			expected: EventWorkerOutput,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ClassifyEvent(tc.event)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestClassifyEvent_ProcessIncoming(t *testing.T) {
 	tests := []struct {
 		name     string
