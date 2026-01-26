@@ -419,6 +419,32 @@ func TestHandleProcessComplete_SetsSucceededTrueForStatusCompleted(t *testing.T)
 	assert.True(t, cmd.Succeeded)
 }
 
+func TestHandleProcessComplete_SetsSucceededFalseForInFlightError(t *testing.T) {
+	// This tests the scenario where the process exits cleanly (StatusCompleted)
+	// but an in-flight API error occurred (e.g., "tool_use ids must be unique").
+	// The turn should be marked as failed.
+	proc := newMockHeadlessProcess()
+	proc.status = client.StatusCompleted // Process exited cleanly
+	eventBus := pubsub.NewBroker[any]()
+	submitter := &mockCommandSubmitter{}
+
+	p := New("worker-1", repository.RoleWorker, proc, submitter, eventBus)
+	p.Start()
+
+	// Simulate an in-flight error (e.g., API returned is_error:true)
+	p.handleInFlightError(errors.New("API Error: 400 tool_use ids must be unique"))
+
+	proc.Complete()
+	<-p.eventDone
+
+	submitted := submitter.getSubmitted()
+	require.Len(t, submitted, 1)
+
+	cmd := submitted[0].(*command.ProcessTurnCompleteCommand)
+	assert.False(t, cmd.Succeeded, "Turn should fail when there's an in-flight error")
+	assert.Contains(t, cmd.Error.Error(), "tool_use ids must be unique")
+}
+
 func TestHandleProcessComplete_SetsSucceededFalseForOtherStatuses(t *testing.T) {
 	testCases := []client.ProcessStatus{
 		client.StatusFailed,

@@ -138,6 +138,17 @@ func TestClassifyEvent_TaskEvents(t *testing.T) {
 	require.Equal(t, EventTaskFailed, result)
 }
 
+func TestClassifyEvent_CoordinatorError(t *testing.T) {
+	// Coordinator errors should map to coordinator output so TUI displays them
+	event := events.ProcessEvent{
+		Type:      events.ProcessError,
+		Role:      events.RoleCoordinator,
+		ProcessID: "coordinator",
+	}
+	result := ClassifyEvent(event)
+	require.Equal(t, EventCoordinatorOutput, result)
+}
+
 func TestClassifyEvent_UnknownEvents(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -156,13 +167,6 @@ func TestClassifyEvent_UnknownEvents(t *testing.T) {
 			event: events.ProcessEvent{
 				Type: events.ProcessEventType("unknown_type"), // Truly unknown event type
 				Role: events.RoleWorker,
-			},
-		},
-		{
-			name: "CoordinatorError",
-			event: events.ProcessEvent{
-				Type: events.ProcessError,
-				Role: events.RoleCoordinator, // Coordinator errors return unknown
 			},
 		},
 	}

@@ -175,7 +175,8 @@ func ClassifyEvent(v2Event any) EventType {
 			// Worker errors might indicate task failure
 			return EventTaskFailed
 		}
-		return EventUnknown
+		// Coordinator errors - classify as coordinator output so TUI can display
+		return EventCoordinatorOutput
 
 	case events.ProcessUserNotification:
 		return EventUserNotification

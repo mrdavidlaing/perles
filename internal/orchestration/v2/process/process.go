@@ -332,20 +332,15 @@ func (p *Process) handleOutputEvent(event *client.OutputEvent) {
 	}
 }
 
-// handleError processes an error from the AI process.
+// handleError processes an error from the AI process (typically exit errors).
 // Stores the error for passing to ProcessTurnCompleteCommand.
 // Does NOT publish ProcessError - the handler is the authoritative source
 // of events and will emit ProcessError for startup failures.
 // For in-flight errors that need immediate visibility, use handleInFlightError.
-//
-// Note: Does NOT overwrite if we already have a ContextExceededError, since
-// the exit error ("claude process exited: exit status 1") is less informative.
 func (p *Process) handleError(err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// Don't overwrite a ContextExceededError with a generic exit error
-	var existing *ContextExceededError
-	if errors.As(p.lastError, &existing) {
+	if p.lastError != nil {
 		return
 	}
 	p.lastError = err
@@ -385,11 +380,16 @@ func (p *Process) handleProcessComplete() {
 	// Wait for process to fully complete
 	_ = proc.Wait()
 
-	// Determine outcome based on process status
+	// Determine outcome based on process status AND in-flight errors.
+	// A turn is only successful if the process exited cleanly AND no in-flight
+	// errors were captured (e.g., API errors like "tool_use ids must be unique").
 	var succeeded bool
-	switch proc.Status() {
+	procStatus := proc.Status()
+
+	switch procStatus {
 	case client.StatusCompleted:
-		succeeded = true
+		// Process exited cleanly, but check for in-flight errors (API errors, etc.)
+		succeeded = lastErr == nil
 	default:
 		succeeded = false
 		// If process failed, the session ID we captured from init may be invalid.
