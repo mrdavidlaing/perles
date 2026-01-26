@@ -136,9 +136,10 @@ func TestRenderChatContentWithSelection_WithMessages(t *testing.T) {
 	require.Contains(t, plainLines, "Hello world")
 }
 
-func TestRenderChatContentWithSelection_FiltersToolCalls(t *testing.T) {
+func TestRenderChatContentWithSelection_RendersToolCalls(t *testing.T) {
 	messages := []chatrender.Message{
-		{Role: "assistant", Content: "Using a tool", IsToolCall: true},
+		{Role: "assistant", Content: "🔧 Read: file.go", IsToolCall: true},
+		{Role: "assistant", Content: "🔧 Edit: config.yaml", IsToolCall: true},
 	}
 
 	cfg := chatrender.RenderConfig{
@@ -148,9 +149,13 @@ func TestRenderChatContentWithSelection_FiltersToolCalls(t *testing.T) {
 	}
 	content, plainLines := renderChatContentWithSelection(messages, 80, cfg, nil, nil)
 
-	// renderChatContentWithSelection filters out tool calls (unlike chatrender.RenderContent)
-	require.Contains(t, content, "Waiting for the coordinator to initialize.")
-	require.Nil(t, plainLines)
+	// Tool calls should be rendered with tree-like prefixes
+	require.Contains(t, content, "Coordinator") // Role label before first tool
+	require.Contains(t, content, "├╴ Read: file.go")
+	require.Contains(t, content, "╰╴ Edit: config.yaml") // Last tool uses end prefix
+	require.NotNil(t, plainLines)
+	require.Contains(t, plainLines, "├╴ Read: file.go")
+	require.Contains(t, plainLines, "╰╴ Edit: config.yaml")
 }
 
 func TestRenderChatContentWithSelection_FiltersEmptyMessages(t *testing.T) {

@@ -981,10 +981,10 @@ func renderChatContentWithSelection(messages []chatrender.Message, wrapWidth int
 		userLabel = "You"
 	}
 
-	// Filter to non-empty text messages (skip tool calls)
+	// Filter to non-empty messages
 	var filtered []chatrender.Message
 	for _, msg := range messages {
-		if msg.Content != "" && !msg.IsToolCall {
+		if msg.Content != "" {
 			filtered = append(filtered, msg)
 		}
 	}
@@ -998,55 +998,93 @@ func renderChatContentWithSelection(messages []chatrender.Message, wrapWidth int
 	var plainLines []string
 	currentLine := 0
 
-	for _, msg := range filtered {
-		// Role label (plain text for selection)
-		var rolePlain string
-		var roleLabel string
-		switch msg.Role {
-		case "user":
-			rolePlain = userLabel
-			roleLabel = chatrender.RoleStyle.Foreground(chatrender.UserMessageStyle.GetForeground()).Render(userLabel)
-		case "system":
-			rolePlain = "System"
-			roleLabel = chatrender.RoleStyle.Foreground(chatrender.SystemColor).Render("System")
-		case "coordinator":
-			if cfg.ShowCoordinatorInWorker {
-				rolePlain = "Coordinator"
-				roleLabel = chatrender.RoleStyle.Foreground(chatrender.CoordinatorColor).Render("Coordinator")
-			} else {
+	for i, msg := range filtered {
+		// Tool call sequence detection
+		isFirstToolInSequence := msg.IsToolCall && (i == 0 || !filtered[i-1].IsToolCall)
+		isLastToolInSequence := msg.IsToolCall && (i == len(filtered)-1 || !filtered[i+1].IsToolCall)
+
+		if msg.IsToolCall {
+			// Tool call rendering with tree-like prefixes
+			if isFirstToolInSequence {
+				// Add role label before first tool in sequence
+				rolePlain := cfg.AgentLabel
+				roleLabel := chatrender.RoleStyle.Foreground(cfg.AgentColor).Render(cfg.AgentLabel)
+				plainLines = append(plainLines, rolePlain)
+				content.WriteString(renderLineWithSelection(roleLabel, rolePlain, currentLine, wrapWidth, selStart, selEnd))
+				content.WriteString("\n")
+				currentLine++
+			}
+
+			prefix := "├╴ "
+			if isLastToolInSequence {
+				prefix = "╰╴ "
+			}
+
+			toolName := strings.TrimPrefix(msg.Content, "🔧 ")
+			toolPlain := prefix + toolName
+			toolStyled := chatrender.ToolCallStyle.Render(toolPlain)
+			plainLines = append(plainLines, toolPlain)
+			content.WriteString(renderLineWithSelection(toolStyled, toolPlain, currentLine, wrapWidth, selStart, selEnd))
+			content.WriteString("\n")
+			currentLine++
+
+			if isLastToolInSequence {
+				// Blank line after tool sequence
+				plainLines = append(plainLines, "")
+				content.WriteString(renderLineWithSelection("", "", currentLine, wrapWidth, selStart, selEnd))
+				content.WriteString("\n")
+				currentLine++
+			}
+		} else {
+			// Regular message rendering
+			var rolePlain string
+			var roleLabel string
+			switch msg.Role {
+			case "user":
+				rolePlain = userLabel
+				roleLabel = chatrender.RoleStyle.Foreground(chatrender.UserMessageStyle.GetForeground()).Render(userLabel)
+			case "system":
+				rolePlain = "System"
+				roleLabel = chatrender.RoleStyle.Foreground(chatrender.SystemColor).Render("System")
+			case "coordinator":
+				if cfg.ShowCoordinatorInWorker {
+					rolePlain = "Coordinator"
+					roleLabel = chatrender.RoleStyle.Foreground(chatrender.CoordinatorColor).Render("Coordinator")
+				} else {
+					rolePlain = cfg.AgentLabel
+					roleLabel = chatrender.RoleStyle.Foreground(cfg.AgentColor).Render(cfg.AgentLabel)
+				}
+			default:
 				rolePlain = cfg.AgentLabel
 				roleLabel = chatrender.RoleStyle.Foreground(cfg.AgentColor).Render(cfg.AgentLabel)
 			}
-		default:
-			rolePlain = cfg.AgentLabel
-			roleLabel = chatrender.RoleStyle.Foreground(cfg.AgentColor).Render(cfg.AgentLabel)
-		}
 
-		// Content lines (word-wrapped)
-		wrapped := chatrender.WordWrap(msg.Content, wrapWidth-4)
-		wrappedLines := strings.Split(wrapped, "\n")
+			// Content lines (word-wrapped)
+			wrapped := chatrender.WordWrap(msg.Content, wrapWidth-4)
+			wrappedLines := strings.Split(wrapped, "\n")
 
-		// Build plain lines for this message
-		plainLines = append(plainLines, rolePlain)
-		plainLines = append(plainLines, wrappedLines...)
-		plainLines = append(plainLines, "") // blank line
+			// Build plain lines for this message
+			plainLines = append(plainLines, rolePlain)
+			plainLines = append(plainLines, wrappedLines...)
+			plainLines = append(plainLines, "") // blank line
 
-		// Role line with optional selection
-		content.WriteString(renderLineWithSelection(roleLabel, rolePlain, currentLine, wrapWidth, selStart, selEnd))
-		content.WriteString("\n")
-		currentLine++
+			// Role line with optional selection
+			content.WriteString(renderLineWithSelection(roleLabel, rolePlain, currentLine, wrapWidth, selStart, selEnd))
+			content.WriteString("\n")
+			currentLine++
 
-		// Content lines with optional selection
-		for _, line := range wrappedLines {
-			content.WriteString(renderLineWithSelection(line, line, currentLine, wrapWidth, selStart, selEnd))
+			// Content lines with optional selection
+			for _, line := range wrappedLines {
+				content.WriteString(renderLineWithSelection(line, line, currentLine, wrapWidth, selStart, selEnd))
+				content.WriteString("\n")
+				currentLine++
+			}
+
+			// Blank line
+			content.WriteString(renderLineWithSelection("", "", currentLine, wrapWidth, selStart, selEnd))
 			content.WriteString("\n")
 			currentLine++
 		}
-
-		// Blank line
-		content.WriteString(renderLineWithSelection("", "", currentLine, wrapWidth, selStart, selEnd))
-		content.WriteString("\n")
-		currentLine++
 	}
 
 	return strings.TrimRight(content.String(), "\n"), plainLines
