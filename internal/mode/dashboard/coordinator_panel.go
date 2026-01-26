@@ -367,10 +367,10 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 	case tea.KeyMsg:
 		// Handle tab navigation keys (always, regardless of focus)
 		switch msg.String() {
-		case "[":
+		case "ctrl+k":
 			p.PrevTab()
 			return p, nil
-		case "]":
+		case "ctrl+j":
 			p.NextTab()
 			return p, nil
 		}

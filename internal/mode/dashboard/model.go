@@ -731,14 +731,14 @@ func (m Model) handleTableKeys(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
 	case "ctrl+w": // Toggle coordinator chat panel
 		return m.toggleCoordinatorPanel()
 
-	case "[": // Previous tab in coordinator panel
+	case "ctrl+k": // Previous tab in coordinator panel
 		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
 			m.coordinatorPanel.PrevTab()
 			return m, nil
 		}
 		return m, nil
 
-	case "]": // Next tab in coordinator panel
+	case "ctrl+j": // Next tab in coordinator panel
 		if m.showCoordinatorPanel && m.coordinatorPanel != nil {
 			m.coordinatorPanel.NextTab()
 			return m, nil
@@ -801,6 +801,42 @@ func (m Model) handleEpicTreeKeys(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
 
 // handleCoordinatorKeys handles key events when the coordinator panel is focused.
 func (m Model) handleCoordinatorKeys(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
+	// If the input is in normal mode, forward vim motion keys to the vimtextarea
+	// so j/k/h/l etc. work as expected for cursor navigation
+	if m.coordinatorPanel != nil && m.coordinatorPanel.IsInputInNormalMode() {
+		switch msg.String() {
+		// Dashboard-level keys that should NOT be forwarded to vimtextarea
+		case "?": // Toggle help
+			m.showHelp = !m.showHelp
+			m.helpModal = m.helpModal.SetSize(m.width, m.height)
+			return m, nil
+
+		case "ctrl+w": // Toggle coordinator chat panel (closes it)
+			m.showCoordinatorPanel = false
+			m.coordinatorPanel = nil
+			m.focus = FocusTable
+			m.updateComponentFocusStates()
+			return m, nil
+
+		case "ctrl+k": // Previous tab in coordinator panel
+			m.coordinatorPanel.PrevTab()
+			return m, nil
+
+		case "ctrl+j": // Next tab in coordinator panel
+			m.coordinatorPanel.NextTab()
+			return m, nil
+
+		case "q", "ctrl+c":
+			return m, func() tea.Msg { return QuitMsg{} }
+
+		default:
+			// Forward all other keys to the vimtextarea for vim motions
+			var cmd tea.Cmd
+			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(msg)
+			return m, cmd
+		}
+	}
+
 	switch msg.String() {
 	case "?": // Toggle help
 		m.showHelp = !m.showHelp
@@ -814,14 +850,14 @@ func (m Model) handleCoordinatorKeys(msg tea.KeyMsg) (mode.Controller, tea.Cmd) 
 		m.updateComponentFocusStates()
 		return m, nil
 
-	case "[": // Previous tab in coordinator panel
+	case "ctrl+k": // Previous tab in coordinator panel
 		if m.coordinatorPanel != nil {
 			m.coordinatorPanel.PrevTab()
 			return m, nil
 		}
 		return m, nil
 
-	case "]": // Next tab in coordinator panel
+	case "ctrl+j": // Next tab in coordinator panel
 		if m.coordinatorPanel != nil {
 			m.coordinatorPanel.NextTab()
 			return m, nil

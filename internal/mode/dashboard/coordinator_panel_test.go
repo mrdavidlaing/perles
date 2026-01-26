@@ -1127,16 +1127,16 @@ func TestCoordinatorPanel_TabSwitchAfterSelection(t *testing.T) {
 	// Verify initial state
 	require.Equal(t, TabCoordinator, panel.ActiveTab())
 
-	// Switch tab using ] key
-	tabNext := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}}
+	// Switch tab using ctrl+j key
+	tabNext := tea.KeyMsg{Type: tea.KeyCtrlJ}
 	panel.Update(tabNext)
 
 	// Tab should switch to messages
 	require.Equal(t, TabMessages, panel.ActiveTab(),
 		"tab should switch")
 
-	// Switch back using [ key
-	tabPrev := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}}
+	// Switch back using ctrl+k key
+	tabPrev := tea.KeyMsg{Type: tea.KeyCtrlK}
 	panel.Update(tabPrev)
 
 	// Tab should switch back to coordinator
