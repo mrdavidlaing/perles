@@ -10,10 +10,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	appreg "github.com/zjrosen/perles/internal/registry/application"
+	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 )
 
@@ -823,6 +825,39 @@ func TestDashboard_View_Golden_FooterWithEpicDetailsFocus(t *testing.T) {
 	m.height = 30
 	m.focus = FocusEpicView
 	m.epicViewFocus = EpicFocusDetails
+
+	view := m.View()
+	teatest.RequireEqualOutput(t, []byte(view))
+}
+
+// === Golden tests for Issue Editor Modal (perles-56ved.5) ===
+
+func TestDashboard_View_Golden_WithIssueEditorModal(t *testing.T) {
+	// Test dashboard with issue editor modal overlay
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflowWithEpicID(
+			"wf-001",
+			"Workflow with epic",
+			controlplane.WorkflowRunning,
+			2, 50000,
+			"epic-123",
+		),
+	}
+	m := createGoldenTestModel(t, workflows)
+	m.width = 100
+	m.height = 30
+
+	// Create a test issue and open the editor modal
+	testIssue := beads.Issue{
+		ID:        "task-001",
+		TitleText: "Implement authentication flow",
+		Status:    beads.StatusOpen,
+		Priority:  beads.PriorityHigh,
+		Type:      beads.TypeTask,
+		Labels:    []string{"auth", "feature"},
+	}
+	editor := issueeditor.New(testIssue).SetSize(m.width, m.height)
+	m.issueEditor = &editor
 
 	view := m.View()
 	teatest.RequireEqualOutput(t, []byte(view))

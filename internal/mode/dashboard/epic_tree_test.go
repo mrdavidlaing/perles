@@ -13,6 +13,8 @@ import (
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
+	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
+	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 	"github.com/zjrosen/perles/internal/ui/tree"
 )
 
@@ -733,4 +735,510 @@ func TestYankIssueDescription_NoTreeLoaded(t *testing.T) {
 	toastMsg, ok := msg.(mode.ShowToastMsg)
 	require.True(t, ok, "command should return ShowToastMsg")
 	require.Contains(t, toastMsg.Message, "No tree loaded")
+}
+
+// === Unit Tests: Issue Editor Modal (perles-56ved.2) ===
+
+// createIssueEditorTestModel creates a test model with an issue editor open for testing.
+func createIssueEditorTestModel(t *testing.T) Model {
+	t.Helper()
+
+	m := createEpicTreeTestModel(t)
+
+	// Create a tree with an issue to edit
+	issueMap := map[string]*beads.Issue{
+		"epic-123": {ID: "epic-123", TitleText: "Test Epic", Status: beads.StatusOpen, Priority: beads.PriorityMedium},
+	}
+	m.epicTree = tree.New("epic-123", issueMap, tree.DirectionDown, tree.ModeDeps, nil)
+	m.lastLoadedEpicID = "epic-123"
+
+	// Open the issue editor
+	issue := beads.Issue{
+		ID:       "issue-456",
+		Priority: beads.PriorityMedium,
+		Status:   beads.StatusOpen,
+		Labels:   []string{"test"},
+	}
+	editor := issueeditor.New(issue).SetSize(100, 40)
+	m.issueEditor = &editor
+
+	return m
+}
+
+func TestEditIssue_SaveMsgClosesModal(t *testing.T) {
+	// Verify SaveMsg closes modal and returns batch command for status/priority/labels update
+	m := createIssueEditorTestModel(t)
+	require.NotNil(t, m.issueEditor, "issue editor should be open")
+
+	// Send SaveMsg
+	result, cmd := m.Update(issueeditor.SaveMsg{
+		IssueID:  "issue-456",
+		Priority: beads.PriorityHigh,
+		Status:   beads.StatusInProgress,
+		Labels:   []string{"updated"},
+	})
+	m = result.(Model)
+
+	// Verify modal is closed
+	require.Nil(t, m.issueEditor, "issue editor should be closed after SaveMsg")
+
+	// Verify batch command is returned (for status, priority, labels, and tree reload)
+	require.NotNil(t, cmd, "should return batch command for updates")
+}
+
+func TestEditIssue_CancelMsgClosesModal(t *testing.T) {
+	// Verify CancelMsg closes modal with nil command
+	m := createIssueEditorTestModel(t)
+	require.NotNil(t, m.issueEditor, "issue editor should be open")
+
+	// Send CancelMsg
+	result, cmd := m.Update(issueeditor.CancelMsg{})
+	m = result.(Model)
+
+	// Verify modal is closed
+	require.Nil(t, m.issueEditor, "issue editor should be closed after CancelMsg")
+
+	// Verify nil command (no updates needed)
+	require.Nil(t, cmd, "should return nil command for cancel")
+}
+
+func TestEditIssue_HelpKeyBlocked(t *testing.T) {
+	// Verify help key (?) is blocked while modal is open
+	m := createIssueEditorTestModel(t)
+	require.NotNil(t, m.issueEditor, "issue editor should be open")
+	m.showHelp = false
+
+	// Press '?' while modal is open
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = result.(Model)
+
+	// Verify modal is still open (help key blocked)
+	require.NotNil(t, m.issueEditor, "issue editor should still be open after help key")
+
+	// Verify help modal is NOT shown
+	require.False(t, m.showHelp, "help modal should not be shown when issue editor is open")
+
+	// Verify nil command (help key should be a no-op)
+	require.Nil(t, cmd, "should return nil command for blocked help key")
+}
+
+func TestEditIssue_ModalDelegationForwardsMessages(t *testing.T) {
+	// Verify that other messages are forwarded to the issue editor's Update method
+	m := createIssueEditorTestModel(t)
+	require.NotNil(t, m.issueEditor, "issue editor should be open")
+
+	// Send a key message that should be forwarded to the editor (not help key)
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = result.(Model)
+
+	// Modal should still be open
+	require.NotNil(t, m.issueEditor, "issue editor should still be open after forwarded message")
+}
+
+func TestEditIssue_WindowSizeMsgPropagates(t *testing.T) {
+	// Verify WindowSizeMsg is handled when modal is open
+	m := createIssueEditorTestModel(t)
+	require.NotNil(t, m.issueEditor, "issue editor should be open")
+
+	// Send window resize message
+	result, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+	m = result.(Model)
+
+	// Verify modal is still open and dimensions updated
+	require.NotNil(t, m.issueEditor, "issue editor should still be open after resize")
+	require.Equal(t, 120, m.width, "model width should be updated")
+	require.Equal(t, 50, m.height, "model height should be updated")
+	require.Nil(t, cmd, "should return nil command for resize")
+}
+
+// === Unit Tests: Async Command Helpers and Result Handlers (perles-56ved.3) ===
+
+func TestEditIssue_ErrorToastOnStatusUpdateFailure(t *testing.T) {
+	// Verify that issueStatusChangedMsg with error shows toast
+	m := createIssueEditorTestModel(t)
+
+	// Send status changed message with error
+	result, cmd := m.Update(issueStatusChangedMsg{
+		issueID: "issue-456",
+		status:  beads.StatusInProgress,
+		err:     errors.New("database connection failed"),
+	})
+	_ = result.(Model)
+
+	// Verify command returns toast message
+	require.NotNil(t, cmd, "should return command for error toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "Failed to update status")
+	require.Contains(t, toastMsg.Message, "database connection failed")
+	require.Equal(t, toaster.StyleError, toastMsg.Style, "should use error style")
+}
+
+func TestEditIssue_ErrorToastOnPriorityUpdateFailure(t *testing.T) {
+	// Verify that issuePriorityChangedMsg with error shows toast
+	m := createIssueEditorTestModel(t)
+
+	// Send priority changed message with error
+	result, cmd := m.Update(issuePriorityChangedMsg{
+		issueID:  "issue-456",
+		priority: beads.PriorityHigh,
+		err:      errors.New("permission denied"),
+	})
+	_ = result.(Model)
+
+	// Verify command returns toast message
+	require.NotNil(t, cmd, "should return command for error toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "Failed to update priority")
+	require.Contains(t, toastMsg.Message, "permission denied")
+	require.Equal(t, toaster.StyleError, toastMsg.Style, "should use error style")
+}
+
+func TestEditIssue_ErrorToastOnLabelsUpdateFailure(t *testing.T) {
+	// Verify that issueLabelsChangedMsg with error shows toast
+	m := createIssueEditorTestModel(t)
+
+	// Send labels changed message with error
+	result, cmd := m.Update(issueLabelsChangedMsg{
+		issueID: "issue-456",
+		labels:  []string{"new-label"},
+		err:     errors.New("validation failed"),
+	})
+	_ = result.(Model)
+
+	// Verify command returns toast message
+	require.NotNil(t, cmd, "should return command for error toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "Failed to update labels")
+	require.Contains(t, toastMsg.Message, "validation failed")
+	require.Equal(t, toaster.StyleError, toastMsg.Style, "should use error style")
+}
+
+func TestEditIssue_StatusSuccessReturnsNil(t *testing.T) {
+	// Verify that issueStatusChangedMsg without error returns nil command
+	m := createIssueEditorTestModel(t)
+
+	// Send status changed message without error
+	result, cmd := m.Update(issueStatusChangedMsg{
+		issueID: "issue-456",
+		status:  beads.StatusInProgress,
+		err:     nil,
+	})
+	_ = result.(Model)
+
+	// Verify nil command returned (success case)
+	require.Nil(t, cmd, "should return nil command on success")
+}
+
+func TestEditIssue_PrioritySuccessReturnsNil(t *testing.T) {
+	// Verify that issuePriorityChangedMsg without error returns nil command
+	m := createIssueEditorTestModel(t)
+
+	// Send priority changed message without error
+	result, cmd := m.Update(issuePriorityChangedMsg{
+		issueID:  "issue-456",
+		priority: beads.PriorityHigh,
+		err:      nil,
+	})
+	_ = result.(Model)
+
+	// Verify nil command returned (success case)
+	require.Nil(t, cmd, "should return nil command on success")
+}
+
+func TestEditIssue_LabelsSuccessReturnsNil(t *testing.T) {
+	// Verify that issueLabelsChangedMsg without error returns nil command
+	m := createIssueEditorTestModel(t)
+
+	// Send labels changed message without error
+	result, cmd := m.Update(issueLabelsChangedMsg{
+		issueID: "issue-456",
+		labels:  []string{"new-label"},
+		err:     nil,
+	})
+	_ = result.(Model)
+
+	// Verify nil command returned (success case)
+	require.Nil(t, cmd, "should return nil command on success")
+}
+
+func TestUpdateIssueStatusCmd_CallsBeadsExecutor(t *testing.T) {
+	// Verify updateIssueStatusCmd creates a command that calls BeadsExecutor.UpdateStatus
+	m := createIssueEditorTestModel(t)
+
+	// Create mock executor
+	mockExecutor := mocks.NewMockIssueExecutor(t)
+	mockExecutor.EXPECT().UpdateStatus("issue-456", beads.StatusInProgress).Return(nil)
+	m.services.BeadsExecutor = mockExecutor
+
+	// Get the command
+	cmd := m.updateIssueStatusCmd("issue-456", beads.StatusInProgress)
+	require.NotNil(t, cmd, "should return command")
+
+	// Execute command
+	msg := cmd()
+	statusMsg, ok := msg.(issueStatusChangedMsg)
+	require.True(t, ok, "command should return issueStatusChangedMsg")
+	require.Equal(t, "issue-456", statusMsg.issueID)
+	require.Equal(t, beads.StatusInProgress, statusMsg.status)
+	require.NoError(t, statusMsg.err, "should have no error on success")
+}
+
+func TestUpdateIssuePriorityCmd_CallsBeadsExecutor(t *testing.T) {
+	// Verify updateIssuePriorityCmd creates a command that calls BeadsExecutor.UpdatePriority
+	m := createIssueEditorTestModel(t)
+
+	// Create mock executor
+	mockExecutor := mocks.NewMockIssueExecutor(t)
+	mockExecutor.EXPECT().UpdatePriority("issue-456", beads.PriorityHigh).Return(nil)
+	m.services.BeadsExecutor = mockExecutor
+
+	// Get the command
+	cmd := m.updateIssuePriorityCmd("issue-456", beads.PriorityHigh)
+	require.NotNil(t, cmd, "should return command")
+
+	// Execute command
+	msg := cmd()
+	priorityMsg, ok := msg.(issuePriorityChangedMsg)
+	require.True(t, ok, "command should return issuePriorityChangedMsg")
+	require.Equal(t, "issue-456", priorityMsg.issueID)
+	require.Equal(t, beads.PriorityHigh, priorityMsg.priority)
+	require.NoError(t, priorityMsg.err, "should have no error on success")
+}
+
+func TestUpdateIssueLabelsCmd_CallsBeadsExecutor(t *testing.T) {
+	// Verify updateIssueLabelsCmd creates a command that calls BeadsExecutor.SetLabels
+	m := createIssueEditorTestModel(t)
+
+	// Create mock executor
+	mockExecutor := mocks.NewMockIssueExecutor(t)
+	mockExecutor.EXPECT().SetLabels("issue-456", []string{"label1", "label2"}).Return(nil)
+	m.services.BeadsExecutor = mockExecutor
+
+	// Get the command
+	cmd := m.updateIssueLabelsCmd("issue-456", []string{"label1", "label2"})
+	require.NotNil(t, cmd, "should return command")
+
+	// Execute command
+	msg := cmd()
+	labelsMsg, ok := msg.(issueLabelsChangedMsg)
+	require.True(t, ok, "command should return issueLabelsChangedMsg")
+	require.Equal(t, "issue-456", labelsMsg.issueID)
+	require.Equal(t, []string{"label1", "label2"}, labelsMsg.labels)
+	require.NoError(t, labelsMsg.err, "should have no error on success")
+}
+
+func TestUpdateIssueStatusCmd_ReturnsErrorOnFailure(t *testing.T) {
+	// Verify updateIssueStatusCmd propagates errors from BeadsExecutor
+	m := createIssueEditorTestModel(t)
+
+	// Create mock executor that returns an error
+	mockExecutor := mocks.NewMockIssueExecutor(t)
+	mockExecutor.EXPECT().UpdateStatus("issue-456", beads.StatusInProgress).Return(errors.New("database error"))
+	m.services.BeadsExecutor = mockExecutor
+
+	// Get the command
+	cmd := m.updateIssueStatusCmd("issue-456", beads.StatusInProgress)
+	require.NotNil(t, cmd, "should return command")
+
+	// Execute command
+	msg := cmd()
+	statusMsg, ok := msg.(issueStatusChangedMsg)
+	require.True(t, ok, "command should return issueStatusChangedMsg")
+	require.Error(t, statusMsg.err, "should have error on failure")
+	require.Contains(t, statusMsg.err.Error(), "database error")
+}
+
+func TestUpdateIssuePriorityCmd_ReturnsErrorOnFailure(t *testing.T) {
+	// Verify updateIssuePriorityCmd propagates errors from BeadsExecutor
+	m := createIssueEditorTestModel(t)
+
+	// Create mock executor that returns an error
+	mockExecutor := mocks.NewMockIssueExecutor(t)
+	mockExecutor.EXPECT().UpdatePriority("issue-456", beads.PriorityHigh).Return(errors.New("permission denied"))
+	m.services.BeadsExecutor = mockExecutor
+
+	// Get the command
+	cmd := m.updateIssuePriorityCmd("issue-456", beads.PriorityHigh)
+	require.NotNil(t, cmd, "should return command")
+
+	// Execute command
+	msg := cmd()
+	priorityMsg, ok := msg.(issuePriorityChangedMsg)
+	require.True(t, ok, "command should return issuePriorityChangedMsg")
+	require.Error(t, priorityMsg.err, "should have error on failure")
+	require.Contains(t, priorityMsg.err.Error(), "permission denied")
+}
+
+func TestUpdateIssueLabelsCmd_ReturnsErrorOnFailure(t *testing.T) {
+	// Verify updateIssueLabelsCmd propagates errors from BeadsExecutor
+	m := createIssueEditorTestModel(t)
+
+	// Create mock executor that returns an error
+	mockExecutor := mocks.NewMockIssueExecutor(t)
+	mockExecutor.EXPECT().SetLabels("issue-456", []string{"label1"}).Return(errors.New("validation failed"))
+	m.services.BeadsExecutor = mockExecutor
+
+	// Get the command
+	cmd := m.updateIssueLabelsCmd("issue-456", []string{"label1"})
+	require.NotNil(t, cmd, "should return command")
+
+	// Execute command
+	msg := cmd()
+	labelsMsg, ok := msg.(issueLabelsChangedMsg)
+	require.True(t, ok, "command should return issueLabelsChangedMsg")
+	require.Error(t, labelsMsg.err, "should have error on failure")
+	require.Contains(t, labelsMsg.err.Error(), "validation failed")
+}
+
+func TestUpdateIssueStatusCmd_NilExecutorReturnsError(t *testing.T) {
+	// Verify updateIssueStatusCmd handles nil BeadsExecutor
+	m := createIssueEditorTestModel(t)
+	m.services.BeadsExecutor = nil
+
+	// Get the command
+	cmd := m.updateIssueStatusCmd("issue-456", beads.StatusInProgress)
+	require.NotNil(t, cmd, "should return command")
+
+	// Execute command
+	msg := cmd()
+	statusMsg, ok := msg.(issueStatusChangedMsg)
+	require.True(t, ok, "command should return issueStatusChangedMsg")
+	require.Error(t, statusMsg.err, "should have error when executor is nil")
+	require.Contains(t, statusMsg.err.Error(), "beads executor unavailable")
+}
+
+// === Unit Tests: ctrl+e Key Handling (perles-56ved.4) ===
+
+func TestEditIssue_OpensFromTreeFocus(t *testing.T) {
+	// Verify ctrl+e opens modal with correct issue from tree focus
+	m := createEpicTreeTestModelWithTree(t)
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusTree
+	require.Nil(t, m.issueEditor, "issue editor should start nil")
+
+	// Press ctrl+e to open editor
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = result.(Model)
+
+	// Verify modal is opened with correct issue
+	require.NotNil(t, m.issueEditor, "issue editor should be opened after ctrl+e")
+	require.Nil(t, cmd, "Init() returns nil for issue editor")
+}
+
+func TestEditIssue_OpensFromDetailsFocus(t *testing.T) {
+	// Verify ctrl+e opens modal with same issue from details focus
+	m := createEpicTreeTestModelWithTree(t)
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusDetails
+	require.Nil(t, m.issueEditor, "issue editor should start nil")
+
+	// Press ctrl+e to open editor
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = result.(Model)
+
+	// Verify modal is opened
+	require.NotNil(t, m.issueEditor, "issue editor should be opened after ctrl+e from details focus")
+	require.Nil(t, cmd, "Init() returns nil for issue editor")
+}
+
+func TestEditIssue_NoOpWithNilTree(t *testing.T) {
+	// Verify ctrl+e is a silent no-op when m.epicTree is nil
+	m := createEpicTreeTestModel(t)
+	m.epicTree = nil
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusTree
+	require.Nil(t, m.issueEditor, "issue editor should start nil")
+
+	// Press ctrl+e with nil tree
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = result.(Model)
+
+	// Verify modal is NOT opened (silent no-op)
+	require.Nil(t, m.issueEditor, "issue editor should remain nil when no tree loaded")
+	require.Nil(t, cmd, "should return nil command for silent no-op")
+}
+
+func TestEditIssue_NoOpWithNoSelection(t *testing.T) {
+	// Verify ctrl+e is a silent no-op when SelectedNode() returns nil
+	m := createEpicTreeTestModel(t)
+
+	// Create tree with empty issue map (results in no selected node)
+	emptyIssueMap := map[string]*beads.Issue{}
+	m.epicTree = tree.New("nonexistent", emptyIssueMap, tree.DirectionDown, tree.ModeDeps, nil)
+	require.Nil(t, m.epicTree.SelectedNode(), "tree should have no selected node")
+
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusTree
+	require.Nil(t, m.issueEditor, "issue editor should start nil")
+
+	// Press ctrl+e with no selection
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = result.(Model)
+
+	// Verify modal is NOT opened (silent no-op)
+	require.Nil(t, m.issueEditor, "issue editor should remain nil when no node selected")
+	require.Nil(t, cmd, "should return nil command for silent no-op")
+}
+
+// === Unit Tests: Workflow Switch and Resize Handling (perles-56ved.6) ===
+
+func TestEditIssue_WorkflowSwitchClosesModal(t *testing.T) {
+	// Create model with workflows and open issue editor
+	m := createEpicTreeTestModelWithWorkflows(t)
+	m.selectedIndex = 0
+
+	// Open the issue editor
+	issue := beads.Issue{
+		ID:       "issue-456",
+		Priority: beads.PriorityMedium,
+		Status:   beads.StatusOpen,
+		Labels:   []string{"test"},
+	}
+	editor := issueeditor.New(issue).SetSize(100, 40)
+	m.issueEditor = &editor
+
+	require.NotNil(t, m.issueEditor, "issue editor should be open before workflow switch")
+
+	// Switch to a different workflow
+	_ = m.handleWorkflowSelectionChange(1)
+
+	// Verify modal is closed after workflow switch
+	require.Nil(t, m.issueEditor, "issue editor should be closed after workflow switch")
+}
+
+func TestEditIssue_ResizePropagates(t *testing.T) {
+	// Verify SetSize() properly resizes the issueEditor when open
+	m := createIssueEditorTestModel(t)
+	require.NotNil(t, m.issueEditor, "issue editor should be open")
+
+	// Resize via SetSize()
+	result := m.SetSize(150, 60)
+	m = result.(Model)
+
+	// Verify modal is still open and dimensions are updated
+	require.NotNil(t, m.issueEditor, "issue editor should still be open after SetSize")
+	require.Equal(t, 150, m.width, "model width should be updated")
+	require.Equal(t, 60, m.height, "model height should be updated")
+}
+
+func TestEditIssue_SetSizeHandlesNilEditor(t *testing.T) {
+	// Verify SetSize() handles nil issueEditor without panic
+	m := createEpicTreeTestModel(t)
+	m.issueEditor = nil // Explicitly nil
+
+	// SetSize should not panic
+	require.NotPanics(t, func() {
+		result := m.SetSize(150, 60)
+		m = result.(Model)
+	}, "SetSize should not panic when issueEditor is nil")
+
+	// Verify dimensions are updated
+	require.Equal(t, 150, m.width, "model width should be updated")
+	require.Equal(t, 60, m.height, "model height should be updated")
 }

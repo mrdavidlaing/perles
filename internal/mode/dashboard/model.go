@@ -10,6 +10,7 @@ package dashboard
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ import (
 	appreg "github.com/zjrosen/perles/internal/registry/application"
 	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/modals/help"
+	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
@@ -115,6 +117,9 @@ type Model struct {
 	// Rename modal state
 	renameModal     *formmodal.Model        // nil when not showing
 	renameModalWfID controlplane.WorkflowID // Workflow ID to rename on confirm
+
+	// Issue editor modal state (nil when not showing)
+	issueEditor *issueeditor.Model
 
 	// Filter state
 	filter FilterState
@@ -390,6 +395,78 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 		}
 	}
 
+	// Handle issue editor modal when visible
+	if m.issueEditor != nil {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			// Block help key while editing to prevent confusing UI state
+			if key.Matches(msg, keys.Common.Help) {
+				return m, nil
+			}
+		case issueeditor.SaveMsg:
+			m.issueEditor = nil
+			return m, tea.Batch(
+				m.updateIssueStatusCmd(msg.IssueID, msg.Status),
+				m.updateIssuePriorityCmd(msg.IssueID, msg.Priority),
+				m.updateIssueLabelsCmd(msg.IssueID, msg.Labels),
+				loadEpicTree(m.lastLoadedEpicID, m.services.Executor),
+			)
+		case issueeditor.CancelMsg:
+			m.issueEditor = nil
+			return m, nil
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			editor := m.issueEditor.SetSize(msg.Width, msg.Height)
+			m.issueEditor = &editor
+			return m, nil
+		case controlplane.ControlPlaneEvent:
+			// Handle control plane events even when modal is open to maintain event subscription.
+			return m.handleControlPlaneEvent(msg)
+		case eventSubscriptionReadyMsg:
+			m.eventCh = msg.eventCh
+			m.unsubscribe = msg.unsubscribe
+			return m, m.listenForEvents()
+		case issueStatusChangedMsg:
+			// Handle async result even when modal is open
+			if msg.err != nil {
+				return m, func() tea.Msg {
+					return mode.ShowToastMsg{
+						Message: fmt.Sprintf("Failed to update status: %v", msg.err),
+						Style:   toaster.StyleError,
+					}
+				}
+			}
+			return m, nil
+		case issuePriorityChangedMsg:
+			// Handle async result even when modal is open
+			if msg.err != nil {
+				return m, func() tea.Msg {
+					return mode.ShowToastMsg{
+						Message: fmt.Sprintf("Failed to update priority: %v", msg.err),
+						Style:   toaster.StyleError,
+					}
+				}
+			}
+			return m, nil
+		case issueLabelsChangedMsg:
+			// Handle async result even when modal is open
+			if msg.err != nil {
+				return m, func() tea.Msg {
+					return mode.ShowToastMsg{
+						Message: fmt.Sprintf("Failed to update labels: %v", msg.err),
+						Style:   toaster.StyleError,
+					}
+				}
+			}
+			return m, nil
+		}
+		var cmd tea.Cmd
+		newEditor, cmd := m.issueEditor.Update(msg)
+		m.issueEditor = &newEditor
+		return m, cmd
+	}
+
 	// Handle mouse events for zone clicks and scrolling
 	if mouseMsg, ok := msg.(tea.MouseMsg); ok {
 		return m.handleMouseMsg(mouseMsg)
@@ -499,6 +576,39 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 			},
 		)
 
+	case issueStatusChangedMsg:
+		if msg.err != nil {
+			return m, func() tea.Msg {
+				return mode.ShowToastMsg{
+					Message: fmt.Sprintf("Failed to update status: %v", msg.err),
+					Style:   toaster.StyleError,
+				}
+			}
+		}
+		return m, nil
+
+	case issuePriorityChangedMsg:
+		if msg.err != nil {
+			return m, func() tea.Msg {
+				return mode.ShowToastMsg{
+					Message: fmt.Sprintf("Failed to update priority: %v", msg.err),
+					Style:   toaster.StyleError,
+				}
+			}
+		}
+		return m, nil
+
+	case issueLabelsChangedMsg:
+		if msg.err != nil {
+			return m, func() tea.Msg {
+				return mode.ShowToastMsg{
+					Message: fmt.Sprintf("Failed to update labels: %v", msg.err),
+					Style:   toaster.StyleError,
+				}
+			}
+		}
+		return m, nil
+
 	case CoordinatorPanelSubmitMsg:
 		// Check for slash commands first
 		if strings.HasPrefix(msg.Content, "/") {
@@ -537,6 +647,13 @@ func (m Model) View() string {
 	// Get the base dashboard view
 	dashboardView := m.renderView()
 
+	// Issue editor modal overlay (checked before help modal)
+	// Note: issueeditor.Overlay() delegates to formmodal.Overlay() which
+	// calls zone.Scan() internally, so no manual zone.Scan() wrapping needed.
+	if m.issueEditor != nil {
+		return m.issueEditor.Overlay(dashboardView)
+	}
+
 	// If help modal is showing, render it as an overlay
 	if m.showHelp {
 		return zone.Scan(m.helpModal.Overlay(dashboardView))
@@ -570,6 +687,10 @@ func (m Model) SetSize(width, height int) mode.Controller {
 		m.newWorkflowModal = m.newWorkflowModal.SetSize(width, height)
 	}
 	m.helpModal = m.helpModal.SetSize(width, height)
+	if m.issueEditor != nil {
+		editor := m.issueEditor.SetSize(width, height)
+		m.issueEditor = &editor
+	}
 
 	// Recalculate tree and details dimensions
 	if m.epicTree != nil {
@@ -1652,6 +1773,27 @@ type workflowArchivedMsg struct {
 	name string
 }
 
+// issueStatusChangedMsg is sent when an issue status update completes.
+type issueStatusChangedMsg struct {
+	issueID string
+	status  beads.Status
+	err     error
+}
+
+// issuePriorityChangedMsg is sent when an issue priority update completes.
+type issuePriorityChangedMsg struct {
+	issueID  string
+	priority beads.Priority
+	err      error
+}
+
+// issueLabelsChangedMsg is sent when an issue labels update completes.
+type issueLabelsChangedMsg struct {
+	issueID string
+	labels  []string
+	err     error
+}
+
 // SelectedWorkflow returns the currently selected workflow, or nil if none.
 // This uses the filtered workflow list when a filter is active.
 func (m Model) SelectedWorkflow() *controlplane.WorkflowInstance {
@@ -1694,6 +1836,45 @@ func (m Model) startWorkflow(id controlplane.WorkflowID) tea.Cmd {
 			return StartWorkflowFailedMsg{WorkflowID: id, Err: err}
 		}
 		return nil
+	}
+}
+
+// updateIssueStatusCmd returns a command that updates an issue's status.
+func (m Model) updateIssueStatusCmd(issueID string, status beads.Status) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if m.services.BeadsExecutor == nil {
+			err = fmt.Errorf("beads executor unavailable")
+		} else {
+			err = m.services.BeadsExecutor.UpdateStatus(issueID, status)
+		}
+		return issueStatusChangedMsg{issueID: issueID, status: status, err: err}
+	}
+}
+
+// updateIssuePriorityCmd returns a command that updates an issue's priority.
+func (m Model) updateIssuePriorityCmd(issueID string, priority beads.Priority) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if m.services.BeadsExecutor == nil {
+			err = fmt.Errorf("beads executor unavailable")
+		} else {
+			err = m.services.BeadsExecutor.UpdatePriority(issueID, priority)
+		}
+		return issuePriorityChangedMsg{issueID: issueID, priority: priority, err: err}
+	}
+}
+
+// updateIssueLabelsCmd returns a command that updates an issue's labels.
+func (m Model) updateIssueLabelsCmd(issueID string, labels []string) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if m.services.BeadsExecutor == nil {
+			err = fmt.Errorf("beads executor unavailable")
+		} else {
+			err = m.services.BeadsExecutor.SetLabels(issueID, labels)
+		}
+		return issueLabelsChangedMsg{issueID: issueID, labels: labels, err: err}
 	}
 }
 
@@ -1749,6 +1930,9 @@ func (m *Model) handleWorkflowSelectionChange(newIndex int) tea.Cmd {
 
 	// Update selection
 	m.selectedIndex = newIndex
+
+	// Close issue editor if open when switching workflows (prevents stale issue references)
+	m.issueEditor = nil
 
 	// Load cached state for the new selection
 	m.loadSelectedWorkflowState()

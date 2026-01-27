@@ -526,11 +526,22 @@ func (m Model) renderDashboardContent() string {
 	actionsCol.WriteString(renderBinding(keys.Dashboard.Help))
 	actionsCol.WriteString(renderBinding(keys.Dashboard.Quit))
 
+	// Epic Tree column
+	var treeCol strings.Builder
+	treeCol.WriteString(sectionStyle.Render("Epic Tree"))
+	treeCol.WriteString("\n")
+	treeCol.WriteString(renderBinding(keys.Component.EditAction))
+	treeCol.WriteString(renderKeyDesc("y", "copy ID/description"))
+	treeCol.WriteString(renderKeyDesc("h/l", "tree ↔ details"))
+	treeCol.WriteString(renderKeyDesc("d", "toggle direction"))
+	treeCol.WriteString(renderKeyDesc("m", "toggle mode"))
+
 	// Join columns horizontally, aligned at top
 	columns := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		columnStyle.Render(navCol.String()),
-		actionsCol.String(),
+		columnStyle.Render(actionsCol.String()),
+		treeCol.String(),
 	)
 
 	// Calculate box width based on columns content

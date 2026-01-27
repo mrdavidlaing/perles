@@ -3,13 +3,16 @@ package dashboard
 import (
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
 	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/bql"
+	"github.com/zjrosen/perles/internal/keys"
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/ui/details"
+	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 	"github.com/zjrosen/perles/internal/ui/tree"
 )
@@ -246,6 +249,18 @@ func (m Model) handleEpicTreeKeysFocusTree(msg tea.KeyMsg) (mode.Controller, tea
 		return m, nil
 	}
 
+	// Handle key bindings that require key.Matches
+	if key.Matches(msg, keys.Component.EditAction) {
+		if m.epicTree != nil {
+			if node := m.epicTree.SelectedNode(); node != nil {
+				editor := issueeditor.New(node.Issue).SetSize(m.width, m.height)
+				m.issueEditor = &editor
+				return m, m.issueEditor.Init()
+			}
+		}
+		return m, nil
+	}
+
 	return m, nil
 }
 
@@ -270,6 +285,19 @@ func (m Model) handleEpicTreeKeysFocusDetails(msg tea.KeyMsg) (mode.Controller, 
 			var cmd tea.Cmd
 			m.epicDetails, cmd = m.epicDetails.Update(msg)
 			return m, cmd
+		}
+		return m, nil
+	}
+
+	// Handle key bindings that require key.Matches
+	if key.Matches(msg, keys.Component.EditAction) {
+		// Details panel shows the tree's selected issue, so use same source
+		if m.epicTree != nil {
+			if node := m.epicTree.SelectedNode(); node != nil {
+				editor := issueeditor.New(node.Issue).SetSize(m.width, m.height)
+				m.issueEditor = &editor
+				return m, m.issueEditor.Init()
+			}
 		}
 		return m, nil
 	}

@@ -8,20 +8,20 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                        ╭───────────────────────────────────────────────────────────────────╮                         │
-│                        │  Dashboard Help                                                   │                         │
-│                        │───────────────────────────────────────────────────────────────────│                         │
-╰────────────────────────│                                                                   │─────────────────────────╯
- No epic associated with │  Navigation                     Workflow Actions                  │                          
-╭────────────────────────│  k/↑        move up             s          start/resume workflow  │─────────────────────────╮
-│j/k nav  tab cycle  n ne│  j/↓        move down           x          pause workflow         │                         │
-╰────────────────────────│  g          go to first         n          new workflow           │─────────────────────────╯
-                         │  G          go to last          ?          toggle help            │                          
-                         │  Tab        cycle focus zone    q          quit                   │                          
-                         │                                                                   │                          
-                         │                                                                   │                          
-                         │  Press ? or Esc to close                                          │                          
-                         ╰───────────────────────────────────────────────────────────────────╯                          
+│       ╭─────────────────────────────────────────────────────────────────────────────────────────────────────╮        │
+│       │  Dashboard Help                                                                                     │        │
+│       │─────────────────────────────────────────────────────────────────────────────────────────────────────│        │
+╰───────│                                                                                                     │────────╯
+ No epic│  Navigation                     Workflow Actions                    Epic Tree                       │         
+╭───────│  k/↑        move up             s          start/resume workflow    ctrl+e     edit issue           │────────╮
+│j/k nav│  j/↓        move down           x          pause workflow           y          copy ID/description  │        │
+╰───────│  g          go to first         n          new workflow             h/l        tree ↔ details       │────────╯
+        │  G          go to last          ?          toggle help              d          toggle direction     │         
+        │  Tab        cycle focus zone    q          quit                     m          toggle mode          │         
+        │                                                                                                     │         
+        │                                                                                                     │         
+        │  Press ? or Esc to close                                                                            │         
+        ╰─────────────────────────────────────────────────────────────────────────────────────────────────────╯         
                                                                                                                         
                                                                                                                         
                                                                                                                         

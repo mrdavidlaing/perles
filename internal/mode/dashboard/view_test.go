@@ -7,8 +7,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/require"
+	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/events"
+	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )
 
@@ -378,4 +380,48 @@ func TestFooterHintsAreStatic(t *testing.T) {
 	require.Contains(t, footer, "pause", "footer should have pause hint")
 	require.Contains(t, footer, "help", "footer should have help hint")
 	require.Contains(t, footer, "quit", "footer should have quit hint")
+}
+
+// === Unit Tests: Issue Editor Overlay (perles-56ved.5) ===
+
+func TestView_IssueEditorOverlay_ReturnsModalWhenNonNil(t *testing.T) {
+	// Setup model with issue editor
+	m := createEpicTreeTestModel(t)
+	m.width = 100
+	m.height = 40
+
+	// Create a test issue and editor
+	testIssue := beads.Issue{
+		ID:        "issue-123",
+		TitleText: "Test Issue",
+		Status:    beads.StatusOpen,
+		Priority:  beads.PriorityMedium,
+	}
+	editor := issueeditor.New(testIssue).SetSize(100, 40)
+	m.issueEditor = &editor
+
+	// Render the view
+	view := m.View()
+
+	// Should contain issue editor content (the modal title and form elements)
+	require.Contains(t, view, "Edit Issue", "view should contain issue editor modal title")
+	require.Contains(t, view, "Priority", "view should contain priority field")
+	require.Contains(t, view, "Status", "view should contain status field")
+}
+
+func TestView_IssueEditorOverlay_ReturnsNormalViewWhenNil(t *testing.T) {
+	// Setup model without issue editor
+	m := createEpicTreeTestModel(t)
+	m.width = 100
+	m.height = 40
+	m.issueEditor = nil // Explicitly nil
+
+	// Render the view
+	view := m.View()
+
+	// Should NOT contain issue editor specific content
+	require.NotContains(t, view, "Edit Issue", "view should not contain issue editor modal when nil")
+
+	// Should render normal dashboard content (workflow table area)
+	require.NotEmpty(t, view, "view should render something")
 }

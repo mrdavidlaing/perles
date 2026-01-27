@@ -647,6 +647,7 @@ orchestration:                       # AI orchestration settings
 - **Navigation:** `j/k` or `↓/↑` (move in tree when tree focused)
 - **Pane switch:** `h/l` (tree ↔ details)
 - **Tree controls:** `d` (direction), `m` (mode), `r` (refresh)
+- **Actions:** `ctrl+e` (edit issue), `y` (copy ID/description)
 
 ## Important Gotchas
 
