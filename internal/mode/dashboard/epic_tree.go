@@ -10,6 +10,7 @@ import (
 	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/ui/details"
+	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 	"github.com/zjrosen/perles/internal/ui/tree"
 )
 
@@ -198,6 +199,9 @@ func (m *Model) triggerEpicTreeLoad() tea.Cmd {
 // handleEpicTreeKeysFocusTree handles key events when the tree pane has focus within the epic view.
 func (m Model) handleEpicTreeKeysFocusTree(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
 	switch msg.String() {
+	case "y": // Yank (copy) issue ID to clipboard
+		return m.yankTreeIssueID()
+
 	case "j", "down":
 		if m.epicTree != nil {
 			m.epicTree.MoveCursor(1)
@@ -248,6 +252,9 @@ func (m Model) handleEpicTreeKeysFocusTree(msg tea.KeyMsg) (mode.Controller, tea
 // handleEpicTreeKeysFocusDetails handles key events when the details pane has focus within the epic view.
 func (m Model) handleEpicTreeKeysFocusDetails(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
 	switch msg.String() {
+	case "y": // Yank (copy) issue description to clipboard
+		return m.yankIssueDescription()
+
 	case "h", "left":
 		// Switch to tree pane
 		m.epicViewFocus = EpicFocusTree
@@ -293,5 +300,76 @@ func (m *Model) saveEpicTreeState(workflowID string) {
 		state.TreeDirection = ""
 		state.TreeMode = ""
 		state.TreeSelectedID = ""
+	}
+}
+
+// yankTreeIssueID copies the selected tree node's issue ID to clipboard.
+func (m Model) yankTreeIssueID() (mode.Controller, tea.Cmd) {
+	if m.epicTree == nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "No tree loaded", Style: toaster.StyleError}
+		}
+	}
+
+	node := m.epicTree.SelectedNode()
+	if node == nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "No issue selected", Style: toaster.StyleError}
+		}
+	}
+
+	if m.services.Clipboard == nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Clipboard unavailable", Style: toaster.StyleError}
+		}
+	}
+
+	if err := m.services.Clipboard.Copy(node.Issue.ID); err != nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Clipboard error: " + err.Error(), Style: toaster.StyleError}
+		}
+	}
+
+	return m, func() tea.Msg {
+		return mode.ShowToastMsg{Message: "Copied: " + node.Issue.ID, Style: toaster.StyleSuccess}
+	}
+}
+
+// yankIssueDescription copies the selected issue's description to clipboard.
+func (m Model) yankIssueDescription() (mode.Controller, tea.Cmd) {
+	if m.epicTree == nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "No tree loaded", Style: toaster.StyleError}
+		}
+	}
+
+	node := m.epicTree.SelectedNode()
+	if node == nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "No issue selected", Style: toaster.StyleError}
+		}
+	}
+
+	if m.services.Clipboard == nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Clipboard unavailable", Style: toaster.StyleError}
+		}
+	}
+
+	description := node.Issue.DescriptionText
+	if description == "" {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Issue has no description", Style: toaster.StyleWarn}
+		}
+	}
+
+	if err := m.services.Clipboard.Copy(description); err != nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Clipboard error: " + err.Error(), Style: toaster.StyleError}
+		}
+	}
+
+	return m, func() tea.Msg {
+		return mode.ShowToastMsg{Message: "Copied issue description", Style: toaster.StyleSuccess}
 	}
 }

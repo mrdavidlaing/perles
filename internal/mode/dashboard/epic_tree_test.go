@@ -575,3 +575,162 @@ func TestCursorMoveTriggersDetailUpdate(t *testing.T) {
 	// updateEpicDetail should be called and set hasEpicDetail
 	require.True(t, m.hasEpicDetail, "cursor movement should trigger detail update and set hasEpicDetail")
 }
+
+// === Unit Tests: Yank (copy) functionality ===
+
+func TestYankTreeIssueID_CopiesIDToClipboard(t *testing.T) {
+	m := createEpicTreeTestModelWithTree(t)
+
+	// Setup mock clipboard
+	mockClipboard := mocks.NewMockClipboard(t)
+	mockClipboard.EXPECT().Copy("epic-123").Return(nil).Once()
+	m.services.Clipboard = mockClipboard
+
+	// Press 'y' in tree focus
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = result.(Model)
+
+	// Execute command to get the toast message
+	require.NotNil(t, cmd, "should return command for toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "epic-123", "toast should contain issue ID")
+}
+
+func TestYankTreeIssueID_NoTreeLoaded(t *testing.T) {
+	m := createEpicTreeTestModel(t)
+	m.epicTree = nil
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusTree
+
+	// Press 'y' with no tree
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_ = result.(Model)
+
+	// Execute command to get the toast message
+	require.NotNil(t, cmd, "should return command for error toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "No tree loaded")
+}
+
+func TestYankTreeIssueID_NoClipboard(t *testing.T) {
+	m := createEpicTreeTestModelWithTree(t)
+	m.services.Clipboard = nil
+
+	// Press 'y' without clipboard
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_ = result.(Model)
+
+	// Execute command to get the toast message
+	require.NotNil(t, cmd, "should return command for error toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "Clipboard unavailable")
+}
+
+func TestYankTreeIssueID_ClipboardError(t *testing.T) {
+	m := createEpicTreeTestModelWithTree(t)
+
+	// Setup mock clipboard that returns error
+	mockClipboard := mocks.NewMockClipboard(t)
+	mockClipboard.EXPECT().Copy(mock.Anything).Return(errors.New("clipboard failed")).Once()
+	m.services.Clipboard = mockClipboard
+
+	// Press 'y'
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_ = result.(Model)
+
+	// Execute command to get the toast message
+	require.NotNil(t, cmd, "should return command for error toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "Clipboard error")
+}
+
+func TestYankIssueDescription_CopiesDescriptionToClipboard(t *testing.T) {
+	m := createEpicTreeTestModel(t)
+
+	// Setup tree with issue that has a description
+	issueMap := map[string]*beads.Issue{
+		"epic-123": {
+			ID:              "epic-123",
+			TitleText:       "Test Epic",
+			DescriptionText: "This is the full description of the epic.",
+			Status:          beads.StatusOpen,
+		},
+	}
+	m.epicTree = tree.New("epic-123", issueMap, tree.DirectionDown, tree.ModeDeps, nil)
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusDetails
+
+	// Setup mock clipboard
+	mockClipboard := mocks.NewMockClipboard(t)
+	mockClipboard.EXPECT().Copy("This is the full description of the epic.").Return(nil).Once()
+	m.services.Clipboard = mockClipboard
+
+	// Press 'y' in details focus
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_ = result.(Model)
+
+	// Execute command to get the toast message
+	require.NotNil(t, cmd, "should return command for toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Equal(t, "Copied issue description", toastMsg.Message)
+}
+
+func TestYankIssueDescription_EmptyDescription(t *testing.T) {
+	m := createEpicTreeTestModel(t)
+
+	// Setup tree with issue that has no description
+	issueMap := map[string]*beads.Issue{
+		"epic-123": {
+			ID:              "epic-123",
+			TitleText:       "Test Epic",
+			DescriptionText: "", // Empty description
+			Status:          beads.StatusOpen,
+		},
+	}
+	m.epicTree = tree.New("epic-123", issueMap, tree.DirectionDown, tree.ModeDeps, nil)
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusDetails
+
+	// Setup mock clipboard (won't be called since description is empty)
+	mockClipboard := mocks.NewMockClipboard(t)
+	m.services.Clipboard = mockClipboard
+
+	// Press 'y' with empty description
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_ = result.(Model)
+
+	// Execute command to get the toast message
+	require.NotNil(t, cmd, "should return command for warning toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "no description")
+}
+
+func TestYankIssueDescription_NoTreeLoaded(t *testing.T) {
+	m := createEpicTreeTestModel(t)
+	m.epicTree = nil
+	m.focus = FocusEpicView
+	m.epicViewFocus = EpicFocusDetails
+
+	// Press 'y' with no tree
+	result, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_ = result.(Model)
+
+	// Execute command to get the toast message
+	require.NotNil(t, cmd, "should return command for error toast")
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "command should return ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "No tree loaded")
+}
