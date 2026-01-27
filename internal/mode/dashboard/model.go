@@ -229,9 +229,6 @@ func New(cfg Config) Model {
 // Init returns initial commands for the mode.
 // It subscribes to ControlPlane events and loads the initial workflow list.
 func (m Model) Init() tea.Cmd {
-	// Play welcome sound when entering orchestration dashboard
-	m.services.Sounds.Play("orchestration_welcome", "orchestration_welcome")
-
 	return tea.Batch(
 		m.subscribeToEvents(),
 		m.loadWorkflows(),

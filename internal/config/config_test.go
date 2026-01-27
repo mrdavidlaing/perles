@@ -1267,13 +1267,13 @@ func TestConfig_SoundDefaults(t *testing.T) {
 	// Verify Sound field exists and has Events map
 	require.NotNil(t, cfg.Sound.Events, "Events map should not be nil")
 
-	// Verify all six sound events exist and are disabled by default
-	require.False(t, cfg.Sound.Events["review_verdict_approve"].Enabled, "review_verdict_approve should be disabled by default")
-	require.False(t, cfg.Sound.Events["review_verdict_deny"].Enabled, "review_verdict_deny should be disabled by default")
-	require.False(t, cfg.Sound.Events["chat_welcome"].Enabled, "chat_welcome should be disabled by default")
-	require.False(t, cfg.Sound.Events["workflow_complete"].Enabled, "workflow_complete should be disabled by default")
-	require.False(t, cfg.Sound.Events["orchestration_welcome"].Enabled, "orchestration_welcome should be disabled by default")
-	require.False(t, cfg.Sound.Events["worker_out_of_context"].Enabled, "worker_out_of_context should be disabled by default")
+	// Verify all six sound events exist and are enabled by default
+	require.True(t, cfg.Sound.Events["review_verdict_approve"].Enabled, "review_verdict_approve should be enabled by default")
+	require.True(t, cfg.Sound.Events["review_verdict_deny"].Enabled, "review_verdict_deny should be enabled by default")
+	require.True(t, cfg.Sound.Events["workflow_complete"].Enabled, "workflow_complete should be enabled by default")
+	require.True(t, cfg.Sound.Events["worker_out_of_context"].Enabled, "worker_out_of_context should be enabled by default")
+	require.True(t, cfg.Sound.Events["coordinator_out_of_context"].Enabled, "coordinator_out_of_context should be enabled by default")
+	require.True(t, cfg.Sound.Events["user_notification"].Enabled, "user_notification should be enabled by default")
 }
 
 func TestConfig_LoadSoundConfig(t *testing.T) {
@@ -1291,20 +1291,20 @@ func TestConfig_LoadSoundConfig(t *testing.T) {
 	require.True(t, cfg.Events["custom_sound"].Enabled)
 }
 
-func TestConfig_EnableSpecificSound(t *testing.T) {
-	// Start with defaults (sounds disabled)
+func TestConfig_DisableSpecificSound(t *testing.T) {
+	// Start with defaults (sounds enabled)
 	cfg := Defaults()
 
-	// Verify initial state - all sounds disabled by default
-	require.False(t, cfg.Sound.Events["review_verdict_approve"].Enabled)
-	require.False(t, cfg.Sound.Events["review_verdict_deny"].Enabled)
+	// Verify initial state - all sounds enabled by default
+	require.True(t, cfg.Sound.Events["review_verdict_approve"].Enabled)
+	require.True(t, cfg.Sound.Events["review_verdict_deny"].Enabled)
 
-	// Enable one specific sound
-	cfg.Sound.Events["review_verdict_approve"] = SoundEventConfig{Enabled: true}
+	// Disable one specific sound
+	cfg.Sound.Events["review_verdict_approve"] = SoundEventConfig{Enabled: false}
 
-	// Verify only the specific sound is enabled
-	require.True(t, cfg.Sound.Events["review_verdict_approve"].Enabled, "review_verdict_approve should be enabled")
-	require.False(t, cfg.Sound.Events["review_verdict_deny"].Enabled, "review_verdict_deny should remain disabled")
+	// Verify only the specific sound is disabled
+	require.False(t, cfg.Sound.Events["review_verdict_approve"].Enabled, "review_verdict_approve should be disabled")
+	require.True(t, cfg.Sound.Events["review_verdict_deny"].Enabled, "review_verdict_deny should remain enabled")
 }
 
 func TestSoundConfig_ZeroValue(t *testing.T) {
@@ -1372,14 +1372,14 @@ func TestSoundEventConfig_EnabledNoOverrides(t *testing.T) {
 }
 
 func TestSoundConfig_FullConfig(t *testing.T) {
-	// Test complete SoundConfig with all three events and various override configurations
+	// Test complete SoundConfig with events and various override configurations
 	cfg := SoundConfig{
 		Events: map[string]SoundEventConfig{
-			"chat_welcome": {
+			"workflow_complete": {
 				Enabled: true,
 				OverrideSounds: []string{
-					"~/.config/perles/sounds/welcome1.wav",
-					"~/.config/perles/sounds/welcome2.wav",
+					"~/.config/perles/sounds/complete1.wav",
+					"~/.config/perles/sounds/complete2.wav",
 				},
 			},
 			"review_verdict_approve": {
@@ -1392,9 +1392,9 @@ func TestSoundConfig_FullConfig(t *testing.T) {
 		},
 	}
 
-	// Verify chat_welcome
-	require.True(t, cfg.Events["chat_welcome"].Enabled)
-	require.Len(t, cfg.Events["chat_welcome"].OverrideSounds, 2)
+	// Verify workflow_complete
+	require.True(t, cfg.Events["workflow_complete"].Enabled)
+	require.Len(t, cfg.Events["workflow_complete"].OverrideSounds, 2)
 
 	// Verify review_verdict_approve
 	require.True(t, cfg.Events["review_verdict_approve"].Enabled)
@@ -1409,14 +1409,65 @@ func TestDefaults_SoundEventConfigValues(t *testing.T) {
 	cfg := Defaults()
 
 	// All events should exist in the map
-	require.Len(t, cfg.Sound.Events, 7)
+	require.Len(t, cfg.Sound.Events, 6)
 
 	// Check each event has correct default values
-	for _, eventName := range []string{"review_verdict_approve", "review_verdict_deny", "chat_welcome", "workflow_complete", "orchestration_welcome", "worker_out_of_context", "user_notification"} {
+	for _, eventName := range []string{"review_verdict_approve", "review_verdict_deny", "workflow_complete", "worker_out_of_context", "coordinator_out_of_context", "user_notification"} {
 		eventConfig, exists := cfg.Sound.Events[eventName]
 		require.True(t, exists, "Event %q should exist in defaults", eventName)
-		require.False(t, eventConfig.Enabled, "Event %q should be disabled by default", eventName)
+		require.True(t, eventConfig.Enabled, "Event %q should be enabled by default", eventName)
 		require.Nil(t, eventConfig.OverrideSounds, "Event %q should have nil OverrideSounds by default", eventName)
+	}
+}
+
+func TestDefaults_SoundEventsEnabled(t *testing.T) {
+	// Verify all 8 sound events are present and enabled by default
+	cfg := Defaults()
+
+	// Must have exactly 8 sound events
+	require.Len(t, cfg.Sound.Events, 6, "Defaults should have exactly 6 sound events")
+
+	// All expected events must be present and enabled
+	expectedEvents := []string{
+		"review_verdict_approve",
+		"review_verdict_deny",
+		"workflow_complete",
+		"worker_out_of_context",
+		"coordinator_out_of_context",
+		"user_notification",
+	}
+
+	for _, eventName := range expectedEvents {
+		eventConfig, exists := cfg.Sound.Events[eventName]
+		require.True(t, exists, "Event %q must exist in Defaults()", eventName)
+		require.True(t, eventConfig.Enabled, "Event %q must have Enabled=true in Defaults()", eventName)
+	}
+}
+
+func TestDefaultConfigTemplate_SoundsEnabled(t *testing.T) {
+	// Verify the template shows all sound events enabled
+	template := DefaultConfigTemplate()
+
+	// Template should say events are enabled by default
+	require.Contains(t, template, "All events are enabled by default",
+		"Template should say events are enabled by default")
+
+	// All 6 expected events must be present with enabled: true
+	expectedEvents := []string{
+		"review_verdict_approve",
+		"review_verdict_deny",
+		"workflow_complete",
+		"worker_out_of_context",
+		"coordinator_out_of_context",
+		"user_notification",
+	}
+
+	for _, eventName := range expectedEvents {
+		// Check the event is documented (not commented out)
+		require.Contains(t, template, eventName+":",
+			"Template must include %q event as active config", eventName)
+		require.Contains(t, template, "enabled: true",
+			"Template must show enabled: true for sound events")
 	}
 }
 

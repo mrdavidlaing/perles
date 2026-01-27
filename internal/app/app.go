@@ -964,7 +964,6 @@ func (m Model) handleToggleChatPanel() (tea.Model, tea.Cmd) {
 
 		// Lazily create infrastructure on first open
 		if m.chatInfra == nil {
-			m.services.Sounds.Play("greeting", "chat_welcome")
 
 			// Get AgentProvider from config (includes model settings from user config)
 			provider := m.services.Config.Orchestration.AgentProviders().Coordinator()

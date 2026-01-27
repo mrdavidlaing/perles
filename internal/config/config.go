@@ -902,13 +902,12 @@ func Defaults() Config {
 		},
 		Sound: SoundConfig{
 			Events: map[string]SoundEventConfig{
-				"review_verdict_approve": {Enabled: false},
-				"review_verdict_deny":    {Enabled: false},
-				"chat_welcome":           {Enabled: false},
-				"workflow_complete":      {Enabled: false},
-				"orchestration_welcome":  {Enabled: false},
-				"worker_out_of_context":  {Enabled: false},
-				"user_notification":      {Enabled: false},
+				"review_verdict_approve":     {Enabled: true},
+				"review_verdict_deny":        {Enabled: true},
+				"workflow_complete":          {Enabled: true},
+				"worker_out_of_context":      {Enabled: true},
+				"coordinator_out_of_context": {Enabled: true},
+				"user_notification":          {Enabled: true},
 			},
 		},
 	}
@@ -1048,32 +1047,34 @@ orchestration:
   #     description: "Custom description for research workflow"
 
   # Sound Notifications
-  # Audio feedback for orchestration events. All events are disabled by default.
-  # To override the default sounds use the override_sounds for each event
+  # Audio feedback for orchestration events. All events are enabled by default.
+  # To override the default sounds use the override_sounds for each event.
   # Custom sounds must be WAV files located in ~/.perles/sounds/
   sound:
     events:
-      # Plays when entering chat mode
-      # chat_welcome:
-      #   enabled: true
-      #   override_sounds:
-      #     - ~/.perles/sounds/my-welcome.wav
-
-      # Plays when entering orchestration mode
-      # orchestration_welcome:
-      #   enabled: true
-
-      # Plays when a workflow completes
-      # workflow_complete:
-      #   enabled: true
+      # Plays when a workflow completes successfully
+      workflow_complete:
+        enabled: true
 
       # Plays when a review is approved
-      # review_verdict_approve:
-      #   enabled: true
+      review_verdict_approve:
+        enabled: true
 
       # Plays when a review is denied
-      # review_verdict_deny:
-      #   enabled: true
+      review_verdict_deny:
+        enabled: true
+
+      # Plays when a worker runs out of context
+      worker_out_of_context:
+        enabled: true
+
+      # Plays when the coordinator runs out of context
+      coordinator_out_of_context:
+        enabled: true
+
+      # Plays for general user notifications
+      user_notification:
+        enabled: true
 `
 }
 
