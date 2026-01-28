@@ -187,6 +187,11 @@ func runApp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid keybindings configuration: %w", err)
 	}
 
+	// Validate user-defined actions
+	if err := config.ValidateActions(cfg.UI.Actions); err != nil {
+		return fmt.Errorf("invalid actions configuration: %w", err)
+	}
+
 	// Apply keybinding overrides from config
 	keys.ApplyConfig(cfg.UI.Keybindings.Search, cfg.UI.Keybindings.Dashboard)
 

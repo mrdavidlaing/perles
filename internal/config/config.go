@@ -55,12 +55,26 @@ type UIConfig struct {
 	MarkdownStyle string            `mapstructure:"markdown_style"` // "dark" (default) or "light"
 	VimMode       bool              `mapstructure:"vim_mode"`       // Enable vim keybindings in text input areas
 	Keybindings   KeybindingsConfig `mapstructure:"keybindings"`
+	Actions       ActionsConfig     `mapstructure:"actions"` // User-defined keybinding actions
 }
 
 // KeybindingsConfig holds user-customizable keybinding overrides.
 type KeybindingsConfig struct {
 	Search    string `mapstructure:"search"`    // Default: "ctrl+space"
 	Dashboard string `mapstructure:"dashboard"` // Default: "ctrl+o"
+}
+
+// ActionConfig defines a single user-defined action that can be triggered by a keybinding.
+// Actions are executed in fire-and-forget mode - the command is started and perles continues.
+type ActionConfig struct {
+	Key         string `mapstructure:"key"`         // Keybinding (e.g., "1", "f1", "ctrl+1")
+	Command     string `mapstructure:"command"`     // Shell command to execute with template vars
+	Description string `mapstructure:"description"` // Human-readable description for help text
+}
+
+// ActionsConfig holds user-defined action configurations for different modes.
+type ActionsConfig struct {
+	IssueAction map[string]ActionConfig `mapstructure:"issue_action"` // Actions for modes with issue selection (kanban, search)
 }
 
 // ThemeConfig holds all theme customization options.
@@ -694,9 +708,10 @@ func ValidateWorkflows(workflows []WorkflowConfig) error {
 	return nil
 }
 
-// normalizeKey normalizes a key string for comparison.
+// NormalizeKey normalizes a key string for comparison.
 // Lowercases, trims whitespace, and translates ctrl+space to ctrl+@.
-func normalizeKey(key string) string {
+// This is exported for use by kanban mode when matching user-defined actions.
+func NormalizeKey(key string) string {
 	normalized := strings.ToLower(strings.TrimSpace(key))
 	if normalized == "ctrl+space" {
 		return "ctrl+@"
@@ -745,7 +760,7 @@ func ValidateKeybindings(kb KeybindingsConfig) error {
 
 	// Validate search key if specified
 	if kb.Search != "" {
-		normalized := normalizeKey(kb.Search)
+		normalized := NormalizeKey(kb.Search)
 		if !isValidKeyFormat(normalized) {
 			return fmt.Errorf("ui.keybindings.search: invalid key format %q", kb.Search)
 		}
@@ -756,7 +771,7 @@ func ValidateKeybindings(kb KeybindingsConfig) error {
 
 	// Validate dashboard key if specified
 	if kb.Dashboard != "" {
-		normalized := normalizeKey(kb.Dashboard)
+		normalized := NormalizeKey(kb.Dashboard)
 		if !isValidKeyFormat(normalized) {
 			return fmt.Errorf("ui.keybindings.dashboard: invalid key format %q", kb.Dashboard)
 		}
@@ -767,9 +782,54 @@ func ValidateKeybindings(kb KeybindingsConfig) error {
 
 	// Check for duplicate mappings
 	if kb.Search != "" && kb.Dashboard != "" {
-		if normalizeKey(kb.Search) == normalizeKey(kb.Dashboard) {
+		if NormalizeKey(kb.Search) == NormalizeKey(kb.Dashboard) {
 			return fmt.Errorf("ui.keybindings: search and dashboard cannot use the same key %q", kb.Search)
 		}
+	}
+
+	return nil
+}
+
+// allowedIssueActionKeys are the only keys permitted for user-defined issue actions.
+// Restricting to numeric keys 0-9 prevents conflicts with built-in keybindings.
+var allowedIssueActionKeys = map[string]bool{
+	"0": true, "1": true, "2": true, "3": true, "4": true,
+	"5": true, "6": true, "7": true, "8": true, "9": true,
+}
+
+// ValidateActions validates the actions configuration.
+// Returns an error if any action has invalid configuration.
+func ValidateActions(actions ActionsConfig) error {
+	// Empty actions map is valid (feature just inactive)
+	if len(actions.IssueAction) == 0 {
+		return nil
+	}
+
+	for name, action := range actions.IssueAction {
+		if err := validateIssueAction(name, action); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateIssueAction validates a single issue action configuration.
+func validateIssueAction(name string, action ActionConfig) error {
+	// Key is required
+	if action.Key == "" {
+		return fmt.Errorf("ui.actions.issue_action.%s: key is required", name)
+	}
+
+	// Command is required
+	if action.Command == "" {
+		return fmt.Errorf("ui.actions.issue_action.%s: command is required", name)
+	}
+
+	// Only allow keys 0-9
+	normalized := NormalizeKey(action.Key)
+	if !allowedIssueActionKeys[normalized] {
+		return fmt.Errorf("ui.actions.issue_action.%s: key must be 0-9, got %q", name, action.Key)
 	}
 
 	return nil

@@ -12,6 +12,7 @@ import (
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/log"
 	"github.com/zjrosen/perles/internal/mode"
+	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/ui/board"
 	"github.com/zjrosen/perles/internal/ui/coleditor"
 	"github.com/zjrosen/perles/internal/ui/details"
@@ -77,6 +78,9 @@ type Model struct {
 
 	// UI visibility toggles
 	showStatusBar bool
+
+	// User-defined actions for kanban mode (key -> action config)
+	actions map[string]config.ActionConfig
 }
 
 // New creates a new kanban mode controller.
@@ -86,14 +90,30 @@ func New(services mode.Services) Model {
 	boardModel := board.NewFromViews(services.Config.GetViews(), services.Executor, clock).
 		SetShowCounts(services.Config.UI.ShowCounts)
 
+	// Get user-defined actions from config (may be nil)
+	var actions map[string]config.ActionConfig
+	if services.Config.UI.Actions.IssueAction != nil {
+		actions = services.Config.UI.Actions.IssueAction
+	}
+
+	// Convert user actions to help.UserAction for display in help overlay
+	var userActions []help.UserAction
+	for _, action := range actions {
+		userActions = append(userActions, help.UserAction{
+			Key:         action.Key,
+			Description: action.Description,
+		})
+	}
+
 	return Model{
 		services:            services,
 		view:                ViewBoard,
 		board:               boardModel,
-		help:                help.New().WithFlags(services.Flags),
+		help:                help.New().WithFlags(services.Flags).WithUserActions(userActions),
 		loading:             true,
 		showStatusBar:       services.Config.UI.ShowStatusBar,
 		pendingDeleteColumn: -1,
+		actions:             actions,
 	}
 }
 
@@ -226,6 +246,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case labelsChangedMsg:
 		return m.handleLabelsChanged(msg)
+
+	case shared.ActionExecutedMsg:
+		return m.handleActionExecuted(msg)
 
 	case errMsg:
 		return m.handleErrMsg(msg)

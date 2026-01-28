@@ -101,6 +101,9 @@ type Model struct {
 	// Layout
 	width  int
 	height int
+
+	// User-defined actions (key -> action config)
+	actions map[string]config.ActionConfig
 }
 
 // newViewSaveMsg is sent when creating a new view from search.
@@ -475,13 +478,29 @@ func New(services mode.Services) Model {
 	resultsList.SetShowHelp(false)
 	resultsList.SetFilteringEnabled(false)
 
+	// Get user-defined actions from config (may be nil)
+	var actions map[string]config.ActionConfig
+	if services.Config != nil && services.Config.UI.Actions.IssueAction != nil {
+		actions = services.Config.UI.Actions.IssueAction
+	}
+
+	// Convert user actions to help.UserAction for display in help overlay
+	var userActions []help.UserAction
+	for _, action := range actions {
+		userActions = append(userActions, help.UserAction{
+			Key:         action.Key,
+			Description: action.Description,
+		})
+	}
+
 	return Model{
 		services:    services,
 		input:       input,
 		resultsList: resultsList,
 		focus:       FocusSearch,
 		view:        ViewSearch,
-		help:        help.NewSearch(),
+		help:        help.NewSearch().WithUserActions(userActions),
+		actions:     actions,
 	}
 }
 
@@ -748,6 +767,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case labelsChangedMsg:
 		return m.handleLabelsChanged(msg)
+
+	case shared.ActionExecutedMsg:
+		return m.handleActionExecuted(msg)
 	}
 
 	return m, nil
@@ -1228,6 +1250,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 		// Fall through to details delegation when focused on details
+	}
+
+	// Check user-defined actions (after built-in keys)
+	// Only trigger when focused on results pane (covers both list and tree sub-modes)
+	if m.focus == FocusResults {
+		if action, _, ok := shared.MatchUserAction(msg, m.actions); ok {
+			if issue := m.getSelectedIssue(); issue != nil {
+				return m, shared.ExecuteAction(action, issue, m.services.WorkDir)
+			}
+			return m, func() tea.Msg {
+				return mode.ShowToastMsg{Message: "No issue selected", Style: toaster.StyleWarn}
+			}
+		}
 	}
 
 	// Delegate remaining keys to details if focused there
@@ -2344,6 +2379,22 @@ func (m Model) handleLabelsChanged(msg labelsChangedMsg) (Model, tea.Cmd) {
 	}
 
 	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Labels updated", Style: toaster.StyleSuccess} }
+}
+
+// handleActionExecuted processes user action execution results.
+// Shows an error toast if the action failed to start; otherwise silent.
+func (m Model) handleActionExecuted(msg shared.ActionExecutedMsg) (Model, tea.Cmd) {
+	if msg.Err != nil {
+		errorMessage := msg.Name
+		if errorMessage != "" {
+			errorMessage += ": "
+		}
+		errorMessage += msg.Err.Error()
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: errorMessage, Style: toaster.StyleError}
+		}
+	}
+	return m, nil
 }
 
 // Message types for delete and label operations

@@ -358,3 +358,55 @@ func TestHelpOverlay_ShowsCustomKeys(t *testing.T) {
 	require.Contains(t, view, "ctrl+k")
 	require.NotContains(t, view, "Ctrl+Space", "expected tree mode help to NOT show hardcoded Ctrl+Space")
 }
+
+// User Actions tests
+func TestHelp_WithUserActions_ShowsUserActionsSection(t *testing.T) {
+	actions := []UserAction{
+		{Key: "1", Description: "Open Claude with issue"},
+		{Key: "2", Description: "Show notification"},
+	}
+	m := New().WithUserActions(actions).SetSize(120, 40)
+	view := m.View()
+
+	// Should contain User Actions section
+	require.Contains(t, view, "User Actions", "expected view to contain User Actions section")
+	// Should contain action keys and descriptions
+	require.Contains(t, view, "1", "expected view to contain key 1")
+	require.Contains(t, view, "Open Claude with issue", "expected view to contain first action description")
+	require.Contains(t, view, "2", "expected view to contain key 2")
+	require.Contains(t, view, "Show notification", "expected view to contain second action description")
+}
+
+func TestHelp_NoUserActions_NoUserActionsSection(t *testing.T) {
+	m := New().SetSize(80, 24)
+	view := m.View()
+
+	// Should NOT contain User Actions section when no actions configured
+	require.NotContains(t, view, "User Actions", "expected view to NOT contain User Actions section")
+}
+
+func TestHelp_EmptyUserActions_NoUserActionsSection(t *testing.T) {
+	m := New().WithUserActions([]UserAction{}).SetSize(80, 24)
+	view := m.View()
+
+	// Should NOT contain User Actions section when empty actions slice
+	require.NotContains(t, view, "User Actions", "expected view to NOT contain User Actions section")
+}
+
+func TestHelp_UserActions_FormattingConsistentWithBuiltIn(t *testing.T) {
+	actions := []UserAction{
+		{Key: "f1", Description: "Test action"},
+	}
+	m := New().WithUserActions(actions).SetSize(120, 40)
+	view := m.View()
+
+	// User action should be formatted similarly to built-in actions
+	// (key followed by description, same styling)
+	require.Contains(t, view, "f1", "expected view to contain f1 key")
+	require.Contains(t, view, "Test action", "expected view to contain action description")
+
+	// The view should still contain all standard sections
+	require.Contains(t, view, "Navigation", "expected view to contain Navigation section")
+	require.Contains(t, view, "Actions", "expected view to contain Actions section")
+	require.Contains(t, view, "General", "expected view to contain General section")
+}

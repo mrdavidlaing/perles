@@ -598,6 +598,51 @@ orchestration:                       # AI orchestration settings
     application_name: ""             # Override: defaults to git repo name
 ```
 
+### User-Defined Actions
+
+User actions allow you to define custom keybindings that execute shell commands with dynamic issue context. Actions work in **any mode where an issue is selected**:
+
+- **Kanban mode** - issue selected in a column
+- **Search mode** - issue selected in results list
+- **Search tree sub-mode** - issue selected in dependency tree
+
+**Note:** User actions are NOT available in dashboard mode.
+
+Actions are **fire-and-forget** - the command starts and perles continues immediately without waiting for completion. This is ideal for launching external tools like AI assistants in new terminal panes.
+
+**Important:** Config changes require restarting perles to take effect.
+
+```yaml
+ui:
+  actions:
+    issue_action:
+      open-claude:
+        key: "1"                    # Keybinding to trigger this action (0-9 only)
+        command: "tmux split-window -h \"claude 'Work on {{.ID}}: {{.TitleText}}'\""
+        description: "Open Claude"  # Shown in help overlay (?)
+```
+
+See `examples/user-actions.yaml` for more examples.
+
+#### Template Variables
+
+| Variable | Description | Escaped |
+|----------|-------------|---------|
+| `{{.ID}}` | Issue ID (e.g., "PROJ-123") | No |
+| `{{.TitleText}}` | Issue title | Yes (shell-escaped) |
+
+#### Allowed Keys (0-9 Only)
+
+User actions are restricted to numeric keys only: `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`
+
+This limitation ensures no conflicts with built-in keybindings across all modes.
+
+#### Security Model
+
+- **User configs are trusted** - Commands execute with user's shell permissions
+- **TitleText is shell-escaped** - Uses POSIX single-quote escaping to prevent injection
+- **ID is not escaped** - Issue IDs are constrained identifiers, safe for direct use
+
 ## Environment Variables
 
 - `PERLES_DEBUG`: Enable debug mode

@@ -329,6 +329,17 @@ func (m Model) handleBoardKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	}
 
+	// Check user-defined actions (after built-in keys)
+	if action, _, ok := shared.MatchUserAction(msg, m.actions); ok {
+		if issue := m.board.SelectedIssue(); issue != nil {
+			workDir := m.services.WorkDir
+			return m, shared.ExecuteAction(action, issue, workDir)
+		}
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "No issue selected", Style: toaster.StyleWarn}
+		}
+	}
+
 	// Delegate navigation to board
 	var cmd tea.Cmd
 	m.board, cmd = m.board.Update(msg)
@@ -539,6 +550,22 @@ func (m Model) handleLabelsChanged(msg labelsChangedMsg) (Model, tea.Cmd) {
 		return m, scheduleErrorClear()
 	}
 	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Labels updated", Style: toaster.StyleSuccess} }
+}
+
+// handleActionExecuted processes user action execution results.
+// Shows an error toast if the action failed to start; otherwise silent.
+func (m Model) handleActionExecuted(msg shared.ActionExecutedMsg) (Model, tea.Cmd) {
+	if msg.Err != nil {
+		errorMessage := msg.Name
+		if errorMessage != "" {
+			errorMessage += ": "
+		}
+		errorMessage += msg.Err.Error()
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: errorMessage, Style: toaster.StyleError}
+		}
+	}
+	return m, nil
 }
 
 // handleErrMsg processes error messages.

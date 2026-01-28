@@ -125,12 +125,19 @@ const (
 	ModeDashboard  // Dashboard mode
 )
 
+// UserAction represents a user-defined action for display in the help overlay.
+type UserAction struct {
+	Key         string // Display key (e.g., "1", "f1", "ctrl+1")
+	Description string // Human-readable description
+}
+
 // Model holds the help view state.
 type Model struct {
-	mode   HelpMode
-	width  int
-	height int
-	flags  *flags.Registry
+	mode        HelpMode
+	width       int
+	height      int
+	flags       *flags.Registry
+	userActions []UserAction // User-defined actions for kanban mode
 }
 
 // New creates a new help view for kanban mode.
@@ -143,6 +150,12 @@ func New() Model {
 // WithFlags sets the feature flags registry for conditional rendering.
 func (m Model) WithFlags(f *flags.Registry) Model {
 	m.flags = f
+	return m
+}
+
+// WithUserActions sets the user-defined actions to display in kanban help.
+func (m Model) WithUserActions(actions []UserAction) Model {
+	m.userActions = actions
 	return m
 }
 
@@ -258,14 +271,36 @@ func (m Model) renderKanbanContent() string {
 	generalCol.WriteString(renderBinding(keys.Kanban.Escape))
 	generalCol.WriteString(renderBinding(keys.Kanban.QuitConfirm))
 
+	// User Actions column (only if user has configured actions)
+	var userActionsCol strings.Builder
+	if len(m.userActions) > 0 {
+		userActionsCol.WriteString(sectionStyle.Render("User Actions"))
+		userActionsCol.WriteString("\n")
+		for _, action := range m.userActions {
+			userActionsCol.WriteString(renderKeyDesc(action.Key, action.Description))
+		}
+	}
+
 	// Join columns horizontally, aligned at top
-	columns := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		columnStyle.Render(actionsCol.String()),
-		columnStyle.Render(viewsCol.String()),
-		columnStyle.Render(navCol.String()),
-		generalCol.String(), // Last column doesn't need right margin
-	)
+	var columns string
+	if len(m.userActions) > 0 {
+		columns = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			columnStyle.Render(actionsCol.String()),
+			columnStyle.Render(viewsCol.String()),
+			columnStyle.Render(navCol.String()),
+			columnStyle.Render(generalCol.String()),
+			userActionsCol.String(), // User actions as last column
+		)
+	} else {
+		columns = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			columnStyle.Render(actionsCol.String()),
+			columnStyle.Render(viewsCol.String()),
+			columnStyle.Render(navCol.String()),
+			generalCol.String(), // Last column doesn't need right margin
+		)
+	}
 
 	// Calculate box width based on columns content
 	columnsWidth := lipgloss.Width(columns)
@@ -329,13 +364,34 @@ func (m Model) renderSearchContent() string {
 	generalCol.WriteString(renderBinding(keys.Search.Help))
 	generalCol.WriteString(renderBinding(keys.Search.QuitConfirm))
 
+	// User Actions column (only if user has configured actions)
+	var userActionsCol strings.Builder
+	if len(m.userActions) > 0 {
+		userActionsCol.WriteString(sectionStyle.Render("User Actions"))
+		userActionsCol.WriteString("\n")
+		for _, action := range m.userActions {
+			userActionsCol.WriteString(renderKeyDesc(action.Key, action.Description))
+		}
+	}
+
 	// Join columns horizontally, aligned at top
-	keybindingColumns := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		columnStyle.Render(navCol.String()),
-		columnStyle.Render(actionsCol.String()),
-		generalCol.String(),
-	)
+	var keybindingColumns string
+	if len(m.userActions) > 0 {
+		keybindingColumns = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			columnStyle.Render(navCol.String()),
+			columnStyle.Render(actionsCol.String()),
+			columnStyle.Render(generalCol.String()),
+			userActionsCol.String(), // User actions as last column
+		)
+	} else {
+		keybindingColumns = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			columnStyle.Render(navCol.String()),
+			columnStyle.Render(actionsCol.String()),
+			generalCol.String(),
+		)
+	}
 
 	// BQL Syntax section - two columns for fields/operators
 	bqlStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)

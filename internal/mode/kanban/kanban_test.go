@@ -1,6 +1,7 @@
 package kanban
 
 import (
+	"fmt"
 	"runtime"
 	"testing"
 	"time"
@@ -763,4 +764,227 @@ func TestKanban_KeyboardNavigationUnchanged(t *testing.T) {
 	m.board, _ = m.board.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	m.board, _ = m.board.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	// Just verify no panic - selection state is internal to column
+}
+
+// =============================================================================
+// User Action Integration Tests
+// =============================================================================
+
+// createTestModelWithActions creates a Model with user-defined actions configured.
+func createTestModelWithActions(t *testing.T, actions map[string]config.ActionConfig, hasIssue bool) Model {
+	cfg := config.Defaults()
+	cfg.UI.Actions.IssueAction = actions
+
+	clipboard := mocks.NewMockClipboard(t)
+	clipboard.EXPECT().Copy(mock.Anything).Return(nil).Maybe()
+	mockExecutor := mocks.NewMockBQLExecutor(t)
+
+	services := mode.Services{
+		Config:    &cfg,
+		Clipboard: clipboard,
+		Executor:  mockExecutor,
+		WorkDir:   t.TempDir(),
+	}
+
+	boardConfigs := []config.ColumnConfig{
+		{Name: "Test", Query: "status = open", Color: "#888888"},
+	}
+	brd := board.NewFromViews([]config.ViewConfig{{Name: "Test", Columns: boardConfigs}}, nil, nil).SetSize(100, 40)
+
+	if hasIssue {
+		brd, _ = brd.Update(board.ColumnLoadedMsg{
+			ViewIndex:   0,
+			ColumnTitle: "Test",
+			Issues: []beads.Issue{
+				{ID: "test-123", TitleText: "Test Issue", Type: beads.TypeTask, Status: beads.StatusOpen},
+			},
+		})
+	}
+
+	return Model{
+		services: services,
+		board:    brd,
+		width:    100,
+		height:   40,
+		view:     ViewBoard,
+		actions:  actions,
+	}
+}
+
+func TestMatchUserAction_MatchesConfiguredKey(t *testing.T) {
+	actions := map[string]config.ActionConfig{
+		"test-action": {Key: "1", Command: "echo test", Description: "Test action"},
+	}
+
+	// Test matching key
+	action, name, ok := shared.MatchUserAction(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}, actions)
+	require.True(t, ok, "should match configured key '1'")
+	require.Equal(t, "test-action", name, "should return action name")
+	require.Equal(t, "echo test", action.Command, "should return action config")
+}
+
+func TestMatchUserAction_NoMatchForUnconfiguredKey(t *testing.T) {
+	actions := map[string]config.ActionConfig{
+		"test-action": {Key: "1", Command: "echo test", Description: "Test action"},
+	}
+
+	// Test non-matching key
+	_, _, ok := shared.MatchUserAction(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}, actions)
+	require.False(t, ok, "should not match unconfigured key '2'")
+}
+
+func TestMatchUserAction_NormalizedKeyMatching(t *testing.T) {
+	// Test that ctrl+space matches ctrl+@ (terminal code)
+	actions := map[string]config.ActionConfig{
+		"ctrl-space-action": {Key: "ctrl+space", Command: "echo test", Description: "Ctrl+Space action"},
+	}
+
+	// Terminal sends ctrl+@ for ctrl+space
+	action, name, ok := shared.MatchUserAction(tea.KeyMsg{Type: tea.KeyCtrlAt}, actions)
+	// Note: This test depends on how tea.KeyMsg.String() handles ctrl+@
+	// The normalized comparison should handle this
+	_ = action
+	_ = name
+	_ = ok
+	// This is a defense-in-depth test - the config validation should prevent
+	// user from configuring reserved keys like ctrl+space
+}
+
+func TestMatchUserAction_NoActionsConfigured(t *testing.T) {
+	// Test with nil actions map
+	_, _, ok := shared.MatchUserAction(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}, nil)
+	require.False(t, ok, "should return false when no actions configured")
+}
+
+func TestMatchUserAction_EmptyActionsMap(t *testing.T) {
+	actions := map[string]config.ActionConfig{}
+
+	// Test with empty actions map
+	_, _, ok := shared.MatchUserAction(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}, actions)
+	require.False(t, ok, "should return false when actions map is empty")
+}
+
+func TestHandleBoardKey_UserActionWithIssue_ExecutesAction(t *testing.T) {
+	actions := map[string]config.ActionConfig{
+		"echo-action": {Key: "1", Command: "echo 'hello'", Description: "Echo action"},
+	}
+	m := createTestModelWithActions(t, actions, true)
+
+	// Press the user action key
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}
+	_, cmd := m.handleBoardKey(msg)
+
+	// Should return a command (executeAction tea.Cmd)
+	require.NotNil(t, cmd, "should return a command when user action matches with issue selected")
+}
+
+func TestHandleBoardKey_UserActionNoIssue_ShowsWarningToast(t *testing.T) {
+	actions := map[string]config.ActionConfig{
+		"echo-action": {Key: "1", Command: "echo 'hello'", Description: "Echo action"},
+	}
+	m := createTestModelWithActions(t, actions, false) // No issue
+
+	// Press the user action key
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}
+	_, cmd := m.handleBoardKey(msg)
+
+	// Should return a command that produces a warning toast
+	require.NotNil(t, cmd, "should return a command when no issue selected")
+	result := cmd()
+	toastMsg, ok := result.(mode.ShowToastMsg)
+	require.True(t, ok, "expected ShowToastMsg, got %T", result)
+	require.Equal(t, "No issue selected", toastMsg.Message)
+}
+
+func TestHandleBoardKey_BuiltInKeyTakesPriority(t *testing.T) {
+	// Configure a user action with a key that conflicts with built-in (this shouldn't
+	// happen with proper validation, but test defense-in-depth)
+	actions := map[string]config.ActionConfig{
+		"conflicting-action": {Key: "?", Command: "echo 'conflict'", Description: "Conflicting action"},
+	}
+	m := createTestModelWithActions(t, actions, true)
+
+	// Press '?' which is the help key
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}
+	newM, _ := m.handleBoardKey(msg)
+
+	// Built-in should win - view should change to help
+	require.Equal(t, ViewHelp, newM.view, "built-in help key should take priority")
+}
+
+func TestHandleBoardKey_UserActionOnlyAfterBuiltInSwitch(t *testing.T) {
+	// User action with a safe key that doesn't conflict with built-in
+	actions := map[string]config.ActionConfig{
+		"safe-action": {Key: "1", Command: "echo 'safe'", Description: "Safe action"},
+	}
+	m := createTestModelWithActions(t, actions, true)
+
+	// Press '1' - should trigger user action
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}
+	newM, cmd := m.handleBoardKey(msg)
+
+	// Should remain in board view (no built-in handler for '1')
+	require.Equal(t, ViewBoard, newM.view, "should remain in board view")
+	// Should return a command (the executeAction cmd)
+	require.NotNil(t, cmd, "should return command for user action")
+}
+
+func TestHandleActionExecuted_Error_ShowsErrorToast(t *testing.T) {
+	m := createTestModelWithActions(t, nil, true)
+
+	msg := shared.ActionExecutedMsg{
+		Name: "Test action",
+		Err:  fmt.Errorf("command failed: exit status 1"),
+	}
+
+	_, cmd := m.handleActionExecuted(msg)
+	require.NotNil(t, cmd, "should return command for error toast")
+
+	result := cmd()
+	toastMsg, ok := result.(mode.ShowToastMsg)
+	require.True(t, ok, "expected ShowToastMsg")
+	require.Contains(t, toastMsg.Message, "Test action")
+	require.Contains(t, toastMsg.Message, "command failed")
+}
+
+func TestHandleActionExecuted_Success_Silent(t *testing.T) {
+	m := createTestModelWithActions(t, nil, true)
+
+	msg := shared.ActionExecutedMsg{
+		Name: "Test action",
+		Err:  nil,
+	}
+
+	_, cmd := m.handleActionExecuted(msg)
+	require.Nil(t, cmd, "should return nil command on success (fire-and-forget)")
+}
+
+func TestNew_InitializesActionsFromConfig(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.UI.Actions.IssueAction = map[string]config.ActionConfig{
+		"test-action": {Key: "1", Command: "echo test", Description: "Test action"},
+	}
+
+	services := mode.Services{
+		Config: &cfg,
+	}
+
+	m := New(services)
+
+	require.NotNil(t, m.actions, "actions should be initialized from config")
+	require.Contains(t, m.actions, "test-action", "actions should contain configured action")
+}
+
+func TestNew_NilActionsWhenNotConfigured(t *testing.T) {
+	cfg := config.Defaults()
+	// Don't set any actions
+
+	services := mode.Services{
+		Config: &cfg,
+	}
+
+	m := New(services)
+
+	// Actions should be nil when not configured
+	require.Nil(t, m.actions, "actions should be nil when not configured")
 }

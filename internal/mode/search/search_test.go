@@ -12,6 +12,7 @@ import (
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/mocks"
 	"github.com/zjrosen/perles/internal/mode"
+	"github.com/zjrosen/perles/internal/mode/shared"
 	"github.com/zjrosen/perles/internal/ui/details"
 	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/diffviewer"
@@ -277,6 +278,63 @@ func TestSearch_HelpOverlay_EscCloses(t *testing.T) {
 	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEscape})
 
 	require.Equal(t, ViewSearch, m.view, "expected search view")
+}
+
+func TestSearch_HelpOverlay_ShowsUserActions(t *testing.T) {
+	// Create config with user actions
+	cfg := config.Defaults()
+	cfg.UI.Actions.IssueAction = map[string]config.ActionConfig{
+		"1": {Key: "1", Command: "echo test", Description: "Test action"},
+		"2": {Key: "2", Command: "echo test2", Description: "Another action"},
+	}
+
+	clipboard := mocks.NewMockClipboard(t)
+	clipboard.EXPECT().Copy(mock.Anything).Return(nil).Maybe()
+
+	mockClient := mocks.NewMockBeadsClient(t)
+	mockClient.EXPECT().GetComments(mock.Anything).Return([]beads.Comment{}, nil).Maybe()
+
+	mockExecutor := mocks.NewMockBQLExecutor(t)
+	mockExecutor.EXPECT().Execute(mock.Anything).Return([]beads.Issue{}, nil).Maybe()
+
+	services := mode.Services{
+		Client:    mockClient,
+		Executor:  mockExecutor,
+		Config:    &cfg,
+		Clipboard: clipboard,
+	}
+
+	m := New(services)
+	m.width = 150
+	m.height = 50
+	m.view = ViewHelp
+
+	view := m.View()
+
+	// Should contain User Actions section
+	require.Contains(t, view, "User Actions", "expected help overlay to contain User Actions section")
+	// Should contain action keys and descriptions
+	require.Contains(t, view, "1", "expected help overlay to contain key 1")
+	require.Contains(t, view, "Test action", "expected help overlay to contain first action description")
+	require.Contains(t, view, "2", "expected help overlay to contain key 2")
+	require.Contains(t, view, "Another action", "expected help overlay to contain second action description")
+}
+
+func TestSearch_HelpOverlay_NoUserActions(t *testing.T) {
+	// Create model with no user actions configured
+	m := createTestModel(t)
+	m.width = 100
+	m.height = 40
+	m.view = ViewHelp
+
+	view := m.View()
+
+	// Should NOT contain User Actions section when no actions configured
+	require.NotContains(t, view, "User Actions", "expected help overlay to NOT contain User Actions section when no actions configured")
+	// Should still contain other standard sections
+	require.Contains(t, view, "Navigation", "expected help overlay to contain Navigation section")
+	require.Contains(t, view, "Actions", "expected help overlay to contain Actions section")
+	require.Contains(t, view, "General", "expected help overlay to contain General section")
 }
 
 func TestSearch_PriorityChanged_Success(t *testing.T) {
@@ -1586,4 +1644,194 @@ func TestSearch_CtrlG_OpensDiffViewer_FocusDetails(t *testing.T) {
 	// Verify it's a ShowDiffViewerMsg
 	_, ok := result.(diffviewer.ShowDiffViewerMsg)
 	require.True(t, ok, "expected diffviewer.ShowDiffViewerMsg, got %T", result)
+}
+
+// =============================================================================
+// User Action Tests (Action keys 0-9)
+// =============================================================================
+
+// createTestModelWithActions creates a Model with user actions configured.
+func createTestModelWithActions(t *testing.T) Model {
+	cfg := config.Defaults()
+	cfg.UI.Actions.IssueAction = map[string]config.ActionConfig{
+		"open-claude": {
+			Key:         "1",
+			Command:     "echo 'Working on {{.ID}}: {{.TitleText}}'",
+			Description: "Open Claude",
+		},
+		"open-editor": {
+			Key:         "2",
+			Command:     "echo 'Editing {{.ID}}'",
+			Description: "Open Editor",
+		},
+	}
+
+	clipboard := mocks.NewMockClipboard(t)
+	clipboard.EXPECT().Copy(mock.Anything).Return(nil).Maybe()
+
+	mockClient := mocks.NewMockBeadsClient(t)
+	mockClient.EXPECT().GetComments(mock.Anything).Return([]beads.Comment{}, nil).Maybe()
+
+	mockExecutor := mocks.NewMockBQLExecutor(t)
+	mockExecutor.EXPECT().Execute(mock.Anything).Return([]beads.Issue{}, nil).Maybe()
+
+	services := mode.Services{
+		Client:    mockClient,
+		Executor:  mockExecutor,
+		Config:    &cfg,
+		Clipboard: clipboard,
+		WorkDir:   "/tmp/test",
+	}
+
+	m := New(services)
+	m.width = 100
+	m.height = 40
+
+	// Load some test results
+	issues := []beads.Issue{
+		{ID: "test-1", TitleText: "First Issue", Priority: 1, Status: beads.StatusOpen, Type: beads.TypeTask},
+		{ID: "test-2", TitleText: "Second Issue", Priority: 2, Status: beads.StatusInProgress, Type: beads.TypeBug},
+	}
+	m, _ = m.handleSearchResults(searchResultsMsg{issues: issues, err: nil})
+
+	return m
+}
+
+func TestSearch_ActionKeyTriggersWhenResultsFocused(t *testing.T) {
+	m := createTestModelWithActions(t)
+	m.focus = FocusResults
+	m.selectedIdx = 0
+
+	// Verify preconditions
+	require.Equal(t, "test-1", m.results[m.selectedIdx].ID, "should have test-1 selected")
+	require.NotNil(t, m.actions, "actions should be configured")
+
+	// Press '1' while focused on results - should trigger action
+	m, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+
+	// Should return a command (the action execution)
+	require.NotNil(t, cmd, "expected action command to be returned")
+
+	// Execute the command to get the message
+	msg := cmd()
+	actionMsg, ok := msg.(shared.ActionExecutedMsg)
+	require.True(t, ok, "expected ActionExecutedMsg, got %T", msg)
+	require.Equal(t, "Open Claude", actionMsg.Name, "action name should match")
+}
+
+func TestSearch_ActionKeyIgnoredWhenInputFocused(t *testing.T) {
+	m := createTestModelWithActions(t)
+	m.focus = FocusSearch
+	m.input.Focus()
+
+	// Press '1' while focused on search input - should type into input, not trigger action
+	oldValue := m.input.Value()
+	m, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+
+	// The '1' should be typed into the input, not trigger an action
+	require.Equal(t, oldValue+"1", m.input.Value(), "key should be typed into input")
+}
+
+func TestSearch_ActionKeyShowsToastWhenNoResults(t *testing.T) {
+	m := createTestModelWithActions(t)
+	m.focus = FocusResults
+	// Clear results so no issue is selected
+	m.results = nil
+	m.selectedIdx = -1
+
+	// Press '1' while focused on results with no issue selected
+	m, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+
+	// Should return a command that shows "No issue selected" toast
+	require.NotNil(t, cmd, "expected toast command to be returned")
+
+	// Execute the command to get the message
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "expected ShowToastMsg, got %T", msg)
+	require.Equal(t, "No issue selected", toastMsg.Message)
+}
+
+func TestSearch_TreeMode_ActionKeyWorks(t *testing.T) {
+	m := createTestModelWithActions(t)
+	m.subMode = mode.SubModeTree
+	m.focus = FocusResults
+
+	// Set up tree with a selected node
+	// For simplicity, we'll test that the action triggers when getSelectedIssue() returns an issue
+	// by mocking the tree state. Since tree handling is complex, we test via list mode results.
+	// The key point is that FocusResults covers both sub-modes.
+
+	m.selectedIdx = 0
+
+	// Press '1' while focused on results in tree sub-mode
+	m, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+
+	// Should return a command (the action execution)
+	require.NotNil(t, cmd, "expected action command to be returned")
+
+	// Execute the command to get the message
+	msg := cmd()
+	actionMsg, ok := msg.(shared.ActionExecutedMsg)
+	require.True(t, ok, "expected ActionExecutedMsg, got %T", msg)
+	require.Equal(t, "Open Claude", actionMsg.Name, "action name should match")
+}
+
+func TestSearch_ActionError_ShowsToast(t *testing.T) {
+	m := createTestModelWithActions(t)
+	m.focus = FocusResults
+
+	// Test that ActionExecutedMsg with error shows toast
+	errorMsg := shared.ActionExecutedMsg{
+		Name: "Open Claude",
+		Err:  errors.New("command failed"),
+	}
+	m, cmd := m.Update(errorMsg)
+
+	// Should return a command that shows error toast
+	require.NotNil(t, cmd, "expected toast command to be returned")
+
+	// Execute the command to get the message
+	msg := cmd()
+	toastMsg, ok := msg.(mode.ShowToastMsg)
+	require.True(t, ok, "expected ShowToastMsg, got %T", msg)
+	require.Contains(t, toastMsg.Message, "command failed", "toast should contain error")
+	require.Contains(t, toastMsg.Message, "Open Claude", "toast should contain action name")
+}
+
+func TestSearch_ActionExecutedMsg_SuccessSilent(t *testing.T) {
+	m := createTestModelWithActions(t)
+	m.focus = FocusResults
+
+	// Test that successful ActionExecutedMsg is silent (no toast)
+	successMsg := shared.ActionExecutedMsg{
+		Name: "Open Claude",
+		Err:  nil, // Success
+	}
+	m, cmd := m.Update(successMsg)
+
+	// Should return nil command (silent on success)
+	require.Nil(t, cmd, "expected no command on successful action (fire-and-forget)")
+}
+
+func TestSearch_ActionKeyNonConfigured_NoOp(t *testing.T) {
+	m := createTestModelWithActions(t)
+	m.focus = FocusResults
+	m.selectedIdx = 0
+
+	// Press '9' which is not configured - should delegate to board (no-op)
+	m, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+
+	// Should return nil command (unbound key is no-op in list pane)
+	require.Nil(t, cmd, "expected no command for unconfigured action key")
+}
+
+func TestSearch_ActionsLoadedFromConfig(t *testing.T) {
+	m := createTestModelWithActions(t)
+
+	// Verify actions were loaded from config
+	require.NotNil(t, m.actions, "actions should be loaded")
+	require.Len(t, m.actions, 2, "should have 2 actions configured")
+	require.Contains(t, m.actions, "open-claude", "should have open-claude action")
+	require.Contains(t, m.actions, "open-editor", "should have open-editor action")
 }

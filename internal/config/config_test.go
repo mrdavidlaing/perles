@@ -2455,7 +2455,7 @@ func TestNormalizeKey_CtrlSpace(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.input, func(t *testing.T) {
-			result := normalizeKey(tc.input)
+			result := NormalizeKey(tc.input)
 			require.Equal(t, tc.expected, result)
 		})
 	}
@@ -2477,7 +2477,7 @@ func TestNormalizeKey_CaseInsensitive(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.input, func(t *testing.T) {
-			result := normalizeKey(tc.input)
+			result := NormalizeKey(tc.input)
 			require.Equal(t, tc.expected, result)
 		})
 	}
@@ -2496,7 +2496,7 @@ func TestNormalizeKey_TrimWhitespace(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.input, func(t *testing.T) {
-			result := normalizeKey(tc.input)
+			result := NormalizeKey(tc.input)
 			require.Equal(t, tc.expected, result)
 		})
 	}
@@ -2561,4 +2561,108 @@ func TestDefaultDatabasePath(t *testing.T) {
 	require.NotEmpty(t, path, "DefaultDatabasePath should return a path")
 	require.Contains(t, path, ".perles", "Path should contain .perles")
 	require.Contains(t, path, "perles-test.db", "Path should contain perles-test.db when running tests")
+}
+
+// ValidateActions Tests
+
+func TestValidateActions_OnlyAllows0Through9(t *testing.T) {
+	// Keys 0-9 should be accepted
+	validKeys := []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"}
+
+	for _, key := range validKeys {
+		t.Run(key, func(t *testing.T) {
+			actions := ActionsConfig{
+				IssueAction: map[string]ActionConfig{
+					"test": {Key: key, Command: "echo test"},
+				},
+			}
+			err := ValidateActions(actions)
+			require.NoError(t, err, "key %q should be valid", key)
+		})
+	}
+}
+
+func TestValidateActions_RejectsKeysOutsideRange(t *testing.T) {
+	// Keys outside 0-9 should be rejected
+	invalidKeys := []string{
+		"a",       // letter
+		"f1",      // function key
+		"ctrl+1",  // modifier combo
+		"ctrl+a",  // ctrl+letter
+		"alt+z",   // alt combo
+		"space",   // special key
+		"enter",   // special key
+		"q",       // letter
+		"/",       // symbol
+		"shift+1", // shift combo
+	}
+
+	for _, key := range invalidKeys {
+		t.Run(key, func(t *testing.T) {
+			actions := ActionsConfig{
+				IssueAction: map[string]ActionConfig{
+					"test": {Key: key, Command: "echo test"},
+				},
+			}
+			err := ValidateActions(actions)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "key must be 0-9")
+		})
+	}
+}
+
+func TestValidateActions_AcceptsIssueActionKey(t *testing.T) {
+	// New issue_action config format should work
+	actions := ActionsConfig{
+		IssueAction: map[string]ActionConfig{
+			"claude": {
+				Key:         "1",
+				Command:     "tmux split-window -h 'claude \"Work on {{.ID}}\"'",
+				Description: "Open Claude with current issue",
+			},
+			"copy_title": {
+				Key:         "2",
+				Command:     "echo '{{.TitleText}}' | pbcopy",
+				Description: "Copy issue title",
+			},
+		},
+	}
+	err := ValidateActions(actions)
+	require.NoError(t, err)
+}
+
+func TestValidateActions_EmptyMapValid(t *testing.T) {
+	// Empty/nil actions shouldn't error
+	err := ValidateActions(ActionsConfig{})
+	require.NoError(t, err)
+
+	err = ValidateActions(ActionsConfig{IssueAction: nil})
+	require.NoError(t, err)
+
+	err = ValidateActions(ActionsConfig{IssueAction: map[string]ActionConfig{}})
+	require.NoError(t, err)
+}
+
+func TestValidateActions_MissingKey(t *testing.T) {
+	// Empty key should return error
+	actions := ActionsConfig{
+		IssueAction: map[string]ActionConfig{
+			"test": {Key: "", Command: "echo test"},
+		},
+	}
+	err := ValidateActions(actions)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "key is required")
+}
+
+func TestValidateActions_MissingCommand(t *testing.T) {
+	// Empty command should return error
+	actions := ActionsConfig{
+		IssueAction: map[string]ActionConfig{
+			"test": {Key: "1", Command: ""},
+		},
+	}
+	err := ValidateActions(actions)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "command is required")
 }
