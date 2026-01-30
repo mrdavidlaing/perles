@@ -29,6 +29,7 @@ import (
 	"github.com/zjrosen/perles/internal/ui/shared/overlay"
 	"github.com/zjrosen/perles/internal/ui/shared/panes"
 	"github.com/zjrosen/perles/internal/ui/shared/selection"
+	"github.com/zjrosen/perles/internal/ui/shared/threadpicker"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
 	"github.com/zjrosen/perles/internal/ui/styles"
@@ -107,6 +108,13 @@ type CoordinatorPanel struct {
 
 	// @mention autocomplete state
 	mentionModel mention.Model
+
+	// Thread picker state for selecting existing threads in a channel
+	threadPickerModel threadpicker.Model
+
+	// Thread state for fabric channels (per-channel)
+	// Maps channel slug to active thread ID. When set, messages are sent as replies.
+	activeThreadIDs map[string]string
 }
 
 // coordinatorTitleColor is the base color for coordinator title text.
@@ -207,6 +215,10 @@ func NewCoordinatorPanel(debugMode, vimMode bool, clipboard shared.Clipboard) *C
 		channelSlugs:  []string{"dm", fabricdomain.SlugGeneral, fabricdomain.SlugTasks, fabricdomain.SlugPlanning},
 		// @mention autocomplete
 		mentionModel: mention.New(),
+		// Thread picker for selecting existing threads
+		threadPickerModel: threadpicker.New(),
+		// Thread state (per-channel)
+		activeThreadIDs: make(map[string]string),
 	}
 
 	// Initialize VirtualSelectablePane for coordinator
@@ -464,9 +476,17 @@ func (p *CoordinatorPanel) IsDMMode() bool {
 }
 
 // CycleChannel cycles to the next channel (dm -> general -> tasks -> planning -> dm).
+// Also syncs the active tab: DM -> Coord tab, fabric channels -> Msgs tab.
 func (p *CoordinatorPanel) CycleChannel() {
 	p.activeChannel = (p.activeChannel + 1) % len(p.channelSlugs)
 	p.updatePlaceholder()
+
+	// Sync tab to channel context
+	if p.IsDMMode() {
+		p.activeTab = TabCoordinator
+	} else {
+		p.activeTab = TabMessages
+	}
 }
 
 // updatePlaceholder updates the input placeholder based on active channel.
@@ -477,6 +497,57 @@ func (p *CoordinatorPanel) updatePlaceholder() {
 	} else {
 		p.input.SetPlaceholder("Message #" + channel + "...")
 	}
+}
+
+// ActiveThreadID returns the active thread ID for the current channel.
+// Returns empty string if no thread is active (messages will create new threads).
+func (p *CoordinatorPanel) ActiveThreadID() string {
+	channel := p.ActiveChannel()
+	if channel == "dm" {
+		return "" // DM mode has no threads
+	}
+	return p.activeThreadIDs[channel]
+}
+
+// SetActiveThread sets the active thread ID for the current channel.
+func (p *CoordinatorPanel) SetActiveThread(threadID string) {
+	channel := p.ActiveChannel()
+	if channel == "dm" {
+		return // DM mode has no threads
+	}
+	p.activeThreadIDs[channel] = threadID
+}
+
+// ClearActiveThread clears the active thread for the current channel.
+func (p *CoordinatorPanel) ClearActiveThread() {
+	channel := p.ActiveChannel()
+	delete(p.activeThreadIDs, channel)
+}
+
+// formatThreadIndicator returns a short thread indicator for display.
+// Returns empty string if no thread is active or in DM mode.
+func (p *CoordinatorPanel) formatThreadIndicator() string {
+	threadID := p.ActiveThreadID()
+	if threadID == "" {
+		return ""
+	}
+	// Show short hash (first 6 chars) with reply icon
+	shortID := threadID
+	if len(shortID) > 6 {
+		shortID = shortID[:6]
+	}
+	return "↩ " + shortID
+}
+
+// ActivateThreadPicker activates the thread picker with the given threads.
+// Called by Model when ThreadsLoadedMsg is received.
+func (p *CoordinatorPanel) ActivateThreadPicker(threads []fabricdomain.Thread) {
+	p.threadPickerModel = p.threadPickerModel.Activate(threads)
+}
+
+// IsThreadPickerActive returns true if the thread picker is currently showing.
+func (p *CoordinatorPanel) IsThreadPickerActive() bool {
+	return p.threadPickerModel.IsActive()
 }
 
 // updateMentionProcesses updates the list of mentionable processes.
@@ -507,6 +578,23 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 
 		// Handle input when focused
 		if p.focused {
+			// If thread picker is active, handle its keys first
+			if p.threadPickerModel.IsActive() {
+				model, consumed, selected := p.threadPickerModel.HandleKey(msg)
+				p.threadPickerModel = model
+				if selected != nil {
+					// Set the selected thread as active for this channel
+					channel := p.ActiveChannel()
+					if channel != "dm" {
+						p.activeThreadIDs[channel] = selected.ID
+					}
+					return p, nil
+				}
+				if consumed {
+					return p, nil
+				}
+			}
+
 			// If @mention autocomplete is active, handle its keys first
 			if p.mentionModel.IsActive() {
 				model, consumed, selected := p.mentionModel.HandleKey(msg)
@@ -521,9 +609,42 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 				}
 			}
 
+			// Handle Ctrl+t for thread picker (toggle - only for fabric channels, not DM)
+			if msg.String() == "ctrl+t" && !p.mentionModel.IsActive() {
+				// If picker is already open, close it
+				if p.threadPickerModel.IsActive() {
+					p.threadPickerModel = p.threadPickerModel.Deactivate()
+					return p, nil
+				}
+				channel := p.ActiveChannel()
+				if channel == "dm" {
+					// Show hint that thread picker is only for fabric channels
+					return p, func() tea.Msg {
+						return mode.ShowToastMsg{
+							Message: "Thread picker: switch to a channel first (Tab)",
+							Style:   toaster.StyleInfo,
+						}
+					}
+				}
+				// Request thread loading from parent (Model handles the async load)
+				return p, func() tea.Msg {
+					return LoadThreadsMsg{
+						WorkflowID: p.workflowID,
+						Channel:    channel,
+					}
+				}
+			}
+
 			// Handle Tab for channel cycling (only when not in autocomplete)
-			if msg.String() == "tab" && !p.mentionModel.IsActive() {
+			if msg.String() == "tab" && !p.mentionModel.IsActive() && !p.threadPickerModel.IsActive() {
 				p.CycleChannel()
+				return p, nil
+			}
+
+			// Handle Esc to clear active thread (when in insert mode with empty input)
+			// If input has content, Esc is handled by vimtextarea to switch to normal mode
+			if msg.String() == "esc" && p.ActiveThreadID() != "" && p.input.Value() == "" {
+				p.ClearActiveThread()
 				return p, nil
 			}
 
@@ -571,11 +692,13 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 			p.input.Reset()
 			p.mentionModel = p.mentionModel.Deactivate() // Clear any active autocomplete
 			channel := p.ActiveChannel()
+			threadID := p.ActiveThreadID() // Get active thread for reply
 			return p, func() tea.Msg {
 				return CoordinatorPanelSubmitMsg{
 					WorkflowID: p.workflowID,
 					Content:    content,
 					Channel:    channel,
+					ThreadID:   threadID,
 				}
 			}
 		}
@@ -681,7 +804,22 @@ func (p *CoordinatorPanel) View() string {
 	// Build base view
 	baseView := lipgloss.JoinVertical(lipgloss.Left, tabbedPane, inputView)
 
-	// If autocomplete is active, overlay it above the input (left-aligned)
+	// If thread picker is active, overlay it above the input (left-aligned)
+	if p.threadPickerModel.IsActive() {
+		pickerView := p.threadPickerModel.View(p.width - 4)
+		if pickerView != "" {
+			// Position picker just above the input area, left-aligned with 1 char padding
+			return overlay.Place(overlay.Config{
+				Width:    p.width,
+				Height:   p.height,
+				Position: overlay.BottomLeft,
+				PadX:     1, // Align with input text (1 char from border)
+				PadY:     inputHeight,
+			}, pickerView, baseView)
+		}
+	}
+
+	// If mention autocomplete is active, overlay it above the input (left-aligned)
 	if p.mentionModel.IsActive() {
 		autocompleteView := p.mentionModel.View(p.width - 4)
 		if autocompleteView != "" {
@@ -1195,11 +1333,20 @@ func (p *CoordinatorPanel) renderInputPane(width, height int) string {
 		channelIndicator = defaultStyle.Render("#" + channel)
 	}
 
+	// Build thread indicator for top-right (only shown when in active thread)
+	threadIndicator := p.formatThreadIndicator()
+	if threadIndicator != "" {
+		// Style with muted color to not distract from input
+		threadStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)
+		threadIndicator = threadStyle.Render(threadIndicator)
+	}
+
 	// Use default border color for input pane (no highlighting)
 	return panes.BorderedPane(panes.BorderConfig{
 		Content:            content,
 		Width:              width,
 		Height:             height,
+		TopRight:           threadIndicator,
 		BottomLeft:         p.input.ModeIndicator(),
 		BottomRight:        channelIndicator,
 		Focused:            false, // Don't show focused border styling
@@ -1294,7 +1441,31 @@ func padLineToWidth(line string, width int) string {
 type CoordinatorPanelSubmitMsg struct {
 	WorkflowID controlplane.WorkflowID
 	Content    string
-	Channel    string // Fabric channel slug (general, tasks, planning)
+	Channel    string // Fabric channel slug (dm, general, tasks, planning)
+	ThreadID   string // Thread ID for replies (empty = new thread)
+}
+
+// FabricThreadCreatedMsg is sent when a new thread is created from a fabric message.
+// The coordinator panel uses this to set the active thread for replies.
+type FabricThreadCreatedMsg struct {
+	WorkflowID controlplane.WorkflowID
+	Channel    string // Channel slug where thread was created
+	ThreadID   string // The new thread ID
+}
+
+// LoadThreadsMsg requests loading threads for the thread picker.
+// Sent from CoordinatorPanel when user presses Ctrl+t.
+type LoadThreadsMsg struct {
+	WorkflowID controlplane.WorkflowID
+	Channel    string // Channel slug to load threads from
+}
+
+// ThreadsLoadedMsg contains loaded threads for the thread picker.
+// Sent from Model after loading threads from fabric service.
+type ThreadsLoadedMsg struct {
+	WorkflowID controlplane.WorkflowID
+	Channel    string                // Channel slug threads were loaded from
+	Threads    []fabricdomain.Thread // Loaded threads
 }
 
 // sendToCoordinator sends a message to the coordinator of the specified workflow.
@@ -1330,7 +1501,9 @@ func (m Model) sendToCoordinator(workflowID controlplane.WorkflowID, content str
 
 // sendToFabricChannel sends a message to a fabric channel.
 // The message is posted to the specified channel using the workflow's fabric service.
-func (m Model) sendToFabricChannel(workflowID controlplane.WorkflowID, channelSlug, content string) tea.Cmd {
+// If threadID is provided, the message is sent as a reply to that thread.
+// If threadID is empty, a new thread is created and FabricThreadCreatedMsg is returned.
+func (m Model) sendToFabricChannel(workflowID controlplane.WorkflowID, channelSlug, content, threadID string) tea.Cmd {
 	return func() tea.Msg {
 		if m.controlPlane == nil {
 			return nil
@@ -1350,19 +1523,74 @@ func (m Model) sendToFabricChannel(workflowID controlplane.WorkflowID, channelSl
 
 		fabricSvc := wf.Infrastructure.Core.FabricService
 
-		// Send message to the fabric channel
-		_, err = fabricSvc.SendMessage(fabric.SendMessageInput{
-			ChannelSlug: channelSlug,
-			Content:     content,
-			Kind:        fabricdomain.KindInfo,
-			CreatedBy:   "user", // User-originated message
-		})
-		if err != nil {
-			// Log error but don't fail - the message just won't appear in the channel
+		if threadID != "" {
+			// Reply to existing thread
+			_, err = fabricSvc.Reply(fabric.ReplyInput{
+				MessageID: threadID,
+				Content:   content,
+				Kind:      fabricdomain.KindInfo,
+				CreatedBy: "user",
+			})
+			if err != nil {
+				// Log error but don't fail
+				return nil
+			}
+			// Thread ID stays the same for replies
 			return nil
 		}
 
-		return nil
+		// Create new message (starts new thread)
+		thread, err := fabricSvc.SendMessage(fabric.SendMessageInput{
+			ChannelSlug: channelSlug,
+			Content:     content,
+			Kind:        fabricdomain.KindInfo,
+			CreatedBy:   "user",
+		})
+		if err != nil {
+			// Log error but don't fail
+			return nil
+		}
+
+		// Return message to set active thread
+		return FabricThreadCreatedMsg{
+			WorkflowID: workflowID,
+			Channel:    channelSlug,
+			ThreadID:   thread.ID,
+		}
+	}
+}
+
+// loadThreadsForChannel loads threads from a fabric channel for the thread picker.
+func (m Model) loadThreadsForChannel(workflowID controlplane.WorkflowID, channelSlug string) tea.Cmd {
+	return func() tea.Msg {
+		if m.controlPlane == nil {
+			return nil
+		}
+
+		// Get the workflow to access its infrastructure
+		wf, err := m.controlPlane.Get(context.Background(), workflowID)
+		if err != nil || wf == nil {
+			return nil
+		}
+
+		// Get the fabric service from the workflow's infrastructure
+		if wf.Infrastructure == nil || wf.Infrastructure.Core.FabricService == nil {
+			return nil
+		}
+
+		fabricSvc := wf.Infrastructure.Core.FabricService
+
+		// List messages (root threads) in the channel
+		threads, err := fabricSvc.ListMessages(channelSlug, 0) // 0 = no limit
+		if err != nil {
+			return nil
+		}
+
+		return ThreadsLoadedMsg{
+			WorkflowID: workflowID,
+			Channel:    channelSlug,
+			Threads:    threads,
+		}
 	}
 }
 

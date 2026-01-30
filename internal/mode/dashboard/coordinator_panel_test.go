@@ -19,6 +19,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
+	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
 )
 
 func TestNewCoordinatorPanel(t *testing.T) {
@@ -1691,4 +1692,247 @@ func TestCoordinatorPanel_SubmitMsg_IncludesChannel(t *testing.T) {
 	// We can't easily trigger the full flow here, but we verified the
 	// ActiveChannel() returns correct value
 	_ = cmd
+}
+
+// === Channel-Tab Sync Tests ===
+
+func TestCoordinatorPanel_CycleChannel_SyncsTab(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Default is DM mode, tab should be Coordinator
+	require.Equal(t, "dm", panel.ActiveChannel())
+	require.Equal(t, TabCoordinator, panel.activeTab)
+
+	// Cycle to general - tab should switch to Messages
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugGeneral, panel.ActiveChannel())
+	require.Equal(t, TabMessages, panel.activeTab)
+
+	// Cycle to tasks - tab stays Messages
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugTasks, panel.ActiveChannel())
+	require.Equal(t, TabMessages, panel.activeTab)
+
+	// Cycle to planning - tab stays Messages
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugPlanning, panel.ActiveChannel())
+	require.Equal(t, TabMessages, panel.activeTab)
+
+	// Cycle back to DM - tab should switch back to Coordinator
+	panel.CycleChannel()
+	require.Equal(t, "dm", panel.ActiveChannel())
+	require.Equal(t, TabCoordinator, panel.activeTab)
+}
+
+func TestCoordinatorPanel_ManualTabSwitch_IndependentOfChannel(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Start in DM mode (Coordinator tab)
+	require.Equal(t, "dm", panel.ActiveChannel())
+	require.Equal(t, TabCoordinator, panel.activeTab)
+
+	// Manually switch to Messages tab
+	panel.NextTab()
+	require.Equal(t, TabMessages, panel.activeTab)
+	// Channel should remain DM
+	require.Equal(t, "dm", panel.ActiveChannel())
+
+	// Switch back to Coordinator tab
+	panel.PrevTab()
+	require.Equal(t, TabCoordinator, panel.activeTab)
+	require.Equal(t, "dm", panel.ActiveChannel())
+}
+
+// === Thread State Tests ===
+
+func TestCoordinatorPanel_ActiveThreadID_DefaultsEmpty(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+
+	// No active thread by default
+	require.Empty(t, panel.ActiveThreadID())
+}
+
+func TestCoordinatorPanel_ActiveThreadID_DMHasNoThreads(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+
+	// In DM mode, setting a thread should have no effect
+	require.True(t, panel.IsDMMode())
+	panel.SetActiveThread("thread-123")
+	require.Empty(t, panel.ActiveThreadID())
+}
+
+func TestCoordinatorPanel_ThreadState_PerChannel(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Cycle to general channel
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugGeneral, panel.ActiveChannel())
+
+	// Set thread for general
+	panel.SetActiveThread("thread-general-123")
+	require.Equal(t, "thread-general-123", panel.ActiveThreadID())
+
+	// Cycle to tasks channel
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugTasks, panel.ActiveChannel())
+
+	// Tasks should have no thread
+	require.Empty(t, panel.ActiveThreadID())
+
+	// Set thread for tasks
+	panel.SetActiveThread("thread-tasks-456")
+	require.Equal(t, "thread-tasks-456", panel.ActiveThreadID())
+
+	// Cycle back to general - thread should still be there
+	panel.CycleChannel() // planning
+	panel.CycleChannel() // dm
+	panel.CycleChannel() // general
+	require.Equal(t, fabricDomain.SlugGeneral, panel.ActiveChannel())
+	require.Equal(t, "thread-general-123", panel.ActiveThreadID())
+}
+
+func TestCoordinatorPanel_ClearActiveThread(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Cycle to general channel
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugGeneral, panel.ActiveChannel())
+
+	// Set and verify thread
+	panel.SetActiveThread("thread-123")
+	require.Equal(t, "thread-123", panel.ActiveThreadID())
+
+	// Clear the thread
+	panel.ClearActiveThread()
+	require.Empty(t, panel.ActiveThreadID())
+}
+
+func TestCoordinatorPanel_FormatThreadIndicator(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// No thread - empty indicator
+	require.Empty(t, panel.formatThreadIndicator())
+
+	// Cycle to general and set thread
+	panel.CycleChannel()
+	panel.SetActiveThread("abcdefghij")
+
+	// Should show short hash with reply icon
+	indicator := panel.formatThreadIndicator()
+	require.Equal(t, "↩ abcdef", indicator)
+}
+
+func TestCoordinatorPanel_FormatThreadIndicator_ShortID(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Cycle to general and set short thread ID
+	panel.CycleChannel()
+	panel.SetActiveThread("abc")
+
+	// Should show full ID if less than 6 chars
+	indicator := panel.formatThreadIndicator()
+	require.Equal(t, "↩ abc", indicator)
+}
+
+func TestCoordinatorPanel_ThreadIndicator_ShownInView(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Cycle to general and set thread
+	panel.CycleChannel()
+	panel.SetActiveThread("thread123456")
+
+	view := panel.View()
+	// Should contain the short thread indicator
+	require.Contains(t, view, "↩ thread", "view should show thread indicator")
+}
+
+func TestCoordinatorPanel_EscClearsThread_WhenInputEmpty(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+	panel.Focus()
+
+	// Cycle to general and set thread
+	panel.CycleChannel()
+	panel.SetActiveThread("thread-123")
+	require.Equal(t, "thread-123", panel.ActiveThreadID())
+
+	// Press Esc with empty input
+	require.Empty(t, panel.input.Value())
+	panel, _ = panel.Update(tea.KeyMsg{Type: tea.KeyEscape})
+
+	// Thread should be cleared
+	require.Empty(t, panel.ActiveThreadID())
+}
+
+func TestCoordinatorPanel_EscDoesNotClearThread_WhenInputHasContent(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+	panel.Focus()
+
+	// Cycle to general and set thread
+	panel.CycleChannel()
+	panel.SetActiveThread("thread-123")
+
+	// Type something in input
+	panel.input.SetValue("some text")
+
+	// Press Esc - should be handled by vimtextarea for mode switching, not clear thread
+	panel, _ = panel.Update(tea.KeyMsg{Type: tea.KeyEscape})
+
+	// Thread should still be there
+	require.Equal(t, "thread-123", panel.ActiveThreadID())
+}
+
+func TestCoordinatorPanel_SubmitMsg_IncludesThreadID(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+	panel.SetWorkflow("wf-123", nil)
+	panel.Focus()
+
+	// Cycle to general and set thread
+	panel.CycleChannel()
+	panel.SetActiveThread("thread-abc")
+
+	// Set input value
+	panel.input.SetValue("Hello thread")
+
+	// Simulate submit by sending SubmitMsg directly
+	panel, cmd := panel.Update(vimtextarea.SubmitMsg{Content: "Hello thread"})
+
+	// Execute the command to get the message
+	require.NotNil(t, cmd)
+	msg := cmd()
+
+	submitMsg, ok := msg.(CoordinatorPanelSubmitMsg)
+	require.True(t, ok)
+	require.Equal(t, "wf-123", string(submitMsg.WorkflowID))
+	require.Equal(t, "Hello thread", submitMsg.Content)
+	require.Equal(t, fabricDomain.SlugGeneral, submitMsg.Channel)
+	require.Equal(t, "thread-abc", submitMsg.ThreadID)
+}
+
+func TestCoordinatorPanel_SubmitMsg_EmptyThreadForNewMessage(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+	panel.SetWorkflow("wf-123", nil)
+	panel.Focus()
+
+	// Cycle to general (no thread set)
+	panel.CycleChannel()
+	require.Empty(t, panel.ActiveThreadID())
+
+	// Submit message
+	panel, cmd := panel.Update(vimtextarea.SubmitMsg{Content: "New message"})
+
+	msg := cmd()
+	submitMsg, ok := msg.(CoordinatorPanelSubmitMsg)
+	require.True(t, ok)
+	require.Empty(t, submitMsg.ThreadID)
 }

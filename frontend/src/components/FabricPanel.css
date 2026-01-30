@@ -409,8 +409,8 @@
 
 /* Thread Panel */
 .thread-panel {
-  width: 380px;
-  min-width: 320px;
+  width: 570px;
+  min-width: 480px;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
   display: flex;

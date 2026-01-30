@@ -2970,3 +2970,107 @@ func createTestModelWithFlags(t *testing.T, workflows []*controlplane.WorkflowIn
 
 	return m, mockCP
 }
+
+// === FabricThreadCreatedMsg Tests ===
+
+func TestModel_FabricThreadCreatedMsg_SetsActiveThread(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Test Workflow", controlplane.WorkflowRunning),
+	}
+	m, _ := createTestModel(t, workflows)
+
+	// Open coordinator panel for the workflow
+	m.selectedIndex = 0
+	m.openCoordinatorPanelForSelected()
+	require.NotNil(t, m.coordinatorPanel)
+
+	// Switch to general channel
+	m.coordinatorPanel.CycleChannel()
+	require.Equal(t, "general", m.coordinatorPanel.ActiveChannel())
+	require.Empty(t, m.coordinatorPanel.ActiveThreadID())
+
+	// Send FabricThreadCreatedMsg
+	updated, _ := m.Update(FabricThreadCreatedMsg{
+		WorkflowID: "wf-1",
+		Channel:    "general",
+		ThreadID:   "thread-abc123",
+	})
+	m = updated.(Model)
+
+	// Thread should be set
+	require.Equal(t, "thread-abc123", m.coordinatorPanel.ActiveThreadID())
+}
+
+func TestModel_FabricThreadCreatedMsg_IgnoresWrongWorkflow(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Test Workflow", controlplane.WorkflowRunning),
+	}
+	m, _ := createTestModel(t, workflows)
+
+	// Open coordinator panel for wf-1
+	m.selectedIndex = 0
+	m.openCoordinatorPanelForSelected()
+	require.NotNil(t, m.coordinatorPanel)
+
+	// Switch to general channel
+	m.coordinatorPanel.CycleChannel()
+
+	// Send FabricThreadCreatedMsg for wrong workflow
+	updated, _ := m.Update(FabricThreadCreatedMsg{
+		WorkflowID: "wf-other",
+		Channel:    "general",
+		ThreadID:   "thread-abc123",
+	})
+	m = updated.(Model)
+
+	// Thread should NOT be set
+	require.Empty(t, m.coordinatorPanel.ActiveThreadID())
+}
+
+func TestModel_FabricThreadCreatedMsg_IgnoresWrongChannel(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Test Workflow", controlplane.WorkflowRunning),
+	}
+	m, _ := createTestModel(t, workflows)
+
+	// Open coordinator panel for wf-1
+	m.selectedIndex = 0
+	m.openCoordinatorPanelForSelected()
+	require.NotNil(t, m.coordinatorPanel)
+
+	// Switch to general channel
+	m.coordinatorPanel.CycleChannel()
+	require.Equal(t, "general", m.coordinatorPanel.ActiveChannel())
+
+	// Send FabricThreadCreatedMsg for wrong channel (tasks)
+	updated, _ := m.Update(FabricThreadCreatedMsg{
+		WorkflowID: "wf-1",
+		Channel:    "tasks",
+		ThreadID:   "thread-abc123",
+	})
+	m = updated.(Model)
+
+	// Thread should NOT be set (current channel is general)
+	require.Empty(t, m.coordinatorPanel.ActiveThreadID())
+}
+
+func TestModel_FabricThreadCreatedMsg_NoPanelOpen(t *testing.T) {
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Test Workflow", controlplane.WorkflowRunning),
+	}
+	m, _ := createTestModel(t, workflows)
+
+	// No coordinator panel open
+	require.Nil(t, m.coordinatorPanel)
+
+	// Send FabricThreadCreatedMsg - should not panic
+	updated, _ := m.Update(FabricThreadCreatedMsg{
+		WorkflowID: "wf-1",
+		Channel:    "general",
+		ThreadID:   "thread-abc123",
+	})
+	m = updated.(Model)
+
+	// Should still have no panel
+	require.Nil(t, m.coordinatorPanel)
+}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { FabricEvent } from '../types'
 import { hashColor } from '../utils/colors'
 import './FabricPanel.css'
@@ -190,10 +190,12 @@ export default function FabricPanel({ events }: Props) {
   const selectedChannel = channels.find(c => c.id === selectedChannelId)
 
   // Auto-select first channel with messages (only if no valid channel selected)
-  if (channels.length > 0 && !selectedChannel) {
-    const firstWithMessages = channels.find(c => c.messageCount > 0) || channels[0]
-    setSelectedChannelId(firstWithMessages.id)
-  }
+  useEffect(() => {
+    if (channels.length > 0 && !selectedChannel) {
+      const firstWithMessages = channels.find(c => c.messageCount > 0) || channels[0]
+      setSelectedChannelId(firstWithMessages.id)
+    }
+  }, [channels, selectedChannel])
 
   const formatTime = (ts: string) => {
     const date = new Date(ts)

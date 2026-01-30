@@ -621,7 +621,40 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 		if msg.Channel == "dm" {
 			return m, m.sendToCoordinator(msg.WorkflowID, msg.Content)
 		}
-		return m, m.sendToFabricChannel(msg.WorkflowID, msg.Channel, msg.Content)
+		return m, m.sendToFabricChannel(msg.WorkflowID, msg.Channel, msg.Content, msg.ThreadID)
+
+	case FabricThreadCreatedMsg:
+		// Set the active thread for the channel in the coordinator panel
+		if m.coordinatorPanel != nil && m.coordinatorPanel.workflowID == msg.WorkflowID {
+			// Only set if the panel is showing the same channel
+			if m.coordinatorPanel.ActiveChannel() == msg.Channel {
+				m.coordinatorPanel.SetActiveThread(msg.ThreadID)
+			}
+		}
+		return m, nil
+
+	case LoadThreadsMsg:
+		// Load threads for the thread picker
+		return m, m.loadThreadsForChannel(msg.WorkflowID, msg.Channel)
+
+	case ThreadsLoadedMsg:
+		// Activate thread picker with loaded threads
+		if m.coordinatorPanel != nil && m.coordinatorPanel.workflowID == msg.WorkflowID {
+			// Only activate if still on the same channel
+			if m.coordinatorPanel.ActiveChannel() == msg.Channel {
+				if len(msg.Threads) == 0 {
+					// No threads in this channel - show toast
+					return m, func() tea.Msg {
+						return mode.ShowToastMsg{
+							Message: "No threads in #" + msg.Channel,
+							Style:   toaster.StyleInfo,
+						}
+					}
+				}
+				m.coordinatorPanel.ActivateThreadPicker(msg.Threads)
+			}
+		}
+		return m, nil
 
 	case vimtextarea.SubmitMsg:
 		// Forward to coordinator panel if open
