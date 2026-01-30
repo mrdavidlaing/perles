@@ -48,7 +48,7 @@ func (m Model) View() string {
 	var tabContent string
 	switch m.activeTab {
 	case TabChat:
-		// Get viewport from active session for per-session scroll state
+		// Get pane from active session for per-session scroll state and selection
 		session := m.ActiveSession()
 		if session == nil {
 			tabContent = ""
@@ -70,26 +70,15 @@ func (m Model) View() string {
 			break
 		}
 
-		// Render chat messages using viewport
-		content := m.renderMessages(vpWidth)
+		// Use VirtualSelectablePane for O(visible) rendering with text selection
+		// SetMessages handles content conversion and auto-scroll behavior internally
+		session.Pane.SetMessages(session.Messages, vpWidth, chatrender.RenderConfig{
+			AgentLabel: "Assistant",
+			AgentColor: chatrender.AssistantColor,
+		})
+		session.Pane.SetSize(vpWidth, contentHeight)
 
-		// Pad content to push to bottom (chat-like behavior)
-		contentLines := len(splitLines(content))
-		if contentLines < contentHeight {
-			padding := make([]string, contentHeight-contentLines)
-			content = joinLines(append(padding, splitLines(content)...))
-		}
-
-		// Update viewport from session
-		wasAtBottom := session.Viewport.AtBottom()
-		session.Viewport.Width = vpWidth
-		session.Viewport.Height = contentHeight
-		session.Viewport.SetContent(content)
-		if wasAtBottom {
-			session.Viewport.GotoBottom()
-		}
-
-		tabContent = session.Viewport.View()
+		tabContent = session.Pane.View()
 
 	case TabSessions:
 		tabContent = m.renderSessionsTab(contentHeight)
@@ -174,34 +163,6 @@ func (m Model) View() string {
 		tabbedPane,
 		inputPane,
 	)
-}
-
-// splitLines splits a string into lines.
-func splitLines(s string) []string {
-	if s == "" {
-		return []string{}
-	}
-	return strings.Split(s, "\n")
-}
-
-// joinLines joins lines with newlines.
-func joinLines(lines []string) string {
-	return strings.Join(lines, "\n")
-}
-
-// renderMessages renders the chat messages using the shared chatrender package.
-// Uses the active session's messages for multi-session support.
-func (m Model) renderMessages(wrapWidth int) string {
-	session := m.ActiveSession()
-	if session == nil || len(session.Messages) == 0 {
-		return ""
-	}
-
-	// Use shared renderer with "You" label (default) and "Assistant" agent label
-	return chatrender.RenderContent(session.Messages, wrapWidth, chatrender.RenderConfig{
-		AgentLabel: "Assistant",
-		AgentColor: chatrender.AssistantColor,
-	})
 }
 
 // renderLoadingIndicator renders a centered loading indicator with spinner.

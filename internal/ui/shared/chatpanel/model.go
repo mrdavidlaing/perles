@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/zjrosen/perles/internal/mode"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
 	v2 "github.com/zjrosen/perles/internal/orchestration/v2"
@@ -21,16 +21,13 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/workflow"
 	"github.com/zjrosen/perles/internal/pubsub"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
+	"github.com/zjrosen/perles/internal/ui/shared/selection"
+	"github.com/zjrosen/perles/internal/ui/shared/toaster"
 	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
 )
 
 // ErrNoInfrastructure is returned when attempting to use infrastructure before it's set.
 var ErrNoInfrastructure = errors.New("infrastructure not set")
-
-// viewportKey is the map key for the single viewport.
-// Using a map instead of a direct field allows changes to persist in View methods
-// since maps are reference types.
-const viewportKey = "main"
 
 // Tab indices for the chat panel.
 const (
@@ -52,15 +49,16 @@ type SessionData struct {
 	ProcessID string
 	// Messages holds the chat history for this session.
 	Messages []chatrender.Message
-	// Viewport manages scroll state for this session.
-	Viewport viewport.Model
+	// Pane manages virtual scrolling and text selection for this session.
+	// Uses VirtualSelectablePane for O(visible) rendering instead of O(n).
+	Pane *selection.VirtualSelectablePane
 	// Status indicates the process status (Ready, Working, etc.).
 	Status events.ProcessStatus
 	// Metrics tracks token usage for this session.
 	Metrics *metrics.TokenMetrics
 	// QueueCount is the number of messages queued for the assistant.
 	QueueCount int
-	// ContentDirty indicates the viewport needs re-rendering.
+	// ContentDirty indicates the pane needs re-rendering.
 	ContentDirty bool
 	// HasNewContent indicates new content arrived while scrolled up.
 	HasNewContent bool
@@ -81,8 +79,7 @@ type Model struct {
 	config    Config
 
 	// UI components
-	input     vimtextarea.Model
-	viewports map[string]viewport.Model // Use map so changes persist in View (maps are reference types)
+	input vimtextarea.Model
 
 	// Infrastructure for AI communication (uses v2.SimpleInfrastructure)
 	infra      *v2.SimpleInfrastructure
@@ -115,6 +112,10 @@ type Model struct {
 
 	// Clock is the time source for testing. If nil, uses time.Now().
 	Clock func() time.Time
+
+	// Screen position for mouse coordinate mapping (set by parent)
+	screenXOffset int
+	screenYOffset int
 }
 
 // spinnerFrames defines the braille spinner animation sequence.
@@ -140,13 +141,24 @@ func New(cfg Config) Model {
 		input = input.SetClipboard(cfg.Clipboard)
 	}
 
-	// Create initial session
+	// Create toast factory for selection pane
+	makeToast := func(message string, isError bool) tea.Cmd {
+		style := toaster.StyleSuccess
+		if isError {
+			style = toaster.StyleError
+		}
+		return func() tea.Msg {
+			return mode.ShowToastMsg{Message: message, Style: style}
+		}
+	}
+
+	// Create initial session with VirtualSelectablePane
 	now := time.Now()
 	initialSession := &SessionData{
 		ID:           DefaultSessionID,
 		ProcessID:    ChatPanelProcessID,
 		Messages:     make([]chatrender.Message, 0),
-		Viewport:     viewport.New(0, 0),
+		Pane:         selection.NewVirtualSelectablePane(cfg.Clipboard, makeToast),
 		Status:       events.ProcessStatusPending,
 		ContentDirty: true,
 		CreatedAt:    now,
@@ -154,12 +166,11 @@ func New(cfg Config) Model {
 	}
 
 	return Model{
-		visible:   false,
-		focused:   false,
-		config:    cfg,
-		messages:  make([]chatrender.Message, 0),
-		input:     input,
-		viewports: map[string]viewport.Model{viewportKey: viewport.New(0, 0)},
+		visible:  false,
+		focused:  false,
+		config:   cfg,
+		messages: make([]chatrender.Message, 0),
+		input:    input,
 		// Initialize multi-session maps
 		sessions:         map[string]*SessionData{DefaultSessionID: initialSession},
 		sessionOrder:     []string{DefaultSessionID},
@@ -233,6 +244,28 @@ func (m Model) SetSize(width, height int) Model {
 	// Mark active session's content as dirty for re-render
 	if session := m.ActiveSession(); session != nil {
 		session.ContentDirty = true
+	}
+
+	return m
+}
+
+// SetScreenPosition sets the chat panel's screen position for mouse coordinate mapping.
+// This must be called by the parent (app.go) before rendering when the panel is visible.
+// The position is propagated to all session panes for accurate text selection.
+func (m Model) SetScreenPosition(x, y int) Model {
+	m.screenXOffset = x
+	m.screenYOffset = y
+
+	// Propagate to all session panes
+	// Y offset needs adjustment for the message pane: +1 for border
+	// Input pane height is 6 (4 content + 2 borders)
+	// Message pane starts at y, content starts at y+1 (after border)
+	messagePaneYOffset := y + 1 // Account for top border of message pane
+
+	for _, session := range m.sessions {
+		if session.Pane != nil {
+			session.Pane.SetScreenPosition(x, messagePaneYOffset)
+		}
 	}
 
 	return m
@@ -429,45 +462,30 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		// Only handle mouse events if visible
-		if !m.visible {
+		// Only handle mouse events if visible and on Chat tab
+		if !m.visible || m.activeTab != TabChat {
 			return m, nil
 		}
 
-		// Only handle wheel events for scrolling
-		if msg.Button != tea.MouseButtonWheelUp && msg.Button != tea.MouseButtonWheelDown {
-			return m, nil
-		}
-
-		// Calculate message pane height (total height minus input pane)
-		// Input pane is 6 lines (4 content + 2 borders)
-		inputPaneHeight := 6
-		messagePaneHeight := m.height - inputPaneHeight
-
-		// Ignore mouse events in input area (bottom of panel)
-		if msg.Y >= messagePaneHeight {
-			return m, nil
-		}
-
-		// Get active session for viewport scrolling
+		// Get active session for mouse handling
 		session := m.ActiveSession()
-		if session == nil {
+		if session == nil || session.Pane == nil {
 			return m, nil
 		}
 
-		// Scroll the viewport
-		if msg.Button == tea.MouseButtonWheelUp {
-			session.Viewport.ScrollUp(1)
-		} else {
-			session.Viewport.ScrollDown(1)
-		}
+		// Delegate to VirtualSelectablePane for selection and scrolling
+		// HandleMouse returns a tea.Cmd for toast notifications (copy success/failure)
+		mouseCmd := session.Pane.HandleMouse(msg)
 
 		// Clear new content indicator when scrolled to bottom
-		if session.Viewport.AtBottom() {
+		if session.Pane.AtBottom() {
 			session.HasNewContent = false
 		}
 
-		return m, nil
+		if mouseCmd != nil {
+			cmds = append(cmds, mouseCmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case NewSessionCreatedMsg:
 		// Switch to the newly created session and focus the input
@@ -628,7 +646,7 @@ func (m Model) AddMessage(msg chatrender.Message) Model {
 	session.ContentDirty = true
 
 	// Track new content arrival when scrolled up
-	if !session.Viewport.AtBottom() {
+	if session.Pane != nil && !session.Pane.AtBottom() {
 		session.HasNewContent = true
 	}
 
@@ -877,11 +895,23 @@ func (m Model) ActiveSession() *SessionData {
 // The session is NOT automatically made active - call SwitchSession for that.
 func (m Model) CreateSession(id string) (Model, *SessionData) {
 	now := m.now()
+
+	// Create toast factory for selection pane
+	makeToast := func(message string, isError bool) tea.Cmd {
+		style := toaster.StyleSuccess
+		if isError {
+			style = toaster.StyleError
+		}
+		return func() tea.Msg {
+			return mode.ShowToastMsg{Message: message, Style: style}
+		}
+	}
+
 	session := &SessionData{
 		ID:           id,
 		ProcessID:    "", // Will be set when process is spawned
 		Messages:     make([]chatrender.Message, 0),
-		Viewport:     viewport.New(0, 0),
+		Pane:         selection.NewVirtualSelectablePane(m.config.Clipboard, makeToast),
 		Status:       events.ProcessStatusPending,
 		ContentDirty: true,
 		CreatedAt:    now,
@@ -1139,7 +1169,7 @@ func (m Model) appendToSession(session *SessionData, event events.ProcessEvent) 
 			session.ContentDirty = true
 
 			// Track new content if not viewing this session or scrolled up
-			if !isActiveSession || !session.Viewport.AtBottom() {
+			if !isActiveSession || (session.Pane != nil && !session.Pane.AtBottom()) {
 				session.HasNewContent = true
 			}
 		}

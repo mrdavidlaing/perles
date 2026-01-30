@@ -2326,11 +2326,11 @@ func TestViewportPerSession(t *testing.T) {
 	require.NotNil(t, session1)
 
 	// Record initial position (at bottom after render)
-	initialPosSession1 := session1.Viewport.YOffset
+	initialPosSession1 := session1.Pane.ScrollOffset()
 
 	// Scroll up in session-1
-	session1.Viewport.ScrollUp(5)
-	scrollPosSession1 := session1.Viewport.YOffset
+	session1.Pane.ScrollUp(5)
+	scrollPosSession1 := session1.Pane.ScrollOffset()
 	require.NotEqual(t, initialPosSession1, scrollPosSession1, "scroll should change position")
 
 	// Create and switch to session-2
@@ -2353,14 +2353,14 @@ func TestViewportPerSession(t *testing.T) {
 	session2 := m.ActiveSession()
 	require.NotNil(t, session2)
 
-	// Verify session-2 viewport is independent from session-1
-	// (The viewport will be at the bottom after render, but that position
+	// Verify session-2 pane is independent from session-1
+	// (The pane will be at the bottom after render, but that position
 	// depends on content size, so we just verify it's different from session-1's scrolled position)
-	session2InitialPos := session2.Viewport.YOffset
+	session2InitialPos := session2.Pane.ScrollOffset()
 
 	// Scroll session-2 to a specific position
-	session2.Viewport.ScrollUp(2)
-	scrollPosSession2 := session2.Viewport.YOffset
+	session2.Pane.ScrollUp(2)
+	scrollPosSession2 := session2.Pane.ScrollOffset()
 	require.NotEqual(t, session2InitialPos, scrollPosSession2, "scroll should change position")
 
 	// Switch back to session-1
@@ -2368,14 +2368,14 @@ func TestViewportPerSession(t *testing.T) {
 
 	// Verify session-1's scroll position is preserved
 	session1AfterSwitch := m.ActiveSession()
-	require.Equal(t, scrollPosSession1, session1AfterSwitch.Viewport.YOffset, "session-1 scroll position should be preserved")
+	require.Equal(t, scrollPosSession1, session1AfterSwitch.Pane.ScrollOffset(), "session-1 scroll position should be preserved")
 
 	// Switch to session-2 again
 	m, _ = m.SwitchSession("session-2")
 
 	// Verify session-2's scroll position is preserved
 	session2AfterSwitch := m.ActiveSession()
-	require.Equal(t, scrollPosSession2, session2AfterSwitch.Viewport.YOffset, "session-2 scroll position should be preserved")
+	require.Equal(t, scrollPosSession2, session2AfterSwitch.Pane.ScrollOffset(), "session-2 scroll position should be preserved")
 }
 
 func TestContentDirtyPerSession(t *testing.T) {
@@ -2801,8 +2801,8 @@ func TestHasNewContentTracking_ScrolledUp(t *testing.T) {
 	session.HasNewContent = false
 
 	// Scroll up (not at bottom anymore)
-	session.Viewport.ScrollUp(10)
-	require.False(t, session.Viewport.AtBottom(), "viewport should not be at bottom after scrolling up")
+	session.Pane.ScrollUp(10)
+	require.False(t, session.Pane.AtBottom(), "pane should not be at bottom after scrolling up")
 
 	// Send output to active session while scrolled up
 	event := pubsub.Event[any]{

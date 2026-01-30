@@ -1113,7 +1113,11 @@ func (m Model) View() string {
 	// Compose main content with chat panel when visible
 	if showChatPanel {
 		panelWidth := m.chatPanelWidth()
+		// Calculate chat panel's screen position (right of main content)
+		// Main content width is total width minus chat panel width
+		mainContentWidth := m.width - panelWidth
 		m.chatPanel = m.chatPanel.SetSize(panelWidth, m.chatPanelHeight())
+		m.chatPanel = m.chatPanel.SetScreenPosition(mainContentWidth, 0)
 		view = lipgloss.JoinHorizontal(lipgloss.Top, view, m.chatPanel.View())
 	}
 
