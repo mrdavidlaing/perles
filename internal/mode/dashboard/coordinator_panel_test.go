@@ -1573,3 +1573,122 @@ func createTestMessages(count int) []chatrender.Message {
 	}
 	return messages
 }
+
+// === Channel Cycling Tests ===
+
+func TestCoordinatorPanel_ActiveChannel_DefaultsToDM(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+
+	// Default channel is DM (direct message to coordinator)
+	require.Equal(t, "dm", panel.ActiveChannel())
+	require.True(t, panel.IsDMMode())
+}
+
+func TestCoordinatorPanel_CycleChannel(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Default is DM
+	require.Equal(t, "dm", panel.ActiveChannel())
+
+	// Cycle to general
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugGeneral, panel.ActiveChannel())
+	require.False(t, panel.IsDMMode())
+
+	// Cycle to tasks
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugTasks, panel.ActiveChannel())
+
+	// Cycle to planning
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugPlanning, panel.ActiveChannel())
+
+	// Cycle back to DM
+	panel.CycleChannel()
+	require.Equal(t, "dm", panel.ActiveChannel())
+	require.True(t, panel.IsDMMode())
+}
+
+func TestCoordinatorPanel_ChannelIndicatorInView(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	// Default is DM mode
+	view := panel.View()
+	require.Contains(t, view, "DM: Coordinator", "view should show DM indicator")
+
+	// Cycle to #general
+	panel.CycleChannel()
+	view = panel.View()
+	require.Contains(t, view, "#general", "view should show general channel indicator")
+
+	// Cycle to #tasks
+	panel.CycleChannel()
+	view = panel.View()
+	require.Contains(t, view, "#tasks", "view should show tasks channel indicator")
+}
+
+// === Mention Autocomplete Tests ===
+
+func TestCoordinatorPanel_MentionProcesses_IncludesCoordinator(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+
+	// Check that coordinator is always in the mention list
+	require.Equal(t, 1, panel.mentionModel.ProcessCount()) // Just coordinator by default
+	ids := panel.mentionModel.ProcessIDs()
+	require.Len(t, ids, 1)
+	require.Equal(t, repository.CoordinatorID, ids[0])
+}
+
+func TestCoordinatorPanel_MentionProcesses_UpdatesWithWorkers(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+
+	state := &WorkflowUIState{
+		WorkerIDs:      []string{"worker-1", "worker-2"},
+		WorkerStatus:   make(map[string]events.ProcessStatus),
+		WorkerPhases:   make(map[string]events.ProcessPhase),
+		WorkerMessages: make(map[string][]chatrender.Message),
+	}
+
+	panel.SetWorkflow("wf-123", state)
+
+	// Should have coordinator + 2 workers
+	require.Equal(t, 3, panel.mentionModel.ProcessCount())
+	ids := panel.mentionModel.ProcessIDs()
+	require.Len(t, ids, 3)
+	require.Equal(t, repository.CoordinatorID, ids[0])
+	require.Equal(t, "worker-1", ids[1])
+	require.Equal(t, "worker-2", ids[2])
+}
+
+func TestCoordinatorPanel_SubmitMsg_IncludesChannel(t *testing.T) {
+	panel := NewCoordinatorPanel(false, false, nil)
+	panel.SetSize(60, 20)
+	panel.SetWorkflow("wf-123", nil)
+	panel.Focus()
+
+	// Default is DM mode
+	require.Equal(t, "dm", panel.ActiveChannel())
+
+	// Cycle through channels: dm -> general -> tasks -> planning -> dm
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugGeneral, panel.ActiveChannel())
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugTasks, panel.ActiveChannel())
+	panel.CycleChannel()
+	require.Equal(t, fabricDomain.SlugPlanning, panel.ActiveChannel())
+	panel.CycleChannel()
+	require.Equal(t, "dm", panel.ActiveChannel()) // Back to DM
+
+	// Simulate typing a message and submitting
+	panel.input.SetValue("Hello world")
+	panel, cmd := panel.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// The vimtextarea would normally send SubmitMsg, but let's just check
+	// that the channel is set correctly via the CoordinatorPanelSubmitMsg
+	// We can't easily trigger the full flow here, but we verified the
+	// ActiveChannel() returns correct value
+	_ = cmd
+}

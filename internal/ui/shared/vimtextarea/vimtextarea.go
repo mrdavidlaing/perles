@@ -934,6 +934,18 @@ func (m *Model) Reset() {
 	m.pendingBuilder.Clear()
 }
 
+// CursorToEnd moves the cursor to the end of the content.
+// This is useful after programmatically setting content.
+func (m *Model) CursorToEnd() {
+	if len(m.content) == 0 {
+		m.cursorRow = 0
+		m.cursorCol = 0
+		return
+	}
+	m.cursorRow = len(m.content) - 1
+	m.cursorCol = GraphemeCount(m.content[m.cursorRow])
+}
+
 // ClearPendingCommand clears any pending multi-key command.
 func (m *Model) ClearPendingCommand() {
 	m.pendingBuilder.Clear()

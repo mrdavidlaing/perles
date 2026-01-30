@@ -18,12 +18,15 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/fabric"
+	fabricdomain "github.com/zjrosen/perles/internal/orchestration/fabric/domain"
 	"github.com/zjrosen/perles/internal/orchestration/message"
 	"github.com/zjrosen/perles/internal/orchestration/metrics"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/process"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
+	"github.com/zjrosen/perles/internal/ui/shared/mention"
+	"github.com/zjrosen/perles/internal/ui/shared/overlay"
 	"github.com/zjrosen/perles/internal/ui/shared/panes"
 	"github.com/zjrosen/perles/internal/ui/shared/selection"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
@@ -96,6 +99,14 @@ type CoordinatorPanel struct {
 	// These are set by restoreScrollPositions and cleared after being applied
 	pendingCoordinatorScrollOffset *int            // nil = no pending restore
 	pendingWorkerScrollOffsets     map[string]*int // nil value = no pending restore for that worker
+
+	// Channel state for fabric messaging
+	// Users can cycle through channels with Tab and messages are sent to the selected channel
+	activeChannel int      // Current channel index (0=general, 1=tasks, 2=planning)
+	channelSlugs  []string // Channel slugs in order
+
+	// @mention autocomplete state
+	mentionModel mention.Model
 }
 
 // coordinatorTitleColor is the base color for coordinator title text.
@@ -190,6 +201,12 @@ func NewCoordinatorPanel(debugMode, vimMode bool, clipboard shared.Clipboard) *C
 		debugMode:                  debugMode,
 		focused:                    false,
 		pendingWorkerScrollOffsets: make(map[string]*int),
+		// Channel state: default to DM (direct message to coordinator), then fabric channels
+		// Index 0 = DM, Index 1+ = fabric channels
+		activeChannel: 0,
+		channelSlugs:  []string{"dm", fabricdomain.SlugGeneral, fabricdomain.SlugTasks, fabricdomain.SlugPlanning},
+		// @mention autocomplete
+		mentionModel: mention.New(),
 	}
 
 	// Initialize VirtualSelectablePane for coordinator
@@ -199,6 +216,9 @@ func NewCoordinatorPanel(debugMode, vimMode bool, clipboard shared.Clipboard) *C
 		Clipboard: clipboard,
 		MakeToast: panel.makeToastFunc(),
 	})
+
+	// Initialize mentionable processes (coordinator always available)
+	panel.updateMentionProcesses()
 
 	return panel
 }
@@ -292,6 +312,8 @@ func (p *CoordinatorPanel) SetWorkflow(workflowID controlplane.WorkflowID, state
 				p.workerPanes[wid].SetScreenPosition(p.screenXOffset, p.screenYOffset)
 			}
 		}
+		// Update mentionable processes list
+		p.updateMentionProcesses()
 	}
 
 	// Sync per-worker data
@@ -427,6 +449,48 @@ func (p *CoordinatorPanel) ActiveTab() int {
 	return p.activeTab
 }
 
+// ActiveChannel returns the current channel slug.
+// Returns "dm" for direct message mode, or a fabric channel slug.
+func (p *CoordinatorPanel) ActiveChannel() string {
+	if p.activeChannel >= 0 && p.activeChannel < len(p.channelSlugs) {
+		return p.channelSlugs[p.activeChannel]
+	}
+	return "dm" // Default to direct message
+}
+
+// IsDMMode returns true if the current channel is direct message mode.
+func (p *CoordinatorPanel) IsDMMode() bool {
+	return p.ActiveChannel() == "dm"
+}
+
+// CycleChannel cycles to the next channel (dm -> general -> tasks -> planning -> dm).
+func (p *CoordinatorPanel) CycleChannel() {
+	p.activeChannel = (p.activeChannel + 1) % len(p.channelSlugs)
+	p.updatePlaceholder()
+}
+
+// updatePlaceholder updates the input placeholder based on active channel.
+func (p *CoordinatorPanel) updatePlaceholder() {
+	channel := p.ActiveChannel()
+	if channel == "dm" {
+		p.input.SetPlaceholder("Message coordinator...")
+	} else {
+		p.input.SetPlaceholder("Message #" + channel + "...")
+	}
+}
+
+// updateMentionProcesses updates the list of mentionable processes.
+func (p *CoordinatorPanel) updateMentionProcesses() {
+	processes := make([]mention.Process, 0, 1+len(p.workerIDs))
+	// Always include coordinator
+	processes = append(processes, mention.Process{ID: repository.CoordinatorID, Role: "Coordinator"})
+	// Add all workers
+	for _, wid := range p.workerIDs {
+		processes = append(processes, mention.Process{ID: wid, Role: "Worker"})
+	}
+	p.mentionModel = p.mentionModel.SetProcesses(processes)
+}
+
 // Update handles messages for the coordinator panel.
 func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -441,10 +505,37 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 			return p, nil
 		}
 
-		// Handle input when focused - forward all keys including ESC for vim mode switching
+		// Handle input when focused
 		if p.focused {
+			// If @mention autocomplete is active, handle its keys first
+			if p.mentionModel.IsActive() {
+				model, consumed, selected := p.mentionModel.HandleKey(msg)
+				p.mentionModel = model
+				if selected != nil {
+					// Insert the selected mention into the input
+					p.completeMention(selected.ID)
+					return p, nil
+				}
+				if consumed {
+					return p, nil
+				}
+			}
+
+			// Handle Tab for channel cycling (only when not in autocomplete)
+			if msg.String() == "tab" && !p.mentionModel.IsActive() {
+				p.CycleChannel()
+				return p, nil
+			}
+
+			// Forward all other keys to vimtextarea
 			var cmd tea.Cmd
+			prevContent := p.input.Value()
 			p.input, cmd = p.input.Update(msg)
+			newContent := p.input.Value()
+
+			// Check for @mention triggers
+			p.checkMentionTrigger(prevContent, newContent)
+
 			return p, cmd
 		}
 
@@ -478,16 +569,80 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 		content := strings.TrimSpace(msg.Content)
 		if content != "" {
 			p.input.Reset()
+			p.mentionModel = p.mentionModel.Deactivate() // Clear any active autocomplete
+			channel := p.ActiveChannel()
 			return p, func() tea.Msg {
 				return CoordinatorPanelSubmitMsg{
 					WorkflowID: p.workflowID,
 					Content:    content,
+					Channel:    channel,
 				}
 			}
 		}
 	}
 
 	return p, nil
+}
+
+// checkMentionTrigger checks if the user typed @ and activates autocomplete.
+func (p *CoordinatorPanel) checkMentionTrigger(prevContent, newContent string) {
+	// Find if @ was just typed
+	if len(newContent) > len(prevContent) {
+		// Check if a new @ was added
+		atPos := strings.LastIndex(newContent, "@")
+		if atPos >= 0 {
+			// Check if this is a new @ (not present at same position in prev)
+			if atPos >= len(prevContent) || prevContent[atPos] != '@' {
+				// Activate autocomplete at this position
+				p.mentionModel = p.mentionModel.Activate(atPos)
+				return
+			}
+		}
+	}
+
+	// If autocomplete is active, update the query based on current content
+	if p.mentionModel.IsActive() {
+		// Find the @ and extract the query
+		atPos := strings.LastIndex(newContent, "@")
+		if atPos < 0 {
+			// @ was deleted, deactivate
+			p.mentionModel = p.mentionModel.Deactivate()
+			return
+		}
+
+		// Extract query after @
+		query := ""
+		if atPos < len(newContent)-1 {
+			query = newContent[atPos+1:]
+		}
+
+		// Check for space in query - if present, close autocomplete
+		if strings.Contains(query, " ") {
+			p.mentionModel = p.mentionModel.Deactivate()
+			return
+		}
+
+		// Update the query
+		var hasMatches bool
+		p.mentionModel, hasMatches = p.mentionModel.UpdateQuery(query)
+		if !hasMatches {
+			p.mentionModel = p.mentionModel.Deactivate()
+		}
+	}
+}
+
+// completeMention replaces the partial @mention with the selected process ID.
+func (p *CoordinatorPanel) completeMention(processID string) {
+	content := p.input.Value()
+	atPos := strings.LastIndex(content, "@")
+	if atPos < 0 {
+		return
+	}
+
+	// Replace @partial with @processID
+	newContent := content[:atPos] + "@" + processID + " "
+	p.input.SetValue(newContent)
+	p.input.CursorToEnd()
 }
 
 // View renders the coordinator panel with tabs.
@@ -523,7 +678,25 @@ func (p *CoordinatorPanel) View() string {
 	// Render input pane with zone mark for click detection
 	inputView := zone.Mark(zoneChatInput, p.renderInputPane(p.width, inputHeight))
 
-	return lipgloss.JoinVertical(lipgloss.Left, tabbedPane, inputView)
+	// Build base view
+	baseView := lipgloss.JoinVertical(lipgloss.Left, tabbedPane, inputView)
+
+	// If autocomplete is active, overlay it above the input (left-aligned)
+	if p.mentionModel.IsActive() {
+		autocompleteView := p.mentionModel.View(p.width - 4)
+		if autocompleteView != "" {
+			// Position autocomplete just above the input area, left-aligned with 1 char padding
+			return overlay.Place(overlay.Config{
+				Width:    p.width,
+				Height:   p.height,
+				Position: overlay.BottomLeft,
+				PadX:     1, // Align with input text (1 char from border)
+				PadY:     inputHeight,
+			}, autocompleteView, baseView)
+		}
+	}
+
+	return baseView
 }
 
 // buildTabs constructs the tab slice for the panel.
@@ -983,7 +1156,7 @@ func padContentAndLinesToBottom(content string, plainLines []string, vpHeight in
 	return strings.Join(contentLines, "\n"), plainLines, paddingCount
 }
 
-// renderInputPane renders the input area.
+// renderInputPane renders the input area with channel indicator.
 func (p *CoordinatorPanel) renderInputPane(width, height int) string {
 	// Get input view
 	inputView := p.input.View()
@@ -996,12 +1169,39 @@ func (p *CoordinatorPanel) renderInputPane(width, height int) string {
 		" ",
 	)
 
+	// Build channel indicator for bottom-right with color based on channel type
+	channel := p.ActiveChannel()
+	var channelIndicator string
+	switch channel {
+	case "dm":
+		// Direct message to coordinator - use coordinator color
+		dmStyle := lipgloss.NewStyle().Foreground(chatrender.CoordinatorColor)
+		channelIndicator = dmStyle.Render("DM: Coordinator")
+	case fabricdomain.SlugGeneral:
+		// General channel - green
+		generalStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#43BF6D"})
+		channelIndicator = generalStyle.Render("#" + channel)
+	case fabricdomain.SlugTasks:
+		// Tasks channel - orange
+		tasksStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#E09B24", Dark: "#E09B24"})
+		channelIndicator = tasksStyle.Render("#" + channel)
+	case fabricdomain.SlugPlanning:
+		// Planning channel - purple
+		planningStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#A066D3", Dark: "#A066D3"})
+		channelIndicator = planningStyle.Render("#" + channel)
+	default:
+		// Fallback - muted
+		defaultStyle := lipgloss.NewStyle().Foreground(styles.TextMutedColor)
+		channelIndicator = defaultStyle.Render("#" + channel)
+	}
+
 	// Use default border color for input pane (no highlighting)
 	return panes.BorderedPane(panes.BorderConfig{
 		Content:            content,
 		Width:              width,
 		Height:             height,
 		BottomLeft:         p.input.ModeIndicator(),
+		BottomRight:        channelIndicator,
 		Focused:            false, // Don't show focused border styling
 		TitleColor:         styles.BorderDefaultColor,
 		FocusedBorderColor: styles.BorderDefaultColor,
@@ -1094,6 +1294,7 @@ func padLineToWidth(line string, width int) string {
 type CoordinatorPanelSubmitMsg struct {
 	WorkflowID controlplane.WorkflowID
 	Content    string
+	Channel    string // Fabric channel slug (general, tasks, planning)
 }
 
 // sendToCoordinator sends a message to the coordinator of the specified workflow.
@@ -1122,6 +1323,44 @@ func (m Model) sendToCoordinator(workflowID controlplane.WorkflowID, content str
 		// Submit v2 command to send message to coordinator
 		cmd := command.NewSendToProcessCommand(command.SourceUser, repository.CoordinatorID, content)
 		cmdSubmitter.Submit(cmd)
+
+		return nil
+	}
+}
+
+// sendToFabricChannel sends a message to a fabric channel.
+// The message is posted to the specified channel using the workflow's fabric service.
+func (m Model) sendToFabricChannel(workflowID controlplane.WorkflowID, channelSlug, content string) tea.Cmd {
+	return func() tea.Msg {
+		if m.controlPlane == nil {
+			return nil
+		}
+
+		// Get the workflow to access its infrastructure
+		wf, err := m.controlPlane.Get(context.Background(), workflowID)
+		if err != nil || wf == nil {
+			return nil
+		}
+
+		// Get the fabric service from the workflow's infrastructure
+		if wf.Infrastructure == nil || wf.Infrastructure.Core.FabricService == nil {
+			// Fallback to coordinator if no fabric service
+			return m.sendToCoordinator(workflowID, content)()
+		}
+
+		fabricSvc := wf.Infrastructure.Core.FabricService
+
+		// Send message to the fabric channel
+		_, err = fabricSvc.SendMessage(fabric.SendMessageInput{
+			ChannelSlug: channelSlug,
+			Content:     content,
+			Kind:        fabricdomain.KindInfo,
+			CreatedBy:   "user", // User-originated message
+		})
+		if err != nil {
+			// Log error but don't fail - the message just won't appear in the channel
+			return nil
+		}
 
 		return nil
 	}

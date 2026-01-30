@@ -2186,9 +2186,16 @@ func TestFocusCyclingForward(t *testing.T) {
 	m = result.(Model)
 	require.Equal(t, FocusCoordinator, m.focus, "tab from Details should go to Coordinator when open")
 
+	// When in Coordinator, Tab cycles channels instead of focus
+	// Verify Tab stays in Coordinator (cycles channels)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
-	require.Equal(t, FocusTable, m.focus, "tab from Coordinator should go to Table")
+	require.Equal(t, FocusCoordinator, m.focus, "tab in Coordinator should cycle channels, not focus")
+
+	// Use ctrl+n to cycle focus forward from Coordinator to Table
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	m = result.(Model)
+	require.Equal(t, FocusTable, m.focus, "ctrl+n from Coordinator should go to Table")
 }
 
 func TestFocusCyclingBackward(t *testing.T) {

@@ -19,6 +19,8 @@ const (
 	Top
 	// Bottom places the overlay at the bottom center of the viewport.
 	Bottom
+	// BottomLeft places the overlay at the bottom left of the viewport.
+	BottomLeft
 )
 
 // Config controls overlay rendering behavior.
@@ -96,6 +98,9 @@ func calculatePosition(cfg Config, fgWidth, fgHeight int) (x, y int) {
 		y = cfg.PadY
 	case Bottom:
 		x = (cfg.Width - fgWidth) / 2
+		y = cfg.Height - fgHeight - cfg.PadY
+	case BottomLeft:
+		x = cfg.PadX
 		y = cfg.Height - fgHeight - cfg.PadY
 	default: // Center
 		x = (cfg.Width - fgWidth) / 2

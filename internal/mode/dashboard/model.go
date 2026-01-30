@@ -617,8 +617,11 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 		if strings.HasPrefix(msg.Content, "/") {
 			return m.handleSlashCommand(msg.WorkflowID, msg.Content)
 		}
-		// Send message to coordinator
-		return m, m.sendToCoordinator(msg.WorkflowID, msg.Content)
+		// Route based on channel: DM goes directly to coordinator, otherwise fabric channel
+		if msg.Channel == "dm" {
+			return m, m.sendToCoordinator(msg.WorkflowID, msg.Content)
+		}
+		return m, m.sendToFabricChannel(msg.WorkflowID, msg.Channel, msg.Content)
 
 	case vimtextarea.SubmitMsg:
 		// Forward to coordinator panel if open
@@ -836,8 +839,18 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (mode.Controller, tea.Cmd) {
 	}
 
 	// Handle focus cycling keys (work regardless of current focus)
+	// Exception: when coordinator is focused, Tab cycles channels instead of focus
 	switch msg.String() {
-	case "tab", "ctrl+n": // Cycle focus forward
+	case "tab":
+		if m.focus == FocusCoordinator && m.coordinatorPanel != nil {
+			// Tab cycles channels when in coordinator panel
+			m.coordinatorPanel.CycleChannel()
+			return m, nil
+		}
+		m.cycleFocusForward()
+		return m, nil
+
+	case "ctrl+n": // Cycle focus forward (always)
 		m.cycleFocusForward()
 		return m, nil
 
