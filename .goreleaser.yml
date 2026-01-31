@@ -4,6 +4,7 @@ project_name: perles
 
 before:
   hooks:
+    - sh -c "cd frontend && npm install && npm run build"
     - go mod tidy
     - go generate ./...
 
