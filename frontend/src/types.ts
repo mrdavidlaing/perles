@@ -90,6 +90,7 @@ export interface Command {
   command_type: string;
   source: string;
   success: boolean;
+  error?: string;
   duration_ms: number;
   timestamp: string;
   payload: Record<string, unknown>;

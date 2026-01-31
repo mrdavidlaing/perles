@@ -212,3 +212,17 @@
   padding: 0.5rem;
   border-radius: 4px;
 }
+
+.error-section {
+  grid-column: 1 / -1;
+}
+
+.error-section h4 {
+  color: var(--accent-red);
+}
+
+.error-section pre.error-message {
+  color: var(--accent-red);
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}

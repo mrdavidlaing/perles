@@ -156,7 +156,13 @@ export default function CommandsPanel({ commands }: Props) {
                 {!cmd.success && <span className="command-failed-badge">FAILED</span>}
               </button>
               {expandedCommands.has(idx) && (
-                <div className={`command-detail ${!cmd.result_data ? 'single-column' : ''}`}>
+                <div className={`command-detail ${!cmd.result_data && !cmd.error ? 'single-column' : ''}`}>
+                  {cmd.error && (
+                    <div className="detail-section error-section">
+                      <h4>Error</h4>
+                      <pre className="error-message">{cmd.error}</pre>
+                    </div>
+                  )}
                   <div className="detail-section">
                     <h4>Payload</h4>
                     <pre>{JSON.stringify(cmd.payload, null, 2)}</pre>
