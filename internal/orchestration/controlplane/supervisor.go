@@ -450,6 +450,20 @@ func (s *defaultSupervisor) AllocateResources(ctx context.Context, inst *Workflo
 	}
 
 	// Step 6: Start infrastructure (command processor)
+	// For cold resume, restore Fabric state FIRST so InitSession finds existing channels.
+	if coldResume && inst.SessionDir != "" {
+		if err := s.restoreFabricState(&WorkflowInstance{
+			SessionDir:     inst.SessionDir,
+			Infrastructure: infra,
+			ID:             inst.ID,
+		}); err != nil {
+			// Log but don't fail - fabric state is non-critical for resume
+			log.Debug(log.CatOrch, "Failed to restore Fabric state (continuing anyway)",
+				"subsystem", "supervisor", "workflowID", inst.ID, "error", err)
+		}
+	}
+
+	// Start infrastructure - InitSession is idempotent, reuses restored channels if present
 	if err := infra.Start(workflowCtx); err != nil {
 		cleanup()
 		return fmt.Errorf("starting infrastructure: %w", err)
@@ -770,6 +784,49 @@ func (s *defaultSupervisor) restoreProcessStateFromSession(inst *WorkflowInstanc
 		log.Debug(log.CatOrch, "Restored ProcessRegistry from session",
 			"subsystem", "supervisor", "workflowID", inst.ID)
 	}
+
+	// NOTE: Fabric state restoration is done earlier in AllocateResources,
+	// before MCP servers are created, to ensure channels exist.
+
+	return nil
+}
+
+// restoreFabricState loads and replays persisted Fabric events to restore messaging state.
+// This restores channels, messages, artifacts, subscriptions, and acks from fabric_events.jsonl.
+func (s *defaultSupervisor) restoreFabricState(inst *WorkflowInstance) error {
+	// Check if there's fabric state to restore
+	if !fabricpersist.HasPersistedFabricState(inst.SessionDir) {
+		log.Debug(log.CatOrch, "No persisted Fabric state to restore",
+			"subsystem", "supervisor", "workflowID", inst.ID)
+		return nil
+	}
+
+	// Load persisted events
+	events, err := fabricpersist.LoadPersistedEvents(inst.SessionDir)
+	if err != nil {
+		return fmt.Errorf("loading fabric events: %w", err)
+	}
+
+	if len(events) == 0 {
+		return nil
+	}
+
+	// Get repositories from FabricService
+	threads, deps, subs, acks := inst.Infrastructure.Core.FabricService.Repositories()
+
+	// Replay events to restore state
+	if err := fabricpersist.RestoreFabricState(events, threads, deps, subs, acks); err != nil {
+		return fmt.Errorf("restoring fabric state: %w", err)
+	}
+
+	// Restore cached channel IDs in FabricService
+	if err := inst.Infrastructure.Core.FabricService.RestoreChannelIDs(); err != nil {
+		return fmt.Errorf("restoring channel IDs: %w", err)
+	}
+
+	log.Debug(log.CatOrch, "Restored Fabric state from session",
+		"subsystem", "supervisor", "workflowID", inst.ID,
+		"eventCount", len(events))
 
 	return nil
 }

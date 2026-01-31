@@ -66,11 +66,22 @@ func (s *Service) emit(event Event) {
 }
 
 // InitSession creates the fixed channel structure for a new session.
+// This is idempotent - if channels already exist (e.g., from session restore),
+// they are reused rather than duplicated.
 func (s *Service) InitSession(createdBy string) error {
 	channels := domain.FixedChannels()
 	channelIDs := make(map[string]string)
 
 	for _, ch := range channels {
+		// Check if channel already exists (e.g., from session restore)
+		existing, err := s.threads.GetBySlug(ch.Slug)
+		if err == nil && existing != nil {
+			// Channel exists, reuse it
+			channelIDs[ch.Slug] = existing.ID
+			continue
+		}
+
+		// Create new channel
 		ch.CreatedBy = createdBy
 		ch.CreatedAt = time.Now()
 
@@ -97,17 +108,69 @@ func (s *Service) InitSession(createdBy string) error {
 		}
 		dep := domain.NewDependency(id, s.rootID, domain.RelationChildOf)
 		if err := s.dependencies.Add(dep); err != nil {
-			return fmt.Errorf("add dependency for %s: %w", slug, err)
+			// Ignore duplicate dependency errors (idempotent)
+			continue
 		}
 	}
 
 	// Auto-subscribe coordinator to #system with mode=all
 	// This ensures coordinator gets notified when workers signal ready
+	// Subscribe is already idempotent (updates mode if exists)
 	if _, err := s.subscriptions.Subscribe(s.systemID, createdBy, domain.ModeAll); err != nil {
 		return fmt.Errorf("subscribe coordinator to system: %w", err)
 	}
 
 	return nil
+}
+
+// RestoreChannelIDs restores the cached channel IDs after session restoration.
+// This should be called after RestoreFabricState has populated the repositories.
+// It looks up each fixed channel by slug and caches its ID for fast access.
+func (s *Service) RestoreChannelIDs() error {
+	slugs := []string{
+		domain.SlugRoot,
+		domain.SlugSystem,
+		domain.SlugTasks,
+		domain.SlugPlanning,
+		domain.SlugGeneral,
+		domain.SlugObserver,
+	}
+
+	for _, slug := range slugs {
+		thread, err := s.threads.GetBySlug(slug)
+		if err != nil {
+			// Channel may not exist if session had no fabric activity
+			continue
+		}
+
+		switch slug {
+		case domain.SlugRoot:
+			s.rootID = thread.ID
+		case domain.SlugSystem:
+			s.systemID = thread.ID
+		case domain.SlugTasks:
+			s.tasksID = thread.ID
+		case domain.SlugPlanning:
+			s.planningID = thread.ID
+		case domain.SlugGeneral:
+			s.generalID = thread.ID
+		case domain.SlugObserver:
+			s.observerID = thread.ID
+		}
+	}
+
+	return nil
+}
+
+// Repositories returns the underlying repositories for use during restoration.
+// This allows the persistence layer to restore state without circular imports.
+func (s *Service) Repositories() (
+	threads repository.ThreadRepository,
+	deps repository.DependencyRepository,
+	subs repository.SubscriptionRepository,
+	acks repository.AckRepository,
+) {
+	return s.threads, s.dependencies, s.subscriptions, s.acks
 }
 
 // GetChannel returns a channel by slug.

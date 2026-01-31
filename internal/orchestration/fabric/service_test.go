@@ -661,3 +661,96 @@ func TestChannelSlug_AllChannelTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestService_InitSession_Idempotent(t *testing.T) {
+	svc := newTestService()
+
+	// First init creates channels
+	err := svc.InitSession("coordinator")
+	require.NoError(t, err)
+
+	// Capture channel IDs
+	rootID := svc.GetChannelID(domain.SlugRoot)
+	systemID := svc.GetChannelID(domain.SlugSystem)
+	require.NotEmpty(t, rootID)
+
+	// Second init should reuse existing channels (no duplicates)
+	err = svc.InitSession("coordinator")
+	require.NoError(t, err)
+
+	// Channel IDs should be the same
+	require.Equal(t, rootID, svc.GetChannelID(domain.SlugRoot))
+	require.Equal(t, systemID, svc.GetChannelID(domain.SlugSystem))
+
+	// Verify only 6 channels exist (not 12)
+	threads, _, _, _ := svc.Repositories()
+	allThreads, err := threads.List(repository.ListOptions{})
+	require.NoError(t, err)
+
+	channelCount := 0
+	for _, th := range allThreads {
+		if th.Type == domain.ThreadChannel {
+			channelCount++
+		}
+	}
+	require.Equal(t, 6, channelCount, "Should have exactly 6 channels, not duplicates")
+}
+
+func TestService_Repositories(t *testing.T) {
+	svc := newTestService()
+
+	threads, deps, subs, acks := svc.Repositories()
+
+	require.NotNil(t, threads)
+	require.NotNil(t, deps)
+	require.NotNil(t, subs)
+	require.NotNil(t, acks)
+}
+
+func TestService_RestoreChannelIDs(t *testing.T) {
+	// Create a service and initialize session to create channels
+	svc := newTestService()
+	err := svc.InitSession("coordinator")
+	require.NoError(t, err)
+
+	// Capture the channel IDs
+	originalRootID := svc.GetChannelID(domain.SlugRoot)
+	originalSystemID := svc.GetChannelID(domain.SlugSystem)
+	originalTasksID := svc.GetChannelID(domain.SlugTasks)
+	originalPlanningID := svc.GetChannelID(domain.SlugPlanning)
+	originalGeneralID := svc.GetChannelID(domain.SlugGeneral)
+	originalObserverID := svc.GetChannelID(domain.SlugObserver)
+
+	require.NotEmpty(t, originalRootID)
+
+	// Create a new service with the same repositories (simulating restore)
+	threads, deps, subs, acks := svc.Repositories()
+	restoredSvc := NewService(threads, deps, subs, acks)
+
+	// Before RestoreChannelIDs, channel IDs should be empty
+	require.Empty(t, restoredSvc.GetChannelID(domain.SlugRoot))
+
+	// Restore channel IDs
+	err = restoredSvc.RestoreChannelIDs()
+	require.NoError(t, err)
+
+	// After RestoreChannelIDs, channel IDs should match originals
+	require.Equal(t, originalRootID, restoredSvc.GetChannelID(domain.SlugRoot))
+	require.Equal(t, originalSystemID, restoredSvc.GetChannelID(domain.SlugSystem))
+	require.Equal(t, originalTasksID, restoredSvc.GetChannelID(domain.SlugTasks))
+	require.Equal(t, originalPlanningID, restoredSvc.GetChannelID(domain.SlugPlanning))
+	require.Equal(t, originalGeneralID, restoredSvc.GetChannelID(domain.SlugGeneral))
+	require.Equal(t, originalObserverID, restoredSvc.GetChannelID(domain.SlugObserver))
+}
+
+func TestService_RestoreChannelIDs_NoChannels(t *testing.T) {
+	// Create a service without initializing session (no channels)
+	svc := newTestService()
+
+	// RestoreChannelIDs should succeed even with no channels
+	err := svc.RestoreChannelIDs()
+	require.NoError(t, err)
+
+	// Channel IDs should remain empty
+	require.Empty(t, svc.GetChannelID(domain.SlugRoot))
+}

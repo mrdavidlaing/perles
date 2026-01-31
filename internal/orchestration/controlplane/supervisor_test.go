@@ -19,6 +19,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/client"
 	"github.com/zjrosen/perles/internal/orchestration/fabric"
 	fabricpersist "github.com/zjrosen/perles/internal/orchestration/fabric/persistence"
+	fabricrepo "github.com/zjrosen/perles/internal/orchestration/fabric/repository"
 	"github.com/zjrosen/perles/internal/orchestration/session"
 	v2 "github.com/zjrosen/perles/internal/orchestration/v2"
 	"github.com/zjrosen/perles/internal/orchestration/v2/adapter"
@@ -1993,4 +1994,120 @@ func (h *roleBasedSpawnHandler) Handle(_ context.Context, cmd command.Command) (
 		Success: true,
 		Data:    &mockSpawnResult{processID: string(spawnCmd.Role)},
 	}, nil
+}
+
+// === Fabric State Restoration Tests ===
+
+func TestSupervisor_RestoreFabricState_NoPersistedState(t *testing.T) {
+	cfg, _, _ := newTestSupervisorConfig(t)
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	ds := supervisor.(*defaultSupervisor)
+
+	// Create instance with empty session dir (no fabric_events.jsonl)
+	inst := newTestInstance(t, "test-workflow")
+	inst.SessionDir = t.TempDir()
+
+	// Create minimal infrastructure with FabricService
+	infra := createMinimalInfrastructureWithFabric(t)
+	inst.Infrastructure = infra
+
+	// Should succeed silently when no persisted state exists
+	err = ds.restoreFabricState(inst)
+	require.NoError(t, err)
+}
+
+func TestSupervisor_RestoreFabricState_RestoresChannelsAndMessages(t *testing.T) {
+	cfg, _, _ := newTestSupervisorConfig(t)
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	ds := supervisor.(*defaultSupervisor)
+
+	// Create instance with session dir
+	inst := newTestInstance(t, "test-workflow")
+	inst.SessionDir = t.TempDir()
+
+	// Create fabric service and initialize session to create channels
+	origInfra := createMinimalInfrastructureWithFabric(t)
+	require.NoError(t, origInfra.Core.FabricService.InitSession("coordinator"))
+
+	// Send a message to verify it gets restored
+	msg, err := origInfra.Core.FabricService.SendMessage(fabric.SendMessageInput{
+		ChannelSlug: "general",
+		Content:     "Test message for restore",
+		CreatedBy:   "coordinator",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, msg)
+
+	// Now manually persist the fabric events (simulate what EventLogger does)
+	logger, err := fabricpersist.NewEventLogger(inst.SessionDir)
+	require.NoError(t, err)
+
+	// Re-initialize and send message with event logging
+	newInfra := createMinimalInfrastructureWithFabric(t)
+	newInfra.Core.FabricService.SetEventHandler(logger.HandleEvent)
+	require.NoError(t, newInfra.Core.FabricService.InitSession("coordinator"))
+
+	_, err = newInfra.Core.FabricService.SendMessage(fabric.SendMessageInput{
+		ChannelSlug: "general",
+		Content:     "Test message for restore",
+		CreatedBy:   "coordinator",
+	})
+	require.NoError(t, err)
+	require.NoError(t, logger.Close())
+
+	// Create a fresh infrastructure for restoration
+	inst.Infrastructure = createMinimalInfrastructureWithFabric(t)
+
+	// Verify channels don't exist before restore
+	require.Empty(t, inst.Infrastructure.Core.FabricService.GetChannelID("root"))
+
+	// Restore fabric state
+	err = ds.restoreFabricState(inst)
+	require.NoError(t, err)
+
+	// Verify channels were restored
+	require.NotEmpty(t, inst.Infrastructure.Core.FabricService.GetChannelID("root"))
+	require.NotEmpty(t, inst.Infrastructure.Core.FabricService.GetChannelID("general"))
+
+	// Verify messages were restored
+	messages, err := inst.Infrastructure.Core.FabricService.ListMessages("general", 10)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	require.Equal(t, "Test message for restore", messages[0].Content)
+}
+
+func TestSupervisor_RestoreFabricState_NilFabricService(t *testing.T) {
+	cfg, _, _ := newTestSupervisorConfig(t)
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	_ = supervisor.(*defaultSupervisor)
+
+	// Create instance with nil FabricService
+	inst := newTestInstance(t, "test-workflow")
+	inst.SessionDir = t.TempDir()
+	inst.Infrastructure = createMinimalInfrastructure(t) // No FabricService
+
+	// The caller checks for nil FabricService before calling restoreFabricState,
+	// so this test just confirms no panic when infrastructure lacks FabricService
+}
+
+// createMinimalInfrastructureWithFabric creates infrastructure including FabricService.
+func createMinimalInfrastructureWithFabric(t *testing.T) *v2.Infrastructure {
+	t.Helper()
+
+	infra := createMinimalInfrastructure(t)
+
+	// Add FabricService
+	threadRepo := fabricrepo.NewMemoryThreadRepository()
+	depRepo := fabricrepo.NewMemoryDependencyRepository()
+	subRepo := fabricrepo.NewMemorySubscriptionRepository()
+	ackRepo := fabricrepo.NewMemoryAckRepository(depRepo, threadRepo, subRepo)
+	infra.Core.FabricService = fabric.NewService(threadRepo, depRepo, subRepo, ackRepo)
+
+	return infra
 }

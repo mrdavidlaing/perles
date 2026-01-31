@@ -45,6 +45,20 @@ func RestoreProcessRepository(repo repository.ProcessRepository, session *Resuma
 		return fmt.Errorf("failed to save coordinator: %w", err)
 	}
 
+	// Restore observer if it existed in the session
+	if meta.Observer != nil && meta.Observer.HeadlessSessionRef != "" {
+		observer := &repository.Process{
+			ID:               repository.ObserverID,
+			Role:             repository.RoleObserver,
+			Status:           repository.StatusReady,
+			SessionID:        meta.Observer.HeadlessSessionRef,
+			HasCompletedTurn: true,
+		}
+		if err := repo.Save(observer); err != nil {
+			return fmt.Errorf("failed to save observer: %w", err)
+		}
+	}
+
 	// Restore active workers with their session refs
 	for _, w := range session.ActiveWorkers {
 		proc := workerMetadataToProcess(w, repository.StatusReady)
@@ -102,6 +116,18 @@ func RestoreProcessRegistry(
 		eventBus,
 	)
 	registry.Register(coordinator)
+
+	// Restore observer as dormant process if it existed
+	if meta.Observer != nil && meta.Observer.HeadlessSessionRef != "" {
+		observer := process.NewDormant(
+			repository.ObserverID,
+			repository.RoleObserver,
+			meta.Observer.HeadlessSessionRef,
+			submitter,
+			eventBus,
+		)
+		registry.Register(observer)
+	}
 
 	// Restore active workers as dormant processes
 	// Retired workers are NOT added - they can't receive messages

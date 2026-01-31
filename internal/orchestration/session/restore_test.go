@@ -198,6 +198,63 @@ func TestRestoreProcessRepository_NilMetadata(t *testing.T) {
 	require.Contains(t, err.Error(), "metadata is nil")
 }
 
+func TestRestoreProcessRepository_WithObserver(t *testing.T) {
+	repo := repository.NewMemoryProcessRepository()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	expectedObserverRef := "observer-session-abc123"
+	session := &ResumableSession{
+		Metadata: &Metadata{
+			SessionID:             "test-session",
+			StartTime:             now.Add(-time.Hour),
+			EndTime:               now,
+			CoordinatorSessionRef: "coord-ref",
+			Observer: &ObserverMetadata{
+				HeadlessSessionRef: expectedObserverRef,
+			},
+		},
+		ActiveWorkers:  []WorkerMetadata{},
+		RetiredWorkers: []WorkerMetadata{},
+	}
+
+	err := RestoreProcessRepository(repo, session)
+	require.NoError(t, err)
+
+	// Verify observer was created
+	observer, err := repo.Get(repository.ObserverID)
+	require.NoError(t, err)
+	require.Equal(t, repository.ObserverID, observer.ID)
+	require.Equal(t, repository.RoleObserver, observer.Role)
+	require.Equal(t, repository.StatusReady, observer.Status)
+	require.Equal(t, expectedObserverRef, observer.SessionID,
+		"Observer.SessionID must be populated from HeadlessSessionRef for --resume to work")
+}
+
+func TestRestoreProcessRepository_NoObserver(t *testing.T) {
+	repo := repository.NewMemoryProcessRepository()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	session := &ResumableSession{
+		Metadata: &Metadata{
+			SessionID:             "test-session",
+			StartTime:             now.Add(-time.Hour),
+			EndTime:               now,
+			CoordinatorSessionRef: "coord-ref",
+			Observer:              nil, // No observer
+		},
+		ActiveWorkers:  []WorkerMetadata{},
+		RetiredWorkers: []WorkerMetadata{},
+	}
+
+	err := RestoreProcessRepository(repo, session)
+	require.NoError(t, err)
+
+	// Observer should NOT be created
+	observer, err := repo.Get(repository.ObserverID)
+	require.Error(t, err) // Should fail - observer not found
+	require.Nil(t, observer)
+}
+
 // --- workerMetadataToProcess Tests ---
 
 func TestWorkerMetadataToProcess_ActiveWorker(t *testing.T) {
@@ -686,4 +743,66 @@ func TestRestoreProcessRegistry_EmptyActiveWorkers(t *testing.T) {
 
 	coordinator := registry.GetCoordinator()
 	require.NotNil(t, coordinator)
+}
+
+func TestRestoreProcessRegistry_WithObserver(t *testing.T) {
+	registry := process.NewProcessRegistry()
+	eventBus := pubsub.NewBroker[any]()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	expectedObserverRef := "observer-session-abc123"
+	session := &ResumableSession{
+		Metadata: &Metadata{
+			SessionID:             "test-session",
+			StartTime:             now.Add(-time.Hour),
+			EndTime:               now,
+			CoordinatorSessionRef: "coord-ref",
+			Observer: &ObserverMetadata{
+				HeadlessSessionRef: expectedObserverRef,
+			},
+		},
+		ActiveWorkers:  []WorkerMetadata{},
+		RetiredWorkers: []WorkerMetadata{},
+	}
+
+	err := RestoreProcessRegistry(registry, session, nil, eventBus)
+	require.NoError(t, err)
+
+	// Should have coordinator and observer
+	all := registry.All()
+	require.Len(t, all, 2)
+
+	// Verify observer exists in registry
+	observer := registry.Get(repository.ObserverID)
+	require.NotNil(t, observer, "Observer should be registered")
+	require.Equal(t, expectedObserverRef, observer.SessionID(),
+		"Observer.SessionID must be populated from HeadlessSessionRef for --resume to work")
+}
+
+func TestRestoreProcessRegistry_NoObserver(t *testing.T) {
+	registry := process.NewProcessRegistry()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	session := &ResumableSession{
+		Metadata: &Metadata{
+			SessionID:             "test-session",
+			StartTime:             now.Add(-time.Hour),
+			EndTime:               now,
+			CoordinatorSessionRef: "coord-ref",
+			Observer:              nil, // No observer
+		},
+		ActiveWorkers:  []WorkerMetadata{},
+		RetiredWorkers: []WorkerMetadata{},
+	}
+
+	err := RestoreProcessRegistry(registry, session, nil, nil)
+	require.NoError(t, err)
+
+	// Should only have coordinator (no observer)
+	all := registry.All()
+	require.Len(t, all, 1)
+
+	// Observer should NOT be in registry
+	observer := registry.Get(repository.ObserverID)
+	require.Nil(t, observer, "Observer should NOT be registered when not in session")
 }
