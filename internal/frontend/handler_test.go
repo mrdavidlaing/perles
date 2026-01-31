@@ -35,6 +35,15 @@ func createTestMux(h *Handler) *http.ServeMux {
 	return mux
 }
 
+// makeLoadSessionBody creates a properly JSON-encoded request body for LoadSession.
+// This handles Windows paths correctly by escaping backslashes.
+func makeLoadSessionBody(t *testing.T, path string) string {
+	t.Helper()
+	body, err := json.Marshal(LoadSessionRequest{Path: path})
+	require.NoError(t, err)
+	return string(body)
+}
+
 // === Health Endpoint Tests ===
 
 func TestHandler_Health(t *testing.T) {
@@ -177,8 +186,7 @@ func TestHandler_LoadSession_Success(t *testing.T) {
 	h := NewHandler(tmpDir, createTestFS(), nil)
 	mux := createTestMux(h)
 
-	body := `{"path": "` + sessionDir + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(makeLoadSessionBody(t, sessionDir)))
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, req)
@@ -223,8 +231,7 @@ func TestHandler_LoadSession_MissingFiles(t *testing.T) {
 	h := NewHandler(tmpDir, createTestFS(), nil)
 	mux := createTestMux(h)
 
-	body := `{"path": "` + sessionDir + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(makeLoadSessionBody(t, sessionDir)))
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, req)
@@ -264,8 +271,7 @@ not valid json
 	h := NewHandler(tmpDir, createTestFS(), nil)
 	mux := createTestMux(h)
 
-	body := `{"path": "` + sessionDir + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(makeLoadSessionBody(t, sessionDir)))
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, req)
@@ -296,8 +302,7 @@ func TestHandler_LoadSession_PathTraversal(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body := `{"path": "` + tc.path + `"}`
-			req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(body))
+			req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(makeLoadSessionBody(t, tc.path)))
 			w := httptest.NewRecorder()
 
 			mux.ServeHTTP(w, req)
@@ -360,8 +365,7 @@ func TestHandler_LoadSession_SiblingDirectoryAttack(t *testing.T) {
 
 	// Try to access a sibling directory with a matching prefix
 	siblingPath := tmpDir + "x/evil"
-	body := `{"path": "` + siblingPath + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/load-session", bytes.NewBufferString(makeLoadSessionBody(t, siblingPath)))
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, req)

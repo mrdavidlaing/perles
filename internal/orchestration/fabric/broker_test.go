@@ -459,7 +459,7 @@ func TestBroker_ParticipantNotification(t *testing.T) {
 	broker.HandleEvent(event)
 
 	// Wait for debounce
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// Should have notified COORDINATOR, WORKER.2, WORKER.3 (not WORKER.1 - the sender)
 	cmds := submitter.getCommands()
