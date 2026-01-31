@@ -1,11 +1,13 @@
 .fabric-panel-slack {
   display: flex;
+  margin: -1rem;
   flex: 1;
   min-height: 0;
   background: var(--bg-primary);
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border-color);
+  border-top: none;
   position: relative;  /* For toast positioning */
 }
 
@@ -17,22 +19,6 @@
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-}
-
-.sidebar-header {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.sidebar-header h3 {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .channel-count {
@@ -102,47 +88,14 @@
   font-weight: 500;
 }
 
-.sidebar-stats {
-  padding: 1rem;
+.sidebar-footer {
+  margin-top: auto;
+  padding: 0.5rem;
   border-top: 1px solid var(--border-color);
-  display: flex;
-  gap: 1rem;
 }
 
-.stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* Content Area Tabs */
-.content-tabs {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.5rem 1rem;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.content-tab {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  padding: 0.375rem 0.75rem;
-  border-radius: 4px;
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.content-tab:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-}
-
-.content-tab.active {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
+.sidebar-footer .channel-item {
+  width: 100%;
 }
 
 /* Events List */
@@ -259,22 +212,25 @@
 }
 
 .channel-header {
-  padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   background: var(--bg-secondary);
 }
 
-.channel-title {
+.channel-header-top {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  padding: 0.75rem 1.5rem 0.5rem;
 }
 
 .channel-icon-large {
   font-size: 1.5rem;
+}
+
+.channel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
 }
 
 .channel-title h2 {
@@ -287,7 +243,182 @@
 .channel-purpose {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin: 0.125rem 0 0 0;
+  margin: 0;
+}
+
+/* Channel Tabs */
+.channel-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1rem;
+}
+
+.channel-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.channel-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.channel-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-blue);
+}
+
+.channel-tab-icon {
+  font-size: 1rem;
+}
+
+.channel-tab-badge {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.channel-tab.active .channel-tab-badge {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent-blue);
+}
+
+/* Artifacts View */
+.artifacts-view {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.artifacts-list {
+  width: 280px;
+  min-width: 200px;
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  background: var(--bg-secondary);
+}
+
+.artifact-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.artifact-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.artifact-item.active {
+  background: var(--accent-blue);
+}
+
+.artifact-item.active .artifact-name,
+.artifact-item.active .artifact-meta {
+  color: white;
+}
+
+.artifact-icon {
+  font-size: 1.25rem;
+}
+
+.artifact-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.artifact-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.artifact-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.artifact-content-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.artifact-content-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.artifact-content-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.artifact-content-body {
+  flex: 1;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  overflow: auto;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.artifact-content-body.artifact-markdown {
+  font-family: inherit;
+  white-space: normal;
+}
+
+.artifact-content-body.artifact-markdown .markdown-body {
+  font-size: 0.875rem;
+}
+
+.artifact-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
 }
 
 .message-list {
@@ -412,7 +543,7 @@
 .thread-panel {
   width: 570px;
   min-width: 480px;
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -420,6 +551,7 @@
 
 .thread-header {
   padding: 1rem 1.25rem;
+  background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
@@ -555,17 +687,17 @@
 /* Channel Input Container */
 .channel-input-container {
   padding: 0.75rem 1rem;
-  border-top: 1px solid var(--border-color);
   background: var(--bg-secondary);
   flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
 }
 
 /* Thread Input Container */
 .thread-input-container {
   padding: 0.75rem 1rem;
-  border-top: 1px solid var(--border-color);
   background: var(--bg-secondary);
   flex-shrink: 0;
+  border-top: 1px solid var(--border-color);
 }
 
 /* Toast container - positioned at bottom of FabricPanel */

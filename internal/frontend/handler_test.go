@@ -844,5 +844,96 @@ func TestHandler_ListAgents_NoControlPlane(t *testing.T) {
 	assert.Empty(t, resp.Agents)
 }
 
+// === ReadFile Endpoint Tests ===
+
+func TestHandler_ReadFile_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file within the sessions directory
+	testFile := filepath.Join(tmpDir, "app1", "2026-01-15", "session-123", "artifact.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(testFile), 0750))
+	require.NoError(t, os.WriteFile(testFile, []byte("# Hello World\n\nThis is a test."), 0600))
+
+	h := NewHandler(tmpDir, createTestFS(), nil)
+	mux := createTestMux(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/file?path="+testFile, nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Equal(t, "# Hello World\n\nThis is a test.", w.Body.String())
+}
+
+func TestHandler_ReadFile_MissingPath(t *testing.T) {
+	h := NewHandler("/tmp/sessions", createTestFS(), nil)
+	mux := createTestMux(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/file", nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "path parameter required")
+}
+
+func TestHandler_ReadFile_AccessDenied_OutsideSessionDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a file outside the sessions directory
+	outsideFile := filepath.Join(os.TempDir(), "secret-file.txt")
+	require.NoError(t, os.WriteFile(outsideFile, []byte("secret data"), 0600))
+	defer os.Remove(outsideFile)
+
+	h := NewHandler(tmpDir, createTestFS(), nil)
+	mux := createTestMux(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/file?path="+outsideFile, nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "access denied")
+}
+
+func TestHandler_ReadFile_FileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	h := NewHandler(tmpDir, createTestFS(), nil)
+	mux := createTestMux(h)
+
+	nonexistentFile := filepath.Join(tmpDir, "does-not-exist.txt")
+	req := httptest.NewRequest(http.MethodGet, "/api/file?path="+nonexistentFile, nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "file not found")
+}
+
+func TestHandler_ReadFile_PathTraversalBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Attempt path traversal attack
+	h := NewHandler(tmpDir, createTestFS(), nil)
+	mux := createTestMux(h)
+
+	// Try to escape the sessions directory with ..
+	maliciousPath := filepath.Join(tmpDir, "..", "etc", "passwd")
+	req := httptest.NewRequest(http.MethodGet, "/api/file?path="+maliciousPath, nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	// Should be forbidden because after resolution, path is outside tmpDir
+	require.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "access denied")
+}
+
 // Suppress unused import warning for context
 var _ = context.Background

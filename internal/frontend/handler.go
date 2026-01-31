@@ -61,6 +61,9 @@ func (h *Handler) RegisterAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/fabric/send-message", h.SendMessage)
 	mux.HandleFunc("POST /api/fabric/reply", h.Reply)
 	mux.HandleFunc("GET /api/fabric/agents", h.ListAgents)
+
+	// File content endpoint for artifacts
+	mux.HandleFunc("GET /api/file", h.ReadFile)
 }
 
 // RegisterSPAHandler registers the SPA catch-all handler on the provided mux.
@@ -674,4 +677,38 @@ func (h *Handler) getFabricService(ctx context.Context, workflowID string) (*fab
 	}
 
 	return wf.Infrastructure.Core.FabricService, nil
+}
+
+// ReadFile reads a file from the filesystem and returns its contents.
+// GET /api/file?path=/path/to/file
+// Security: Only allows reading files within session directories.
+func (h *Handler) ReadFile(w http.ResponseWriter, r *http.Request) {
+	filePath := r.URL.Query().Get("path")
+	if filePath == "" {
+		http.Error(w, "path parameter required", http.StatusBadRequest)
+		return
+	}
+
+	// Security: Only allow reading files within the sessions directory
+	// This prevents arbitrary file access
+	if !strings.HasPrefix(filePath, h.sessionBaseDir) {
+		http.Error(w, "access denied: file outside sessions directory", http.StatusForbidden)
+		return
+	}
+
+	// Read the file
+	// G304: filePath is validated above to be within sessionBaseDir
+	content, err := os.ReadFile(filePath) //nolint:gosec
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.Error(w, "file not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "error reading file", http.StatusInternalServerError)
+		return
+	}
+
+	// Set content type based on file extension
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write(content)
 }

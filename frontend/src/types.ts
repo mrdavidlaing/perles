@@ -51,6 +51,12 @@ export interface FabricEvent {
       purpose?: string;
       mentions?: string[];
       seq: number;
+      // Artifact fields
+      name?: string;
+      media_type?: string;
+      size_bytes?: number;
+      storage_uri?: string;
+      sha256?: string;
     };
     subscription?: {
       channel_id: string;

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import type { FabricEvent, Agent, AgentsResponse } from '../types'
 import { hashColor } from '../utils/colors'
 import ChatInput from './ChatInput'
+import Markdown from './Markdown'
 import Toast from './Toast'
 import './FabricPanel.css'
 
@@ -37,6 +38,17 @@ interface Thread {
   replies: Message[]
 }
 
+interface Artifact {
+  id: string
+  channelId: string
+  name: string
+  mediaType: string
+  sizeBytes: number
+  storageUri: string
+  createdBy: string
+  createdAt: string
+}
+
 function getInitialSidebarTab(): 'events' | 'messages' {
   const params = new URLSearchParams(window.location.search)
   const subtab = params.get('subtab')
@@ -61,6 +73,10 @@ export default function FabricPanel({ events, workflowId }: Props) {
   const [isWorkflowActive, setIsWorkflowActive] = useState(false)
   // Toast state for error/success notifications
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' | 'info' } | null>(null)
+  // Artifacts view state
+  const [showArtifacts, setShowArtifacts] = useState(false)
+  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null)
+  const [artifactContent, setArtifactContent] = useState<string | null>(null)
 
   const setSidebarTab = (tab: 'events' | 'messages') => {
     setSidebarTabState(tab)
@@ -80,10 +96,11 @@ export default function FabricPanel({ events, workflowId }: Props) {
     window.history.replaceState({}, '', url.toString())
   }
 
-  // Extract channels and messages from events
-  const { channels, messages } = useMemo(() => {
+  // Extract channels, messages, and artifacts from events
+  const { channels, messages, artifacts } = useMemo(() => {
     const channelMap = new Map<string, Channel>()
     const messageList: Message[] = []
+    const artifactList: Artifact[] = []
 
     for (const event of events) {
       const e = event.event
@@ -119,6 +136,19 @@ export default function FabricPanel({ events, workflowId }: Props) {
           channel.messageCount++
         }
       }
+
+      if (e.type === 'artifact.added' && e.thread && e.channel_id) {
+        artifactList.push({
+          id: e.thread.id,
+          channelId: e.channel_id,
+          name: e.thread.name || 'Untitled',
+          mediaType: e.thread.media_type || 'text/plain',
+          sizeBytes: e.thread.size_bytes || 0,
+          storageUri: e.thread.storage_uri || '',
+          createdBy: e.thread.created_by || 'unknown',
+          createdAt: e.thread.created_at || event.timestamp,
+        })
+      }
     }
 
     const sortedChannels = Array.from(channelMap.values()).sort((a, b) => {
@@ -131,7 +161,7 @@ export default function FabricPanel({ events, workflowId }: Props) {
       return a.slug.localeCompare(b.slug)
     })
 
-    return { channels: sortedChannels, messages: messageList }
+    return { channels: sortedChannels, messages: messageList, artifacts: artifactList }
   }, [events])
 
   // Group messages into threads using parent_id
@@ -197,6 +227,26 @@ export default function FabricPanel({ events, workflowId }: Props) {
 
   const selectedChannel = channels.find(c => c.id === selectedChannelId)
 
+  // Get artifacts for selected channel
+  const channelArtifacts = useMemo(() => {
+    if (!selectedChannelId) return []
+    return artifacts.filter(a => a.channelId === selectedChannelId)
+  }, [artifacts, selectedChannelId])
+
+  // Fetch artifact content when selected
+  useEffect(() => {
+    if (!selectedArtifact) {
+      setArtifactContent(null)
+      return
+    }
+    // Convert file:// URI to API path
+    const filePath = selectedArtifact.storageUri.replace('file://', '')
+    fetch(`/api/file?path=${encodeURIComponent(filePath)}`)
+      .then(res => res.text())
+      .then(content => setArtifactContent(content))
+      .catch(() => setArtifactContent('Error loading artifact'))
+  }, [selectedArtifact])
+
   // Auto-select first channel with messages (only if no valid channel selected)
   useEffect(() => {
     if (channels.length > 0 && !selectedChannel) {
@@ -204,6 +254,20 @@ export default function FabricPanel({ events, workflowId }: Props) {
       setSelectedChannelId(firstWithMessages.id)
     }
   }, [channels, selectedChannel])
+
+  // Sync selectedThread with updated threads data when events change
+  useEffect(() => {
+    if (selectedThread) {
+      const updatedThread = threads.find(t => t.parentMessage.id === selectedThread.parentMessage.id)
+      if (updatedThread) {
+        // Update with fresh data (new replies, etc.)
+        setSelectedThread(updatedThread)
+      } else {
+        // Thread no longer exists, deselect
+        setSelectedThread(null)
+      }
+    }
+  }, [threads])
 
   // Fetch agents when workflowId changes
   useEffect(() => {
@@ -309,6 +373,14 @@ export default function FabricPanel({ events, workflowId }: Props) {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
   }
 
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+  }
+
   const getAgentColor = (agent: string): string => {
     return hashColor(agent)
   }
@@ -320,6 +392,7 @@ export default function FabricPanel({ events, workflowId }: Props) {
       'tasks': '📋',
       'planning': '📐',
       'general': '💬',
+      'observer': '🔍',
     }
     return icons[slug] || '#'
   }
@@ -344,18 +417,17 @@ export default function FabricPanel({ events, workflowId }: Props) {
     <div className="fabric-panel-slack">
       {/* Channel Sidebar */}
       <aside className="channel-sidebar">
-        <div className="sidebar-header">
-          <h3>Channels</h3>
-          <span className="channel-count">{channels.length}</span>
-        </div>
         <nav className="channel-list">
           {channels.map(channel => (
             <button
               key={channel.id}
-              className={`channel-item ${selectedChannelId === channel.id ? 'active' : ''}`}
+              className={`channel-item ${sidebarTab === 'messages' && selectedChannelId === channel.id ? 'active' : ''}`}
               onClick={() => {
+                setSidebarTab('messages')
                 setSelectedChannelId(channel.id)
                 setSelectedThread(null)
+                setShowArtifacts(false)
+                setSelectedArtifact(null)
               }}
             >
               <span className="channel-icon">{getChannelIcon(channel.slug)}</span>
@@ -367,115 +439,179 @@ export default function FabricPanel({ events, workflowId }: Props) {
           ))}
         </nav>
         
-        <div className="sidebar-stats">
-          <div className="stat">
-            <span className="stat-value">{events.length}</span>
-            <span className="stat-label">events</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{messages.length}</span>
-            <span className="stat-label">messages</span>
-          </div>
+        <div className="sidebar-footer">
+          <button
+            className={`channel-item events-item ${sidebarTab === 'events' ? 'active' : ''}`}
+            onClick={() => {
+              setSidebarTab('events')
+              setSelectedThread(null)
+            }}
+          >
+            <span className="channel-icon">📊</span>
+            <span className="channel-name">Events</span>
+            <span className="channel-badge">{events.length}</span>
+          </button>
         </div>
       </aside>
 
       {/* Message Area */}
       <main className={`message-area ${selectedThread ? 'with-thread' : ''}`}>
-        {/* Content Area Tabs */}
-        <div className="content-tabs">
-          <button
-            className={`content-tab ${sidebarTab === 'messages' ? 'active' : ''}`}
-            onClick={() => setSidebarTab('messages')}
-          >
-            Messages
-          </button>
-          <button
-            className={`content-tab ${sidebarTab === 'events' ? 'active' : ''}`}
-            onClick={() => setSidebarTab('events')}
-          >
-            Events
-          </button>
-        </div>
-
         {sidebarTab === 'messages' ? (
           selectedChannel ? (
             <>
               <header className="channel-header">
-                <div className="channel-title">
+                <div className="channel-header-top">
                   <span className="channel-icon-large">{getChannelIcon(selectedChannel.slug)}</span>
-                  <div>
+                  <div className="channel-title">
                     <h2>{selectedChannel.title}</h2>
-                    <p className="channel-purpose">{selectedChannel.purpose}</p>
+                    {selectedChannel.purpose && (
+                      <p className="channel-purpose">{selectedChannel.purpose}</p>
+                    )}
                   </div>
                 </div>
+                <nav className="channel-tabs">
+                  <button
+                    className={`channel-tab ${!showArtifacts ? 'active' : ''}`}
+                    onClick={() => {
+                      setShowArtifacts(false)
+                      setSelectedArtifact(null)
+                    }}
+                  >
+                    <span className="channel-tab-icon">💬</span>
+                    Messages
+                  </button>
+                  {channelArtifacts.length > 0 && (
+                    <button
+                      className={`channel-tab ${showArtifacts ? 'active' : ''}`}
+                      onClick={() => setShowArtifacts(true)}
+                    >
+                      <span className="channel-tab-icon">📎</span>
+                      Files
+                      <span className="channel-tab-badge">{channelArtifacts.length}</span>
+                    </button>
+                  )}
+                </nav>
               </header>
 
-              <div className="message-list">
-                {threads.length === 0 ? (
-                  <div className="empty-channel">
-                    <p>No messages in this channel</p>
-                  </div>
-                ) : (
-                  threads.map((thread) => (
-                    <div
-                      key={thread.parentMessage.id}
-                      className={`message-item ${selectedThread?.parentMessage.id === thread.parentMessage.id ? 'selected' : ''}`}
-                    >
-                      <div className="message-avatar" style={{ background: getAgentColor(thread.parentMessage.createdBy) }}>
-                        {thread.parentMessage.createdBy.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="message-body">
-                        <div className="message-header">
-                          <span className="message-author" style={{ color: getAgentColor(thread.parentMessage.createdBy) }}>
-                            {thread.parentMessage.createdBy}
+              {showArtifacts ? (
+                <div className="artifacts-view">
+                  <div className="artifacts-list">
+                    {channelArtifacts.map(artifact => (
+                      <button
+                        key={artifact.id}
+                        className={`artifact-item ${selectedArtifact?.id === artifact.id ? 'active' : ''}`}
+                        onClick={() => setSelectedArtifact(artifact)}
+                      >
+                        <span className="artifact-icon">📄</span>
+                        <div className="artifact-info">
+                          <span className="artifact-name">{artifact.name}</span>
+                          <span className="artifact-meta">
+                            {artifact.createdBy} • {formatBytes(artifact.sizeBytes)}
                           </span>
-                          <span className="message-time">{formatTime(thread.parentMessage.timestamp)}</span>
                         </div>
-                        <div className="message-content">
-                          {thread.parentMessage.content}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="artifact-content">
+                    {selectedArtifact ? (
+                      <>
+                        <div className="artifact-content-header">
+                          <h3>{selectedArtifact.name}</h3>
+                          <span className="artifact-content-meta">
+                            {selectedArtifact.mediaType} • {formatBytes(selectedArtifact.sizeBytes)}
+                          </span>
                         </div>
-
-                        {/* Reply indicator */}
-                        {thread.replies.length > 0 && (
-                          <button
-                            className="reply-indicator"
-                            onClick={() => setSelectedThread(thread)}
-                          >
-                            <div className="reply-avatars">
-                              {getReplyAvatars(thread.replies).map((author, i) => (
-                                <div
-                                  key={i}
-                                  className="reply-avatar"
-                                  style={{ background: getAgentColor(author) }}
-                                >
-                                  {author.charAt(0).toUpperCase()}
-                                </div>
-                              ))}
-                            </div>
-                            <span className="reply-count">
-                              {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
-                            </span>
-                            <span className="reply-preview">
-                              Last reply {formatDate(thread.replies[thread.replies.length - 1].timestamp)} at {formatTime(thread.replies[thread.replies.length - 1].timestamp)}
-                            </span>
-                          </button>
+                        {selectedArtifact.mediaType === 'text/markdown' ? (
+                          <div className="artifact-content-body artifact-markdown">
+                            {artifactContent ? (
+                              <Markdown content={artifactContent} />
+                            ) : (
+                              <p>Loading...</p>
+                            )}
+                          </div>
+                        ) : (
+                          <pre className="artifact-content-body">
+                            {artifactContent || 'Loading...'}
+                          </pre>
                         )}
+                      </>
+                    ) : (
+                      <div className="artifact-placeholder">
+                        <p>Select an artifact to view its contents</p>
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="message-list">
+                    {threads.length === 0 ? (
+                      <div className="empty-channel">
+                        <p>No messages in this channel</p>
+                      </div>
+                    ) : (
+                      threads.map((thread) => (
+                        <div
+                          key={thread.parentMessage.id}
+                          className={`message-item ${selectedThread?.parentMessage.id === thread.parentMessage.id ? 'selected' : ''}`}
+                        >
+                          <div className="message-avatar" style={{ background: getAgentColor(thread.parentMessage.createdBy) }}>
+                            {thread.parentMessage.createdBy.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="message-body">
+                            <div className="message-header">
+                              <span className="message-author" style={{ color: getAgentColor(thread.parentMessage.createdBy) }}>
+                                {thread.parentMessage.createdBy}
+                              </span>
+                              <span className="message-time">{formatTime(thread.parentMessage.timestamp)}</span>
+                            </div>
+                            <div className="message-content">
+                              {thread.parentMessage.content}
+                            </div>
 
-              <div className="channel-input-container">
-                <ChatInput
-                  channelSlug={selectedChannel.slug}
-                  placeholder={`Message #${selectedChannel.title}...`}
-                  onSend={handleChannelSend}
-                  disabled={!isWorkflowActive}
-                  disabledReason="This session has ended"
-                  agentIds={agents.map(a => a.id)}
-                />
-              </div>
+                            {/* Reply indicator */}
+                            {thread.replies.length > 0 && (
+                              <button
+                                className="reply-indicator"
+                                onClick={() => setSelectedThread(thread)}
+                              >
+                                <div className="reply-avatars">
+                                  {getReplyAvatars(thread.replies).map((author, i) => (
+                                    <div
+                                      key={i}
+                                      className="reply-avatar"
+                                      style={{ background: getAgentColor(author) }}
+                                    >
+                                      {author.charAt(0).toUpperCase()}
+                                    </div>
+                                  ))}
+                                </div>
+                                <span className="reply-count">
+                                  {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
+                                </span>
+                                <span className="reply-preview">
+                                  Last reply {formatDate(thread.replies[thread.replies.length - 1].timestamp)} at {formatTime(thread.replies[thread.replies.length - 1].timestamp)}
+                                </span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="channel-input-container">
+                    <ChatInput
+                      channelSlug={selectedChannel.slug}
+                      placeholder={`Message #${selectedChannel.title}...`}
+                      onSend={handleChannelSend}
+                      disabled={!isWorkflowActive}
+                      disabledReason="This session has ended"
+                      agentIds={agents.map(a => a.id)}
+                    />
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <div className="no-channel-selected">
