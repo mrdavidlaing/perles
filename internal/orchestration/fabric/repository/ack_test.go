@@ -146,12 +146,11 @@ func TestMemoryAckRepository_GetUnacked_RepliesWithMentions(t *testing.T) {
 	err = depRepo.Add(domain.NewDependency(reply.ID, msg.ID, domain.RelationReplyTo))
 	require.NoError(t, err)
 
-	// Coordinator should see both the message and the reply that mentions them
+	// Coordinator should only see the reply that mentions them (not their own message)
 	unacked, err := ackRepo.GetUnacked("coordinator")
 	require.NoError(t, err)
 	require.Len(t, unacked, 1)
-	require.Equal(t, 2, unacked[channel.ID].Count)
-	require.Contains(t, unacked[channel.ID].ThreadIDs, msg.ID)
+	require.Equal(t, 1, unacked[channel.ID].Count)
 	require.Contains(t, unacked[channel.ID].ThreadIDs, reply.ID)
 
 	// Worker-1 (who wrote the reply) should only see the original message
@@ -213,11 +212,10 @@ func TestMemoryAckRepository_GetUnacked_NestedReplies(t *testing.T) {
 	err = depRepo.Add(domain.NewDependency(reply2.ID, reply1.ID, domain.RelationReplyTo))
 	require.NoError(t, err)
 
-	// Coordinator should see original message + nested reply with mention
+	// Coordinator should only see nested reply with mention (not their own message)
 	unacked, err := ackRepo.GetUnacked("coordinator")
 	require.NoError(t, err)
-	require.Equal(t, 2, unacked[channel.ID].Count)
-	require.Contains(t, unacked[channel.ID].ThreadIDs, msg.ID)
+	require.Equal(t, 1, unacked[channel.ID].Count)
 	require.Contains(t, unacked[channel.ID].ThreadIDs, reply2.ID)
 }
 

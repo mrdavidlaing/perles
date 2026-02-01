@@ -108,6 +108,10 @@ func (r *MemoryAckRepository) GetUnacked(agentID string) (map[string]UnackedSumm
 		if msg.IsArchived() {
 			continue
 		}
+		// Don't show messages the agent sent themselves
+		if msg.CreatedBy == agentID {
+			continue
+		}
 
 		// Check if this is a top-level message (has ChildOf → channel)
 		channelID, err := r.getChannelForMessage(msg.ID)
