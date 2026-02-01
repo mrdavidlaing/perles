@@ -120,6 +120,15 @@ func (s *Service) InitSession(createdBy string) error {
 		return fmt.Errorf("subscribe coordinator to system: %w", err)
 	}
 
+	// Auto-subscribe observer to all channels with mode=all
+	// This ensures observer receives all fabric activity without relying on the AI to subscribe
+	observerChannels := []string{s.observerID, s.systemID, s.tasksID, s.planningID, s.generalID}
+	for _, chID := range observerChannels {
+		if _, err := s.subscriptions.Subscribe(chID, "observer", domain.ModeAll); err != nil {
+			return fmt.Errorf("subscribe observer to channel: %w", err)
+		}
+	}
+
 	return nil
 }
 

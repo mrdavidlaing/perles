@@ -322,6 +322,56 @@ func TestService_UnsubscribeAll_NoSubscriptions(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestService_InitSession_SubscribesObserverToAllChannels(t *testing.T) {
+	svc := newTestService()
+	err := svc.InitSession("coordinator")
+	require.NoError(t, err)
+
+	// Verify observer is automatically subscribed to all 5 channels
+	subs, err := svc.GetSubscriptions("observer")
+	require.NoError(t, err)
+	require.Len(t, subs, 5, "Observer should be subscribed to 5 channels after InitSession")
+
+	// Verify all subscriptions are mode=all
+	for _, sub := range subs {
+		require.Equal(t, domain.ModeAll, sub.Mode, "Observer subscription should be mode=all")
+	}
+
+	// Verify specific channels by checking channel slugs
+	subscribedChannels := make(map[string]bool)
+	for _, sub := range subs {
+		slug := svc.GetChannelSlug(sub.ChannelID)
+		subscribedChannels[slug] = true
+	}
+
+	expectedChannels := []string{
+		domain.SlugObserver,
+		domain.SlugSystem,
+		domain.SlugTasks,
+		domain.SlugPlanning,
+		domain.SlugGeneral,
+	}
+	for _, expected := range expectedChannels {
+		require.True(t, subscribedChannels[expected], "Observer should be subscribed to #%s", expected)
+	}
+}
+
+func TestService_InitSession_ObserverSubscriptionsIdempotent(t *testing.T) {
+	svc := newTestService()
+
+	// Call InitSession twice (should be idempotent)
+	err := svc.InitSession("coordinator")
+	require.NoError(t, err)
+
+	err = svc.InitSession("coordinator")
+	require.NoError(t, err)
+
+	// Verify still 5 subscriptions (not 10)
+	subs, err := svc.GetSubscriptions("observer")
+	require.NoError(t, err)
+	require.Len(t, subs, 5, "Calling InitSession twice should not create duplicate observer subscriptions")
+}
+
 func TestParseMentions(t *testing.T) {
 	tests := []struct {
 		name    string

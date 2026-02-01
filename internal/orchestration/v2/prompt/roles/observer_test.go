@@ -106,18 +106,17 @@ func TestObserverSystemPromptVersion_IsSemver(t *testing.T) {
 		ObserverSystemPromptVersion)
 }
 
-// TestObserverIdlePrompt_ContainsSubscriptionInstructions verifies idle prompt
-// instructs the Observer to subscribe to channels on startup.
-func TestObserverIdlePrompt_ContainsSubscriptionInstructions(t *testing.T) {
+// TestObserverIdlePrompt_StatesAlreadySubscribed verifies idle prompt
+// tells the observer it's already subscribed (subscriptions are set up programmatically).
+func TestObserverIdlePrompt_StatesAlreadySubscribed(t *testing.T) {
 	prompt := ObserverIdlePrompt()
 
-	require.Contains(t, prompt, "fabric_subscribe",
-		"ObserverIdlePrompt should contain subscription instructions")
-	// Observer now subscribes to #observer first, then remaining channels
-	require.Contains(t, prompt, "Subscribe to #observer channel first",
-		"ObserverIdlePrompt should instruct subscribing to #observer first")
-	require.Contains(t, prompt, "Subscribe to remaining channels",
-		"ObserverIdlePrompt should instruct subscribing to remaining channels")
+	require.Contains(t, prompt, "already subscribed to all channels",
+		"ObserverIdlePrompt should state observer is already subscribed")
+	require.Contains(t, prompt, "Do NOT call fabric_subscribe",
+		"ObserverIdlePrompt should instruct not to call fabric_subscribe")
+	require.NotContains(t, prompt, "Subscribe to #observer channel first",
+		"ObserverIdlePrompt should NOT contain old subscription instructions")
 }
 
 // TestObserverIdlePrompt_IdentifiesAsObserver verifies role identification.
