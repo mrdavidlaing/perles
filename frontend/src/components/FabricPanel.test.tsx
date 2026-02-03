@@ -103,6 +103,8 @@ describe('FabricPanel', () => {
 
   afterEach(() => {
     cleanup()
+    // Reset URL search params to prevent state leakage between tests
+    window.history.replaceState({}, '', window.location.pathname)
   })
 
   describe('rendering', () => {
@@ -193,10 +195,11 @@ describe('FabricPanel', () => {
       })
 
       const input = screen.getByPlaceholderText('Message #Tasks...')
-      // Type message that will trigger autocomplete at @
-      await user.type(input, 'Hello world @')
+      // Type message that will trigger autocomplete at @c to filter to coordinator
+      // (typing just @ would show 'here' first, so we type @c to filter)
+      await user.type(input, 'Hello world @c')
 
-      // Autocomplete should appear - select coordinator with Enter
+      // Autocomplete should appear with coordinator filtered - select with Enter
       await waitFor(() => {
         expect(document.querySelector('.mention-autocomplete')).toBeInTheDocument()
       })
@@ -379,6 +382,88 @@ describe('FabricPanel', () => {
       // The ChatInput inside should have the thread placeholder
       const threadInput = screen.getByPlaceholderText('Reply to thread...')
       expect(threadInput).toBeInTheDocument()
+    })
+  })
+
+  describe('getEventColor', () => {
+    // Helper to create a generic event for testing color rendering
+    function createGenericEvent(eventType: string, channelId: string = 'ch-test'): FabricEvent {
+      return {
+        version: 1,
+        timestamp: new Date().toISOString(),
+        event: {
+          type: eventType,
+          timestamp: new Date().toISOString(),
+          channel_id: channelId,
+          thread: {
+            id: `test-${eventType}`,
+            type: 'message',
+            created_at: new Date().toISOString(),
+            created_by: 'test-user',
+            content: `Test ${eventType}`,
+            seq: 1,
+          },
+        },
+      }
+    }
+
+    // Test all 12 event types return correct colors
+    const eventColorMappings = [
+      // Existing 5
+      { type: 'channel.created', expectedColor: 'var(--accent-purple)' },
+      { type: 'message.posted', expectedColor: 'var(--accent-blue)' },
+      { type: 'reply.posted', expectedColor: 'var(--accent-green)' },
+      { type: 'acked', expectedColor: 'var(--accent-yellow)' },
+      { type: 'subscribed', expectedColor: 'var(--accent-orange)' },
+      // New 7
+      { type: 'participant.joined', expectedColor: 'var(--accent-green)' },
+      { type: 'artifact.added', expectedColor: 'var(--accent-purple)' },
+      { type: 'reaction.added', expectedColor: 'var(--accent-yellow)' },
+      { type: 'participant.left', expectedColor: 'var(--accent-red)' },
+      { type: 'reaction.removed', expectedColor: 'var(--accent-red)' },
+      { type: 'unsubscribed', expectedColor: 'var(--accent-red)' },
+      { type: 'channel.archived', expectedColor: 'var(--accent-red)' },
+    ]
+
+    it.each(eventColorMappings)(
+      'renders $type event with color $expectedColor',
+      async ({ type, expectedColor }) => {
+        const events: FabricEvent[] = [
+          createChannelEvent('ch-test', 'test', 'Test Channel'),
+          createGenericEvent(type, 'ch-test'),
+        ]
+
+        render(<FabricPanel events={events} />)
+
+        // Switch to events tab to see the event list
+        const eventsTab = screen.getByText('Events')
+        await userEvent.click(eventsTab)
+
+        // Find all event-type spans with our event type (may be multiple if testing channel.created)
+        const eventTypeSpans = screen.getAllByText(type)
+        // Get the last one which is our test event
+        const eventTypeSpan = eventTypeSpans[eventTypeSpans.length - 1]
+        expect(eventTypeSpan).toHaveClass('event-type')
+        expect(eventTypeSpan).toHaveStyle({ color: expectedColor })
+      }
+    )
+
+    it('renders unknown event type with text-muted fallback', async () => {
+      const events: FabricEvent[] = [
+        createChannelEvent('ch-test', 'test', 'Test Channel'),
+        createGenericEvent('unknown.event.type', 'ch-test'),
+      ]
+
+      render(<FabricPanel events={events} />)
+
+      // Switch to events tab
+      const eventsTab = screen.getByText('Events')
+      await userEvent.click(eventsTab)
+
+      // Find the event-type span with unknown type
+      const eventTypeSpan = screen.getByText('unknown.event.type')
+      expect(eventTypeSpan).toHaveClass('event-type')
+      expect(eventTypeSpan).toHaveStyle({ color: 'var(--text-muted)' })
     })
   })
 

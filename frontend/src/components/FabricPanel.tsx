@@ -488,13 +488,25 @@ export default function FabricPanel({ events, workflowId }: Props) {
     return icons[slug] || '#'
   }
 
+  // NOTE: Event types are defined in internal/orchestration/fabric/events.go
+  // When adding new event types, update both events.go and this color map
   const getEventColor = (type: string): string => {
     const colors: Record<string, string> = {
+      // Existing
       'channel.created': 'var(--accent-purple)',
       'message.posted': 'var(--accent-blue)',
       'reply.posted': 'var(--accent-green)',
       'acked': 'var(--accent-yellow)',
       'subscribed': 'var(--accent-orange)',
+      // New - additions (green/purple/yellow)
+      'participant.joined': 'var(--accent-green)',
+      'artifact.added': 'var(--accent-purple)',
+      'reaction.added': 'var(--accent-yellow)',
+      // New - removals (red)
+      'participant.left': 'var(--accent-red)',
+      'reaction.removed': 'var(--accent-red)',
+      'unsubscribed': 'var(--accent-red)',
+      'channel.archived': 'var(--accent-red)',
     }
     return colors[type] || 'var(--text-muted)'
   }
