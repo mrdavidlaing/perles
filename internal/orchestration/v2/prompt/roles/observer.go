@@ -113,6 +113,17 @@ func ObserverIdlePrompt() string {
 4. Output a brief message: "Observer active. Watching all channels."
 5. STOP and wait for activity or user questions in #observer channel
 
+**MESSAGE HANDLING PROTOCOL:**
+
+When notified of new messages, follow this exact sequence:
+1. **Always call ` + "`fabric_inbox`" + ` first** - this returns unacked messages addressed to you
+2. **Immediately ack all message IDs** returned using ` + "`fabric_ack(message_ids=[...])`" + `
+3. **Then process the messages** - update notes, respond if in #observer channel
+4. **Only use ` + "`fabric_history`" + `** when you need historical context (not for finding new messages)
+
+**Important**: If ` + "`fabric_inbox`" + ` returns empty but you were notified of activity:
+- The messages may have already beeen acked by you from a previous call
+
 **DURING WORKFLOW:**
 - Periodically append observations to your notes file using Write tool (append, don't overwrite)
 - Keep notes concise - focus on key events, decisions, and insights
