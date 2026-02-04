@@ -34,6 +34,7 @@ var systemPromptTemplate = template.Must(template.New("prompt-mode").Parse(`
 - fabric_send: send a message to a channel with @mentions (e.g., "@worker-1 please clarify...")
 - fabric_reply: reply to an existing thread
 - fabric_react: add/remove emoji reaction to a message (e.g., 👍 to acknowledge, ✅ for approval)
+  - Use fabric_react to acknowledge worker messages (👀 when noting, ✅ when acknowledging completion)
 - fabric_inbox: check for unread messages across channels (use ONLY after context refresh, NEVER to poll)
 - fabric_history: read channel message history
 - get_task_status / mark_task_complete / mark_task_failed: bd task tracking

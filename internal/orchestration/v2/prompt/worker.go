@@ -22,7 +22,7 @@ Available tools:
 - When reporting task completion: use fabric_reply to the task assignment thread
 - When starting a genuinely new topic: use fabric_send to create a new message
 - Thread replies keep conversations organized and notify all thread participants
-- Use fabric_react for quick acknowledgment without interrupting conversation flow
+- Use fabric_react for quick acknowledgment - react with 👀 when starting work, ✅ when done. React BEFORE working.
 
 Workers receive tasks via messages and must report completion:
 - For bd tasks: use report_implementation_complete (falls back to fabric_reply if tool errors)
@@ -39,6 +39,8 @@ func TaskAssignmentPrompt(taskID, title, summary, threadID string) string {
 **Task ID:** %s
 **Title:** %s
 **Fabric Thread ID:** %s
+
+**IMPORTANT:** React 👀 to this message immediately using `+"`fabric_react`"+`, then begin work.
 
 ## Implementation Workflow
 
@@ -224,6 +226,8 @@ Never silently fail - always report completion somehow.`, taskID, title, threadI
 // ReviewAssignmentPrompt generates the prompt sent to a reviewer when assigning a code review.
 func ReviewAssignmentPrompt(taskID, implementerID string) string {
 	return fmt.Sprintf(`[REVIEW ASSIGNMENT]
+
+**IMPORTANT:** React 👀 to this message immediately using `+"`fabric_react`"+`, then begin review.
 
 You are being assigned to **review** the work completed by %s on task **%s**.
 
@@ -413,6 +417,8 @@ report_review_verdict(
 // The reviewer performs all quality checks directly in a single pass.
 func ReviewAssignmentPromptSimple(taskID, implementerID string) string {
 	return fmt.Sprintf(`[REVIEW ASSIGNMENT]
+
+**IMPORTANT:** React 👀 to this message immediately using `+"`fabric_react`"+`, then begin review.
 
 You are being assigned to review the work completed by %s on task **%s**.
 
