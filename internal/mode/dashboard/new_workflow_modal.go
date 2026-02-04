@@ -28,6 +28,7 @@ type NewWorkflowModal struct {
 	gitExecutor     appgit.GitExecutor
 	workflowCreator *appreg.WorkflowCreator
 	worktreeEnabled bool // track if worktree options are available
+	vimEnabled      bool // whether vim mode is enabled for textarea fields
 
 	// templateArgs maps template key → slice of arguments for that template.
 	// Used to validate required arguments and build TemplateContext.Args on submit.
@@ -68,17 +69,20 @@ type CancelNewWorkflowMsg struct{}
 // gitExecutor is optional - if nil or if ListBranches() fails, worktree options are disabled.
 // workflowCreator is optional - if nil, epic creation is skipped.
 // registryService is optional - if nil, template listing returns empty options.
+// vimEnabled controls whether vim mode is used for textarea fields (from user config).
 func NewNewWorkflowModal(
 	registryService *appreg.RegistryService,
 	cp controlplane.ControlPlane,
 	gitExecutor appgit.GitExecutor,
 	workflowCreator *appreg.WorkflowCreator,
+	vimEnabled bool,
 ) *NewWorkflowModal {
 	m := &NewWorkflowModal{
 		registryService: registryService,
 		controlPlane:    cp,
 		gitExecutor:     gitExecutor,
 		workflowCreator: workflowCreator,
+		vimEnabled:      vimEnabled,
 		templateArgs:    make(map[string][]*registry.Argument),
 	}
 
@@ -222,7 +226,7 @@ func (m *NewWorkflowModal) buildArgumentFields(registryService *appreg.RegistryS
 			case registry.ArgumentTypeTextarea:
 				field.Type = formmodal.FieldTypeTextArea
 				field.MaxHeight = 4
-				field.VimEnabled = true
+				field.VimEnabled = m.vimEnabled
 			case registry.ArgumentTypeSelect:
 				field.Type = formmodal.FieldTypeSelect
 				field.Options = buildSelectOptions(arg.Options(), arg.DefaultValue())

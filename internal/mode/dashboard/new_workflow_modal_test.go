@@ -189,7 +189,7 @@ func createTestModelWithRegistryService(t *testing.T, workflows []*controlplane.
 
 func TestNewWorkflowModal_LoadsTemplatesFromRegistry(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 	require.NotNil(t, modal)
 
 	// Modal should be created with templates from registry
@@ -200,7 +200,7 @@ func TestNewWorkflowModal_LoadsTemplatesFromRegistry(t *testing.T) {
 }
 
 func TestNewWorkflowModal_HandlesNilRegistry(t *testing.T) {
-	modal := NewNewWorkflowModal(nil, nil, nil, nil)
+	modal := NewNewWorkflowModal(nil, nil, nil, nil, false)
 	require.NotNil(t, modal)
 
 	// Should still render without crashing
@@ -212,7 +212,7 @@ func TestNewWorkflowModal_HandlesNilRegistry(t *testing.T) {
 
 func TestNewWorkflowModal_ValidationRejectsEmptyTemplate(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	values := map[string]any{
 		"template": "",
@@ -226,7 +226,7 @@ func TestNewWorkflowModal_ValidationRejectsEmptyTemplate(t *testing.T) {
 
 func TestNewWorkflowModal_ValidationAcceptsValidInput(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	values := map[string]any{
 		"template": "quick-plan",
@@ -273,7 +273,7 @@ func TestNewWorkflowModal_CreateCallsControlPlane(t *testing.T) {
 
 	registryService := createTestRegistryService(t)
 	workflowCreator := createTestWorkflowCreator(t, registryService)
-	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator)
+	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator, false)
 
 	// Simulate form submission (now async)
 	values := map[string]any{
@@ -334,7 +334,7 @@ func TestDashboard_CreateWorkflowStartsImmediately(t *testing.T) {
 
 func TestNewWorkflowModal_ResourceLimitsOptional(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	values := map[string]any{
 		"template":     "quick-plan",
@@ -353,7 +353,7 @@ func TestNewWorkflowModal_ResourceLimitsOptional(t *testing.T) {
 
 func TestNewWorkflowModal_TabNavigates(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil).SetSize(100, 40)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false).SetSize(100, 40)
 
 	// Press Tab - should navigate to next field
 	modal, _ = modal.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -439,7 +439,7 @@ func TestDashboard_WindowResizeUpdatesModal(t *testing.T) {
 
 func TestNewWorkflowModal_CtrlSSavesForm(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil).SetSize(100, 40)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false).SetSize(100, 40)
 
 	// Press Ctrl+S - should trigger save/validation
 	// Since form is empty, it should show validation error
@@ -541,7 +541,7 @@ func TestBuildTemplateOptions_NilRegistry(t *testing.T) {
 // Test escape key handler checks for common escape binding
 func TestNewWorkflowModal_EscapeClearsModal(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil).SetSize(100, 40)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false).SetSize(100, 40)
 
 	// Press escape
 	modal, cmd := modal.Update(keys.Common.Escape.Keys()[0])
@@ -573,7 +573,7 @@ func TestNewWorkflowModal_PopulatesBranchOptionsFromListBranches(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	mockGit := createMockGitExecutorWithBranches(t)
 
-	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil, false)
 	require.NotNil(t, modal)
 	require.True(t, modal.worktreeEnabled)
 
@@ -603,7 +603,7 @@ func TestNewWorkflowModal_DisablesWorktreeFieldsWhenListBranchesFails(t *testing
 	mockGit := mocks.NewMockGitExecutor(t)
 	mockGit.EXPECT().ListBranches().Return(nil, errors.New("not a git repo"))
 
-	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil, false)
 	require.NotNil(t, modal)
 	require.False(t, modal.worktreeEnabled)
 
@@ -616,7 +616,7 @@ func TestNewWorkflowModal_DisablesWorktreeFieldsWhenListBranchesFails(t *testing
 func TestNewWorkflowModal_DisablesWorktreeFieldsWhenGitExecutorNil(t *testing.T) {
 	registryService := createTestRegistryService(t)
 
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 	require.NotNil(t, modal)
 	require.False(t, modal.worktreeEnabled)
 
@@ -638,7 +638,7 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeEnabledCorrectly(t *testing.T) {
 			spec.WorktreeBranchName == "my-feature"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator)
+	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator, false)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -666,7 +666,7 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeBaseBranchFromSearchSelect(t *test
 		return spec.WorktreeEnabled == true && spec.WorktreeBaseBranch == "develop"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator)
+	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator, false)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -694,7 +694,7 @@ func TestNewWorkflowModal_OnSubmitSetsWorktreeBranchNameFromTextField(t *testing
 		return spec.WorktreeEnabled == true && spec.WorktreeBranchName == "perles-custom-branch"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator)
+	modal := NewNewWorkflowModal(registryService, mockCP, mockGit, workflowCreator, false)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -716,7 +716,7 @@ func TestNewWorkflowModal_ValidationRequiresBaseBranchWhenWorktreeEnabled(t *tes
 	registryService := createTestRegistryService(t)
 	mockGit := createMockGitExecutorWithBranches(t)
 
-	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil, false)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -739,7 +739,7 @@ func TestNewWorkflowModal_ValidationRejectsInvalidBranchNames(t *testing.T) {
 	}, nil)
 	mockGit.EXPECT().ValidateBranchName("invalid..branch").Return(errors.New("invalid ref format"))
 
-	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil, false)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -762,7 +762,7 @@ func TestNewWorkflowModal_ValidationAcceptsValidBranchName(t *testing.T) {
 	}, nil)
 	mockGit.EXPECT().ValidateBranchName("feature/valid-branch").Return(nil)
 
-	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil, false)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -780,7 +780,7 @@ func TestNewWorkflowModal_ValidationPassesWhenWorktreeDisabled(t *testing.T) {
 	registryService := createTestRegistryService(t)
 	mockGit := createMockGitExecutorWithBranches(t)
 
-	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil)
+	modal := NewNewWorkflowModal(registryService, nil, mockGit, nil, false)
 
 	values := map[string]any{
 		"template":      "quick-plan",
@@ -890,7 +890,7 @@ func TestNewWorkflowModal_OnSubmitCallsWorkflowCreatorWithName(t *testing.T) {
 			spec.Name == "test-feature"
 	})).Return(controlplane.WorkflowID("new-workflow-id"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator)
+	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator, false)
 
 	values := map[string]any{
 		"template": "quick-plan",
@@ -944,7 +944,7 @@ func TestNewWorkflowModal_MockCreatorAndRegistryServiceTypes(t *testing.T) {
 
 func TestNewWorkflowModal_BuildCoordinatorPromptContainsAllSections(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123")
 
@@ -964,7 +964,7 @@ func TestNewWorkflowModal_OnSubmitReturnsErrorOnWorkflowCreatorFailure(t *testin
 
 	// Test the error handling path by verifying ErrorMsg is returned
 	// when WorkflowCreator would fail (simulated by checking the error type exists)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	// This test verifies the ErrorMsg type is properly defined and can be used
 	errMsg := ErrorMsg{Err: errors.New("create epic failed")}
@@ -986,7 +986,7 @@ func TestNewWorkflowModal_EpicIDPassedToWorkflowSpec(t *testing.T) {
 		return spec.EpicID == "epic-123" && spec.TemplateID == "quick-plan"
 	})).Return(controlplane.WorkflowID("workflow-123"), nil).Once()
 
-	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator)
+	modal := NewNewWorkflowModal(registryService, mockCP, nil, workflowCreator, false)
 
 	values := map[string]any{
 		"template": "quick-plan",
@@ -1034,7 +1034,7 @@ registry:
 
 func TestBuildCoordinatorPrompt_UsesCustomSystemPrompt(t *testing.T) {
 	registryService := createTestRegistryServiceWithSystemPrompt(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123")
 
@@ -1084,7 +1084,7 @@ registry:
 func TestBuildCoordinatorPrompt_HandlesNoInstructionsField(t *testing.T) {
 	// Create a registry where the template has no instructions field
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	prompt := modal.buildCoordinatorPrompt("quick-plan", "perles-abc123")
 
@@ -1098,7 +1098,7 @@ func TestBuildCoordinatorPrompt_HandlesNoInstructionsField(t *testing.T) {
 
 func TestNewWorkflowModal_ErrorMsgSetsFormError(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 	modal = modal.SetSize(80, 24)
 
 	// Send ErrorMsg to modal
@@ -1112,7 +1112,7 @@ func TestNewWorkflowModal_ErrorMsgSetsFormError(t *testing.T) {
 
 func TestNewWorkflowModal_ErrorMsgClearsLoadingState(t *testing.T) {
 	registryService := createTestRegistryService(t)
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 	modal = modal.SetSize(80, 24)
 
 	// Simulate loading state by sending startSubmitMsg first
@@ -1168,7 +1168,7 @@ registry:
 	registryService, err := appreg.NewRegistryService(registryFS, "")
 	require.NoError(t, err)
 
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	// Verify templateArgs was populated
 	require.Contains(t, modal.templateArgs, "with-args")
@@ -1223,7 +1223,7 @@ registry:
 	registryService, err := appreg.NewRegistryService(registryFS, "")
 	require.NoError(t, err)
 
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	// Test extracting argument values
 	values := map[string]any{
@@ -1268,7 +1268,7 @@ registry:
 	registryService, err := appreg.NewRegistryService(registryFS, "")
 	require.NoError(t, err)
 
-	modal := NewNewWorkflowModal(registryService, nil, nil, nil)
+	modal := NewNewWorkflowModal(registryService, nil, nil, nil, false)
 
 	// Test validation fails when required argument is missing
 	values := map[string]any{
