@@ -62,6 +62,11 @@ func followRedirect(beadsDir string) string {
 		return beadsDir
 	}
 
+	// If redirect target is absolute, use it directly
+	if filepath.IsAbs(redirectTarget) {
+		return filepath.Clean(redirectTarget)
+	}
+
 	resolvedPath := filepath.Join(beadsDir, redirectTarget)
 	return filepath.Clean(resolvedPath)
 }

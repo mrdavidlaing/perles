@@ -107,6 +107,25 @@ func TestResolveBeadsDir_NoRedirect(t *testing.T) {
 	require.Equal(t, beadsDir, result)
 }
 
+func TestResolveBeadsDir_FollowsAbsoluteRedirect(t *testing.T) {
+	// Create a temp directory structure with redirect containing absolute path
+	tmpDir := t.TempDir()
+	projectDir := filepath.Join(tmpDir, "project")
+	beadsDir := filepath.Join(projectDir, ".beads")
+	targetDir := filepath.Join(tmpDir, "actual-beads")
+
+	require.NoError(t, os.MkdirAll(beadsDir, 0755))
+	require.NoError(t, os.MkdirAll(targetDir, 0755))
+
+	// Create redirect file pointing to actual location (absolute path)
+	redirectPath := filepath.Join(beadsDir, "redirect")
+	require.NoError(t, os.WriteFile(redirectPath, []byte(targetDir), 0644))
+
+	// ResolveBeadsDir should follow the absolute redirect without joining paths
+	result := ResolveBeadsDir(projectDir)
+	require.Equal(t, targetDir, result)
+}
+
 func TestResolveBeadsDir_EmptyRedirect(t *testing.T) {
 	// Create a temp directory structure with empty redirect file
 	tmpDir := t.TempDir()
