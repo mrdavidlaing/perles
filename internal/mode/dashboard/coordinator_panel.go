@@ -789,6 +789,18 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 				}
 			}
 		}
+
+	case vimtextarea.ExternalEditorFinishedMsg:
+		// Forward to input - editor results come async after TUI resumes
+		var cmd tea.Cmd
+		p.input, cmd = p.input.Update(msg)
+		return p, cmd
+
+	case vimtextarea.ExternalEditorExecMsg:
+		// Forward to input - this triggers tea.ExecProcess for $EDITOR
+		var cmd tea.Cmd
+		p.input, cmd = p.input.Update(msg)
+		return p, cmd
 	}
 
 	return p, nil

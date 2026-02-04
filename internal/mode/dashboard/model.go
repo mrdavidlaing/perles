@@ -672,6 +672,15 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 		}
 		return m, nil
 
+	case vimtextarea.ExternalEditorFinishedMsg:
+		// Forward to coordinator panel - editor results come async after TUI resumes
+		if m.coordinatorPanel != nil {
+			var cmd tea.Cmd
+			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -683,6 +692,15 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 
 	case epicTreeLoadedMsg:
 		return m.handleEpicTreeLoaded(msg)
+
+	case vimtextarea.ExternalEditorExecMsg:
+		// Forward to coordinator panel - this triggers tea.ExecProcess for $EDITOR
+		if m.coordinatorPanel != nil {
+			var cmd tea.Cmd
+			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	}
 
 	return m, nil

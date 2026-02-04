@@ -653,6 +653,10 @@ func newDefaultRegistry() *CommandRegistry {
 	r.registerWithModeKeys(ModeNormal, &SubmitCommand{})
 	r.registerWithModeKeys(ModeInsert, &SubmitCommand{})
 
+	// External editor command (Ctrl+G) - registered for both modes
+	r.registerWithModeKeys(ModeNormal, &OpenExternalEditorCommand{})
+	r.registerWithModeKeys(ModeInsert, &OpenExternalEditorCommand{})
+
 	return r
 }
 

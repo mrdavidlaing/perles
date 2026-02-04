@@ -11,6 +11,7 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/zjrosen/perles/internal/ui/shared/colorpicker"
+	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/require"
@@ -2798,6 +2799,37 @@ func TestTextAreaField_SubmitIncludesValue(t *testing.T) {
 	submitMsg, ok := msg.(SubmitMsg)
 	require.True(t, ok, "expected SubmitMsg, got %T", msg)
 	require.Equal(t, "My description", submitMsg.Values["description"])
+}
+
+func TestTextAreaField_ForwardsNonKeyMessages(t *testing.T) {
+	cfg := FormConfig{
+		Title: "Test Form",
+		Fields: []FieldConfig{
+			{
+				Key:          "description",
+				Type:         FieldTypeTextArea,
+				Label:        "Description",
+				InitialValue: "original content",
+			},
+		},
+	}
+	m := New(cfg)
+
+	// Send ExternalEditorFinishedMsg directly to formmodal
+	// This simulates what happens when the external editor closes
+	editorMsg := vimtextarea.ExternalEditorFinishedMsg{Content: "edited content"}
+	m, _ = m.Update(editorMsg)
+
+	// The textarea should now have the edited content
+	// Submit to extract the value
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // to submit
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	submitMsg, ok := msg.(SubmitMsg)
+	require.True(t, ok, "expected SubmitMsg, got %T", msg)
+	require.Equal(t, "edited content", submitMsg.Values["description"])
 }
 
 // --- SearchSelect Golden Tests ---

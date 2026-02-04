@@ -608,6 +608,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Fall through to mode handler (dashboard mode handles its own SubmitMsg)
 
+	// Forward external editor messages to chatPanel
+	// These are emitted by vimtextarea when user presses Ctrl+G to open $EDITOR
+	case vimtextarea.ExternalEditorFinishedMsg:
+		if m.chatPanel.Visible() && m.currentMode != mode.ModeDashboard {
+			var cmd tea.Cmd
+			m.chatPanel, cmd = m.chatPanel.Update(msg)
+			return m, cmd
+		}
+
 	// Forward chat panel pubsub events (from SimpleChatInfrastructure)
 	// Always forward to chat panel to keep listener active (even when hidden).
 	// This prevents the listener chain from breaking when the panel is toggled off.
@@ -742,6 +751,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Message: fmt.Sprintf("Terminal too narrow for side-by-side view (need %d cols, have %d)", msg.MinWidth, msg.CurrentWidth),
 				Style:   toaster.StyleInfo,
 			}
+		}
+
+	case vimtextarea.ExternalEditorExecMsg:
+		// Forward to chatPanel - this triggers tea.ExecProcess for $EDITOR
+		if m.chatPanel.Visible() && m.currentMode != mode.ModeDashboard {
+			var cmd tea.Cmd
+			m.chatPanel, cmd = m.chatPanel.Update(msg)
+			return m, cmd
 		}
 	}
 

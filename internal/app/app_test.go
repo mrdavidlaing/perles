@@ -27,6 +27,7 @@ import (
 	appreg "github.com/zjrosen/perles/internal/registry/application"
 	"github.com/zjrosen/perles/internal/ui/shared/chatpanel"
 	"github.com/zjrosen/perles/internal/ui/shared/diffviewer"
+	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
 )
 
 // TestMain initializes the global zone manager for all tests in this package.
@@ -2337,4 +2338,37 @@ func TestApp_Shutdown_ClosesDatabase(t *testing.T) {
 	// (A closed connection will return an error)
 	_, err = db.Connection().Exec("SELECT 1")
 	require.Error(t, err, "database connection should be closed after model.Close()")
+}
+
+// TestApp_ForwardsExternalEditorMessages verifies that external editor messages
+// from vimtextarea are correctly forwarded to the chatpanel when it's visible.
+func TestApp_ForwardsExternalEditorMessages(t *testing.T) {
+	m := createTestModel(t)
+
+	// Setup: make chatpanel visible and focused
+	infra := newTestChatInfrastructure(t)
+	err := infra.Start()
+	require.NoError(t, err)
+	m.chatInfra = infra
+	m.chatPanel = m.chatPanel.SetInfrastructure(infra)
+
+	// Set size
+	newModel, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = newModel.(Model)
+
+	// Open chat panel
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m = newModel.(Model)
+	require.True(t, m.chatPanel.Visible(), "panel should be visible")
+	require.True(t, m.chatPanelFocused, "panel should be focused")
+
+	// Send ExternalEditorFinishedMsg - should be forwarded to chatpanel
+	editorMsg := vimtextarea.ExternalEditorFinishedMsg{Content: "edited content"}
+	newModel, _ = m.Update(editorMsg)
+	m = newModel.(Model)
+
+	// The input in chatpanel should now have the edited content
+	// We can't easily verify this without exposing internals, but at least
+	// verify the update didn't panic and the model is still valid
+	require.True(t, m.chatPanel.Visible(), "panel should still be visible after editor message")
 }

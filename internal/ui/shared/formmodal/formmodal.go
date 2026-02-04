@@ -215,9 +215,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	// Forward to focused text input if applicable
 	if m.focusedIndex >= 0 && m.focusedIndex < len(m.fields) {
 		fs := &m.fields[m.focusedIndex]
-		if fs.config.Type == FieldTypeText {
+		switch fs.config.Type {
+		case FieldTypeText:
 			var cmd tea.Cmd
 			fs.textInput, cmd = fs.textInput.Update(msg)
+			return m, cmd
+		case FieldTypeTextArea:
+			// Forward non-key messages to vimtextarea (e.g., external editor messages)
+			var cmd tea.Cmd
+			fs.textArea, cmd = fs.textArea.Update(msg)
 			return m, cmd
 		}
 	}

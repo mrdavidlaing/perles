@@ -194,6 +194,17 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Tick arrived - the highlight will be cleared automatically in View if expired
 		// Just trigger a re-render by returning
 		return m, nil
+	case ExternalEditorExecMsg:
+		// Launch external editor - parent must handle this via tea.ExecProcess
+		return m, msg.ExecCmd()
+	case ExternalEditorFinishedMsg:
+		// External editor closed - replace content if successful
+		if msg.Err == nil {
+			m.SetValue(msg.Content)
+			m.CursorToEnd()
+		}
+		// Re-enable mouse tracking after tea.ExecProcess returns
+		return m, tea.EnableMouseCellMotion
 	}
 	return m, nil
 }
@@ -251,6 +262,8 @@ func keyToString(msg tea.KeyMsg) string {
 		return "<ctrl+b>"
 	case tea.KeyCtrlC:
 		return "<ctrl+c>"
+	case tea.KeyCtrlG:
+		return "<ctrl+g>"
 	default:
 		return ""
 	}
@@ -473,6 +486,11 @@ func (m Model) executeAndRespond(cmd Command, previousMode Mode) (Model, tea.Cmd
 	// Check if command wants to trigger submit
 	if submitter, ok := cmd.(SubmitRequester); ok && submitter.IsSubmit() {
 		return m.submitContent()
+	}
+
+	// Check if command wants to open external editor
+	if _, ok := cmd.(*OpenExternalEditorCommand); ok {
+		return m, CreateEditorCmd(m.Value())
 	}
 
 	// Check if command wants to show yank highlight
