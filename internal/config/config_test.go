@@ -1732,27 +1732,18 @@ func TestDefaultTimeoutsConfig(t *testing.T) {
 	cfg := DefaultTimeoutsConfig()
 
 	require.Equal(t, 30*time.Second, cfg.WorktreeCreation, "WorktreeCreation should be 30s")
-	require.Equal(t, 60*time.Second, cfg.CoordinatorStart, "CoordinatorStart should be 60s")
-	require.Equal(t, 30*time.Second, cfg.WorkspaceSetup, "WorkspaceSetup should be 30s")
-	require.Equal(t, 120*time.Second, cfg.MaxTotal, "MaxTotal should be 120s")
 }
 
 func TestTimeoutsConfig_ZeroValue(t *testing.T) {
 	// Test that zero value TimeoutsConfig has expected defaults (all zero durations)
 	cfg := TimeoutsConfig{}
 	require.Equal(t, time.Duration(0), cfg.WorktreeCreation, "WorktreeCreation zero value should be 0")
-	require.Equal(t, time.Duration(0), cfg.CoordinatorStart, "CoordinatorStart zero value should be 0")
-	require.Equal(t, time.Duration(0), cfg.WorkspaceSetup, "WorkspaceSetup zero value should be 0")
-	require.Equal(t, time.Duration(0), cfg.MaxTotal, "MaxTotal zero value should be 0")
 }
 
 func TestDefaults_Timeouts(t *testing.T) {
 	cfg := Defaults()
 
 	require.Equal(t, 30*time.Second, cfg.Orchestration.Timeouts.WorktreeCreation, "WorktreeCreation should be 30s")
-	require.Equal(t, 60*time.Second, cfg.Orchestration.Timeouts.CoordinatorStart, "CoordinatorStart should be 60s")
-	require.Equal(t, 30*time.Second, cfg.Orchestration.Timeouts.WorkspaceSetup, "WorkspaceSetup should be 30s")
-	require.Equal(t, 120*time.Second, cfg.Orchestration.Timeouts.MaxTotal, "MaxTotal should be 120s")
 }
 
 func TestOrchestrationConfig_TimeoutsField(t *testing.T) {
@@ -1761,15 +1752,9 @@ func TestOrchestrationConfig_TimeoutsField(t *testing.T) {
 		Client: "claude",
 		Timeouts: TimeoutsConfig{
 			WorktreeCreation: 45 * time.Second,
-			CoordinatorStart: 90 * time.Second,
-			WorkspaceSetup:   15 * time.Second,
-			MaxTotal:         180 * time.Second,
 		},
 	}
 	require.Equal(t, 45*time.Second, cfg.Timeouts.WorktreeCreation)
-	require.Equal(t, 90*time.Second, cfg.Timeouts.CoordinatorStart)
-	require.Equal(t, 15*time.Second, cfg.Timeouts.WorkspaceSetup)
-	require.Equal(t, 180*time.Second, cfg.Timeouts.MaxTotal)
 }
 
 func TestTimeoutsConfig_PartialValues(t *testing.T) {
@@ -1779,9 +1764,6 @@ func TestTimeoutsConfig_PartialValues(t *testing.T) {
 		// Other fields left as zero
 	}
 	require.Equal(t, 45*time.Second, cfg.WorktreeCreation)
-	require.Equal(t, time.Duration(0), cfg.CoordinatorStart)
-	require.Equal(t, time.Duration(0), cfg.WorkspaceSetup)
-	require.Equal(t, time.Duration(0), cfg.MaxTotal)
 }
 
 func TestTimeoutsConfig_VariousDurationFormats(t *testing.T) {
@@ -1812,14 +1794,8 @@ func TestTimeoutsConfig_CustomValuesPreserved(t *testing.T) {
 	// Test that custom values are preserved (simulating config file loading)
 	cfg := TimeoutsConfig{
 		WorktreeCreation: 45 * time.Second,
-		CoordinatorStart: 90 * time.Second,
-		WorkspaceSetup:   15 * time.Second,
-		MaxTotal:         180 * time.Second,
 	}
 	require.Equal(t, 45*time.Second, cfg.WorktreeCreation)
-	require.Equal(t, 90*time.Second, cfg.CoordinatorStart)
-	require.Equal(t, 15*time.Second, cfg.WorkspaceSetup)
-	require.Equal(t, 180*time.Second, cfg.MaxTotal)
 }
 
 // ============================================================================

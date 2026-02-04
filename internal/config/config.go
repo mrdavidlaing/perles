@@ -174,28 +174,12 @@ type TimeoutsConfig struct {
 	// WorktreeCreation is the timeout for git worktree creation.
 	// Default: 30 seconds
 	WorktreeCreation time.Duration `mapstructure:"worktree_creation"`
-
-	// CoordinatorStart is the timeout for coordinator process startup and first response.
-	// Default: 60 seconds (longer for slow API responses)
-	CoordinatorStart time.Duration `mapstructure:"coordinator_start"`
-
-	// WorkspaceSetup is the timeout for MCP server, session, and infrastructure setup.
-	// Default: 30 seconds
-	WorkspaceSetup time.Duration `mapstructure:"workspace_setup"`
-
-	// MaxTotal is the maximum total time allowed for initialization.
-	// Acts as a hard safety net; 0 means disabled.
-	// Default: 120 seconds
-	MaxTotal time.Duration `mapstructure:"max_total"`
 }
 
 // DefaultTimeoutsConfig returns the default timeout configuration.
 func DefaultTimeoutsConfig() TimeoutsConfig {
 	return TimeoutsConfig{
 		WorktreeCreation: 30 * time.Second,
-		CoordinatorStart: 60 * time.Second,
-		WorkspaceSetup:   30 * time.Second,
-		MaxTotal:         120 * time.Second,
 	}
 }
 
@@ -1175,6 +1159,14 @@ orchestration:
   #   # Override name/description of a built-in workflow
   #   - name: "Research Proposal"
   #     description: "Custom description for research workflow"
+
+  # Timeouts for orchestration initialization phases
+  # All values use Go duration format (e.g., "30s", "2m", "1m30s")
+  # timeouts:
+  #   worktree_creation: 30s    # Git worktree creation timeout (default: 30s)
+  #   coordinator_start: 60s    # Coordinator startup timeout (default: 60s)
+  #   workspace_setup: 30s      # MCP server and infrastructure setup (default: 30s)
+  #   max_total: 120s           # Maximum total initialization time (default: 120s)
 
   # Sound Notifications
   # Audio feedback for orchestration events. All events are enabled by default.

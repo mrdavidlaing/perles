@@ -1255,6 +1255,7 @@ func (m *Model) createControlPlane() controlplane.ControlPlane {
 		AgentProviders:     orchConfig.AgentProviders(),
 		WorkflowRegistry:   m.workflowRegistry,
 		GitExecutorFactory: m.services.GitExecutorFactory,
+		WorktreeTimeout:    orchConfig.Timeouts.WorktreeCreation,
 		Flags:              m.services.Flags,
 		SessionFactory:     sessionFactory,
 		SoundService:       m.services.Sounds,

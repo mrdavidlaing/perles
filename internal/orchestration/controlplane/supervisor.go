@@ -322,6 +322,9 @@ func (s *defaultSupervisor) AllocateResources(ctx context.Context, inst *Workflo
 
 			if err != nil {
 				cancel()
+				log.ErrorErr(log.CatOrch, "failed to create worktree", err, "subsystem", "supervisor",
+					"workflowID", inst.ID, "path", path, "branch", branchName)
+
 				// Wrap known error types for user-friendly messages
 				if errors.Is(err, domaingit.ErrBranchAlreadyCheckedOut) {
 					return fmt.Errorf("creating worktree: branch '%s' is already checked out in another worktree: %w", branchName, err)

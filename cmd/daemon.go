@@ -216,6 +216,7 @@ func createDaemonControlPlane(cfg *config.Config, _ string) (controlplane.Contro
 	supervisor, err := controlplane.NewSupervisor(controlplane.SupervisorConfig{
 		AgentProviders:   orchConfig.AgentProviders(),
 		WorkflowRegistry: workflowRegistry,
+		WorktreeTimeout:  orchConfig.Timeouts.WorktreeCreation,
 		SessionFactory:   sessionFactory,
 		SoundService:     soundService,
 		BeadsDir:         cfg.ResolvedBeadsDir,
