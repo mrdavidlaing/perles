@@ -11,7 +11,7 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/zjrosen/perles/internal/ui/shared/colorpicker"
-	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/require"
@@ -2815,9 +2815,9 @@ func TestTextAreaField_ForwardsNonKeyMessages(t *testing.T) {
 	}
 	m := New(cfg)
 
-	// Send ExternalEditorFinishedMsg directly to formmodal
+	// Send editor.FinishedMsg directly to formmodal
 	// This simulates what happens when the external editor closes
-	editorMsg := vimtextarea.ExternalEditorFinishedMsg{Content: "edited content"}
+	editorMsg := editor.FinishedMsg{Content: "edited content"}
 	m, _ = m.Update(editorMsg)
 
 	// The textarea should now have the edited content

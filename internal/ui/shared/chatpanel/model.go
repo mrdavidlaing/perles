@@ -529,12 +529,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 	default:
-		// Check if this is an external editor message (internal type from vimtextarea)
+		// Check if this is an external editor message
 		// These must always be forwarded regardless of visibility since the editor
 		// runs while TUI is suspended via tea.ExecProcess
 		msgType := fmt.Sprintf("%T", msg)
-		isExternalEditorMsg := msgType == "vimtextarea.externalEditorExecMsg" ||
-			msgType == "vimtextarea.ExternalEditorFinishedMsg"
+		isExternalEditorMsg := msgType == "editor.ExecMsg" ||
+			msgType == "editor.FinishedMsg"
 
 		// Only process other messages if visible and focused (unless it's an editor message)
 		if !isExternalEditorMsg && (!m.visible || !m.focused) {

@@ -25,6 +25,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/v2/process"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 	"github.com/zjrosen/perles/internal/ui/shared/mention"
 	"github.com/zjrosen/perles/internal/ui/shared/overlay"
 	"github.com/zjrosen/perles/internal/ui/shared/panes"
@@ -790,13 +791,13 @@ func (p *CoordinatorPanel) Update(msg tea.Msg) (*CoordinatorPanel, tea.Cmd) {
 			}
 		}
 
-	case vimtextarea.ExternalEditorFinishedMsg:
+	case editor.FinishedMsg:
 		// Forward to input - editor results come async after TUI resumes
 		var cmd tea.Cmd
 		p.input, cmd = p.input.Update(msg)
 		return p, cmd
 
-	case vimtextarea.ExternalEditorExecMsg:
+	case editor.ExecMsg:
 		// Forward to input - this triggers tea.ExecProcess for $EDITOR
 		var cmd tea.Cmd
 		p.input, cmd = p.input.Update(msg)

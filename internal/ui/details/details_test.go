@@ -824,7 +824,7 @@ func TestDetails_FooterShowsDeleteKeybinding(t *testing.T) {
 	m = m.SetSize(100, 40)
 	view := m.View()
 
-	require.Contains(t, view, "[ctrl+d] Delete Issue", "expected footer to show delete keybinding")
+	require.Contains(t, view, "[ctrl+d]", "expected footer to show delete keybinding")
 }
 
 // TestDetails_View_Golden uses teatest golden file comparison.

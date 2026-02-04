@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 )
 
 func TestModel_ForwardsExternalEditorMessages_WhenNotVisible(t *testing.T) {
@@ -16,8 +16,8 @@ func TestModel_ForwardsExternalEditorMessages_WhenNotVisible(t *testing.T) {
 	m.focused = false
 	m.input.SetValue("original content")
 
-	// Send ExternalEditorFinishedMsg - should be forwarded even when not visible
-	editorMsg := vimtextarea.ExternalEditorFinishedMsg{Content: "edited in vim"}
+	// Send editor.FinishedMsg - should be forwarded even when not visible
+	editorMsg := editor.FinishedMsg{Content: "edited in vim"}
 	m, _ = m.Update(editorMsg)
 
 	// The input should now have the edited content
@@ -30,7 +30,7 @@ func TestModel_ForwardsExternalEditorMessages_WhenVisible(t *testing.T) {
 	m.focused = true
 	m.input.SetValue("original content")
 
-	editorMsg := vimtextarea.ExternalEditorFinishedMsg{Content: "new content"}
+	editorMsg := editor.FinishedMsg{Content: "new content"}
 	m, _ = m.Update(editorMsg)
 
 	require.Equal(t, "new content", m.input.Value())

@@ -40,6 +40,7 @@ import (
 
 	"github.com/zjrosen/perles/internal/ui/shared/chatpanel"
 	"github.com/zjrosen/perles/internal/ui/shared/diffviewer"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 	"github.com/zjrosen/perles/internal/ui/shared/logoverlay"
 	"github.com/zjrosen/perles/internal/ui/shared/quitmodal"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
@@ -610,7 +611,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Forward external editor messages to chatPanel
 	// These are emitted by vimtextarea when user presses Ctrl+G to open $EDITOR
-	case vimtextarea.ExternalEditorFinishedMsg:
+	case editor.FinishedMsg:
 		if m.chatPanel.Visible() && m.currentMode != mode.ModeDashboard {
 			var cmd tea.Cmd
 			m.chatPanel, cmd = m.chatPanel.Update(msg)
@@ -753,7 +754,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case vimtextarea.ExternalEditorExecMsg:
+	case editor.ExecMsg:
 		// Forward to chatPanel - this triggers tea.ExecProcess for $EDITOR
 		if m.chatPanel.Visible() && m.currentMode != mode.ModeDashboard {
 			var cmd tea.Cmd

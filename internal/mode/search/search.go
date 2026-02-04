@@ -25,6 +25,7 @@ import (
 	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/colorpicker"
 	"github.com/zjrosen/perles/internal/ui/shared/diffviewer"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
 	"github.com/zjrosen/perles/internal/ui/shared/issuebadge"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
@@ -94,6 +95,9 @@ type Model struct {
 
 	// Delete operation state
 	deleteIssueIDs []string // IDs to delete (includes descendants for epics)
+
+	// External editor state
+	editingDescriptionIssueID string // Non-empty when external editor is open for description
 
 	// Focus management
 	focus FocusPane
@@ -624,6 +628,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case statusChangedMsg:
 		return m.handleStatusChanged(msg)
 
+	case descriptionChangedMsg:
+		return m.handleDescriptionChanged(msg)
+
 	case debounceSearchMsg:
 		// Only execute if version matches (not stale)
 		if msg.version == m.searchVersion {
@@ -743,6 +750,44 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			SetSize(m.width, m.height)
 		m.view = ViewEditIssue
 		return m, m.issueEditor.Init()
+
+	case details.OpenDescriptionEditorMsg:
+		// Open external editor for issue description
+		m.editingDescriptionIssueID = msg.IssueID
+		return m, editor.OpenCmd(msg.Description)
+
+	case editor.ExecMsg:
+		// Execute the external editor command
+		if m.editingDescriptionIssueID != "" {
+			return m, msg.ExecCmd()
+		}
+		return m, nil
+
+	case editor.FinishedMsg:
+		// Handle external editor result
+		if m.editingDescriptionIssueID != "" {
+			issueID := m.editingDescriptionIssueID
+			m.editingDescriptionIssueID = "" // Clear state
+
+			if msg.Err != nil {
+				return m, tea.Batch(
+					tea.EnableMouseCellMotion,
+					func() tea.Msg {
+						return mode.ShowToastMsg{
+							Message: fmt.Sprintf("Editor error: %v", msg.Err),
+							Style:   toaster.StyleError,
+						}
+					},
+				)
+			}
+
+			// Save to database - watcher will refresh UI automatically
+			return m, tea.Batch(
+				tea.EnableMouseCellMotion,
+				m.updateIssueDescriptionCmd(issueID, msg.Content),
+			)
+		}
+		return m, nil
 
 	case modal.SubmitMsg:
 		return m.handleModalSubmit(msg)
@@ -1955,6 +2000,13 @@ type statusChangedMsg struct {
 	err     error
 }
 
+// descriptionChangedMsg signals completion of a description update.
+type descriptionChangedMsg struct {
+	issueID     string
+	description string
+	err         error
+}
+
 // saveActionExistingViewMsg is produced when "existing view" is selected in save action picker.
 type saveActionExistingViewMsg struct {
 	query string
@@ -2045,6 +2097,14 @@ func (m Model) updateStatusCmd(issueID string, status beads.Status) tea.Cmd {
 	}
 }
 
+// updateIssueDescriptionCmd creates a command to update an issue's description.
+func (m Model) updateIssueDescriptionCmd(issueID string, description string) tea.Cmd {
+	return func() tea.Msg {
+		err := m.services.BeadsExecutor.UpdateDescription(issueID, description)
+		return descriptionChangedMsg{issueID: issueID, description: description, err: err}
+	}
+}
+
 // HandleDBChanged processes database change notifications from the app.
 // This is called by app.go when the centralized watcher detects changes.
 // The app handles re-subscription; this method just triggers the refresh.
@@ -2120,6 +2180,25 @@ func (m Model) handleStatusChanged(msg statusChangedMsg) (Model, tea.Cmd) {
 	m.resultsList.SetItems(items)
 
 	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Status updated", Style: toaster.StyleSuccess} }
+}
+
+// handleDescriptionChanged processes description change results.
+func (m Model) handleDescriptionChanged(msg descriptionChangedMsg) (Model, tea.Cmd) {
+	if msg.err != nil {
+		return m, func() tea.Msg {
+			return mode.ShowToastMsg{Message: "Error: " + msg.err.Error(), Style: toaster.StyleError}
+		}
+	}
+
+	// Update the issue in our results list
+	for i := range m.results {
+		if m.results[i].ID == msg.issueID {
+			m.results[i].DescriptionText = msg.description
+			break
+		}
+	}
+
+	return m, func() tea.Msg { return mode.ShowToastMsg{Message: "Description updated", Style: toaster.StyleSuccess} }
 }
 
 // yankIssueID copies the selected issue ID to clipboard.

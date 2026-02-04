@@ -5,6 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/require"
+
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 )
 
 func TestOpenExternalEditorCommand_Keys(t *testing.T) {
@@ -66,7 +68,7 @@ func TestExternalEditorFinishedMsg_UpdatesContent(t *testing.T) {
 	m := New(Config{VimEnabled: true, DefaultMode: ModeNormal})
 	m.SetValue("old content")
 
-	msg := ExternalEditorFinishedMsg{Content: "new content from editor"}
+	msg := editor.FinishedMsg{Content: "new content from editor"}
 	m, _ = m.Update(msg)
 
 	require.Equal(t, "new content from editor", m.Value())
@@ -76,7 +78,7 @@ func TestExternalEditorFinishedMsg_ErrorDoesNotUpdateContent(t *testing.T) {
 	m := New(Config{VimEnabled: true, DefaultMode: ModeNormal})
 	m.SetValue("original content")
 
-	msg := ExternalEditorFinishedMsg{
+	msg := editor.FinishedMsg{
 		Content: "should not appear",
 		Err:     tea.ErrInterrupted,
 	}

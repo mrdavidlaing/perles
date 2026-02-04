@@ -22,6 +22,7 @@ type IssueWriter interface {
 	UpdateStatus(issueID string, status domain.Status) error
 	UpdatePriority(issueID string, priority domain.Priority) error
 	UpdateType(issueID string, issueType domain.IssueType) error
+	UpdateDescription(issueID, description string) error
 	CloseIssue(issueID, reason string) error
 	ReopenIssue(issueID string) error
 	SetLabels(issueID string, labels []string) error

@@ -20,6 +20,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/controlplane"
 	controlplanemocks "github.com/zjrosen/perles/internal/orchestration/controlplane/mocks"
 	"github.com/zjrosen/perles/internal/orchestration/events"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
 	"github.com/zjrosen/perles/internal/ui/shared/toaster"
@@ -3073,4 +3074,61 @@ func TestModel_FabricThreadCreatedMsg_NoPanelOpen(t *testing.T) {
 
 	// Should still have no panel
 	require.Nil(t, m.coordinatorPanel)
+}
+
+// === editor.FinishedMsg Tests ===
+
+func TestModel_EditorFinishedMsg_ForwardedToCoordinatorPanel(t *testing.T) {
+	// When an external editor closes (ctrl+g in vimtextarea), the editor.FinishedMsg
+	// must be forwarded to the coordinator panel so the vimtextarea can update its
+	// content and return tea.EnableMouseCellMotion to re-enable mouse tracking.
+
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Test Workflow", controlplane.WorkflowRunning),
+	}
+	m, _ := createTestModel(t, workflows)
+	m = m.SetSize(100, 40).(Model)
+	m.selectedIndex = 0
+
+	// Open the coordinator panel
+	m.openCoordinatorPanelForSelected()
+	require.NotNil(t, m.coordinatorPanel, "coordinator panel should be created")
+
+	// Set some initial content in the input
+	m.coordinatorPanel.input.SetValue("initial content")
+
+	// Send editor.FinishedMsg as if the external editor just closed
+	editorMsg := editor.FinishedMsg{Content: "edited content from vim"}
+	updated, cmd := m.Update(editorMsg)
+	m = updated.(Model)
+
+	// The message should have been forwarded to the coordinator panel,
+	// which forwards it to vimtextarea, which updates the content
+	require.Equal(t, "edited content from vim", m.coordinatorPanel.input.Value(),
+		"editor content should be updated in coordinator panel input")
+
+	// The command should include tea.EnableMouseCellMotion
+	require.NotNil(t, cmd, "should return a command to re-enable mouse")
+}
+
+func TestModel_EditorFinishedMsg_NoCoordinatorPanel(t *testing.T) {
+	// When no coordinator panel is open, editor.FinishedMsg should be a no-op
+
+	workflows := []*controlplane.WorkflowInstance{
+		createTestWorkflow("wf-1", "Test Workflow", controlplane.WorkflowRunning),
+	}
+	m, _ := createTestModel(t, workflows)
+	m = m.SetSize(100, 40).(Model)
+
+	// No coordinator panel
+	require.Nil(t, m.coordinatorPanel)
+
+	// Send editor.FinishedMsg - should not panic
+	editorMsg := editor.FinishedMsg{Content: "edited content"}
+	updated, cmd := m.Update(editorMsg)
+	m = updated.(Model)
+
+	// Should handle gracefully
+	require.Nil(t, m.coordinatorPanel)
+	require.Nil(t, cmd, "should return nil when no panel to forward to")
 }

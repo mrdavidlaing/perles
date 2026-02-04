@@ -27,7 +27,7 @@ import (
 	appreg "github.com/zjrosen/perles/internal/registry/application"
 	"github.com/zjrosen/perles/internal/ui/shared/chatpanel"
 	"github.com/zjrosen/perles/internal/ui/shared/diffviewer"
-	"github.com/zjrosen/perles/internal/ui/shared/vimtextarea"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 )
 
 // TestMain initializes the global zone manager for all tests in this package.
@@ -2362,8 +2362,8 @@ func TestApp_ForwardsExternalEditorMessages(t *testing.T) {
 	require.True(t, m.chatPanel.Visible(), "panel should be visible")
 	require.True(t, m.chatPanelFocused, "panel should be focused")
 
-	// Send ExternalEditorFinishedMsg - should be forwarded to chatpanel
-	editorMsg := vimtextarea.ExternalEditorFinishedMsg{Content: "edited content"}
+	// Send editor.FinishedMsg - should be forwarded to chatpanel
+	editorMsg := editor.FinishedMsg{Content: "edited content"}
 	newModel, _ = m.Update(editorMsg)
 	m = newModel.(Model)
 

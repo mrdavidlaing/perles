@@ -97,6 +97,20 @@ func (e *BDExecutor) UpdateType(issueID string, issueType domain.IssueType) erro
 	return nil
 }
 
+// UpdateDescription changes an issue's description via bd CLI.
+func (e *BDExecutor) UpdateDescription(issueID, description string) error {
+	start := time.Now()
+	defer func() {
+		log.Debug(log.CatBeads, "UpdateDescription completed", "issueID", issueID, "duration", time.Since(start))
+	}()
+
+	if _, err := e.runBeads("update", issueID, "--description", description, "--json"); err != nil {
+		log.Error(log.CatBeads, "UpdateDescription failed", "issueID", issueID, "error", err)
+		return err
+	}
+	return nil
+}
+
 // CloseIssue marks an issue as closed with a reason via bd CLI.
 func (e *BDExecutor) CloseIssue(issueID, reason string) error {
 	start := time.Now()

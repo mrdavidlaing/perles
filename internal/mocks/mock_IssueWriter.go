@@ -419,6 +419,53 @@ func (_c *MockIssueWriter_SetLabels_Call) RunAndReturn(run func(string, []string
 	return _c
 }
 
+// UpdateDescription provides a mock function with given fields: issueID, description
+func (_m *MockIssueWriter) UpdateDescription(issueID string, description string) error {
+	ret := _m.Called(issueID, description)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateDescription")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, string) error); ok {
+		r0 = rf(issueID, description)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// MockIssueWriter_UpdateDescription_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateDescription'
+type MockIssueWriter_UpdateDescription_Call struct {
+	*mock.Call
+}
+
+// UpdateDescription is a helper method to define mock.On call
+//   - issueID string
+//   - description string
+func (_e *MockIssueWriter_Expecter) UpdateDescription(issueID interface{}, description interface{}) *MockIssueWriter_UpdateDescription_Call {
+	return &MockIssueWriter_UpdateDescription_Call{Call: _e.mock.On("UpdateDescription", issueID, description)}
+}
+
+func (_c *MockIssueWriter_UpdateDescription_Call) Run(run func(issueID string, description string)) *MockIssueWriter_UpdateDescription_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(string))
+	})
+	return _c
+}
+
+func (_c *MockIssueWriter_UpdateDescription_Call) Return(_a0 error) *MockIssueWriter_UpdateDescription_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockIssueWriter_UpdateDescription_Call) RunAndReturn(run func(string, string) error) *MockIssueWriter_UpdateDescription_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdatePriority provides a mock function with given fields: issueID, priority
 func (_m *MockIssueWriter) UpdatePriority(issueID string, priority domain.Priority) error {
 	ret := _m.Called(issueID, priority)

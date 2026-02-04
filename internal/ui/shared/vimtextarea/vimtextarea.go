@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/zjrosen/perles/internal/log"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 	"github.com/zjrosen/perles/internal/ui/styles"
 )
 
@@ -194,10 +195,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		// Tick arrived - the highlight will be cleared automatically in View if expired
 		// Just trigger a re-render by returning
 		return m, nil
-	case ExternalEditorExecMsg:
+	case editor.ExecMsg:
 		// Launch external editor - parent must handle this via tea.ExecProcess
 		return m, msg.ExecCmd()
-	case ExternalEditorFinishedMsg:
+	case editor.FinishedMsg:
 		// External editor closed - replace content if successful
 		if msg.Err == nil {
 			m.SetValue(msg.Content)

@@ -38,6 +38,7 @@ import (
 	"github.com/zjrosen/perles/internal/ui/modals/help"
 	"github.com/zjrosen/perles/internal/ui/modals/issueeditor"
 	"github.com/zjrosen/perles/internal/ui/shared/chatrender"
+	"github.com/zjrosen/perles/internal/ui/shared/editor"
 	"github.com/zjrosen/perles/internal/ui/shared/formmodal"
 	"github.com/zjrosen/perles/internal/ui/shared/modal"
 	"github.com/zjrosen/perles/internal/ui/shared/table"
@@ -672,8 +673,8 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 		}
 		return m, nil
 
-	case vimtextarea.ExternalEditorFinishedMsg:
-		// Forward to coordinator panel - editor results come async after TUI resumes
+	case editor.FinishedMsg:
+		// Forward to coordinator panel - the vimtextarea returns tea.EnableMouseCellMotion
 		if m.coordinatorPanel != nil {
 			var cmd tea.Cmd
 			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(msg)
@@ -693,8 +694,8 @@ func (m Model) Update(msg tea.Msg) (mode.Controller, tea.Cmd) {
 	case epicTreeLoadedMsg:
 		return m.handleEpicTreeLoaded(msg)
 
-	case vimtextarea.ExternalEditorExecMsg:
-		// Forward to coordinator panel - this triggers tea.ExecProcess for $EDITOR
+	case editor.ExecMsg:
+		// Forward to coordinator panel to execute external editor
 		if m.coordinatorPanel != nil {
 			var cmd tea.Cmd
 			m.coordinatorPanel, cmd = m.coordinatorPanel.Update(msg)
