@@ -19,6 +19,8 @@ const (
 	ClientGemini ClientType = "gemini"
 	// ClientOpenCode is the OpenCode CLI client.
 	ClientOpenCode ClientType = "opencode"
+	// ClientCursor is the Cursor Agent CLI client.
+	ClientCursor ClientType = "cursor"
 	// ClientMock is a mock client for testing.
 	ClientMock ClientType = "mock"
 )

@@ -9,6 +9,7 @@ import (
 	"github.com/zjrosen/perles/internal/orchestration/client/providers/amp"
 	"github.com/zjrosen/perles/internal/orchestration/client/providers/claude"
 	"github.com/zjrosen/perles/internal/orchestration/client/providers/codex"
+	"github.com/zjrosen/perles/internal/orchestration/client/providers/cursor"
 	"github.com/zjrosen/perles/internal/orchestration/client/providers/gemini"
 	"github.com/zjrosen/perles/internal/orchestration/client/providers/opencode"
 )
@@ -27,6 +28,7 @@ func allParsers() []parserTestCase {
 		{"Codex", codex.NewParser()},
 		{"Gemini", gemini.NewParser()},
 		{"OpenCode", opencode.NewParser()},
+		{"Cursor", cursor.NewParser()},
 	}
 }
 

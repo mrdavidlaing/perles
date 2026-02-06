@@ -245,6 +245,62 @@ func TestGenerateCoordinatorConfigOpenCode(t *testing.T) {
 	})
 }
 
+func TestGenerateCoordinatorConfigCursor(t *testing.T) {
+	configJSON, err := GenerateCoordinatorConfigCursor(9000)
+	require.NoError(t, err, "GenerateCoordinatorConfigCursor failed")
+
+	var cfg MCPConfig
+	require.NoError(t, json.Unmarshal([]byte(configJSON), &cfg), "Failed to parse config")
+
+	server := cfg.MCPServers["perles-orchestrator"]
+	// Cursor uses url only, no type field
+	require.Empty(t, server.Type, "Type should be empty for Cursor")
+	require.Equal(t, "http://localhost:9000/mcp", server.URL, "URL mismatch")
+}
+
+func TestGenerateWorkerConfigCursor(t *testing.T) {
+	configJSON, err := GenerateWorkerConfigCursor(9000, "worker-1")
+	require.NoError(t, err, "GenerateWorkerConfigCursor failed")
+
+	var cfg MCPConfig
+	require.NoError(t, json.Unmarshal([]byte(configJSON), &cfg), "Failed to parse config")
+
+	// Server name includes worker ID so multiple workers don't overwrite each other
+	server, ok := cfg.MCPServers["perles-worker-1"]
+	require.True(t, ok, "Missing perles-worker-1 server in config")
+	require.Empty(t, server.Type, "Type should be empty for Cursor")
+	require.Equal(t, "http://localhost:9000/worker/worker-1", server.URL, "URL mismatch")
+}
+
+func TestGenerateWorkerConfigCursor_UniqueServerNames(t *testing.T) {
+	// Each worker gets a unique server name so they coexist in .cursor/mcp.json
+	cfg1JSON, err := GenerateWorkerConfigCursor(9000, "worker-1")
+	require.NoError(t, err)
+	cfg2JSON, err := GenerateWorkerConfigCursor(9000, "worker-2")
+	require.NoError(t, err)
+
+	var cfg1, cfg2 MCPConfig
+	require.NoError(t, json.Unmarshal([]byte(cfg1JSON), &cfg1))
+	require.NoError(t, json.Unmarshal([]byte(cfg2JSON), &cfg2))
+
+	_, has1 := cfg1.MCPServers["perles-worker-1"]
+	_, has2 := cfg2.MCPServers["perles-worker-2"]
+	require.True(t, has1, "worker-1 should have perles-worker-1")
+	require.True(t, has2, "worker-2 should have perles-worker-2")
+}
+
+func TestGenerateObserverConfigCursor(t *testing.T) {
+	configJSON, err := GenerateObserverConfigCursor(9000)
+	require.NoError(t, err, "GenerateObserverConfigCursor failed")
+
+	var cfg MCPConfig
+	require.NoError(t, json.Unmarshal([]byte(configJSON), &cfg), "Failed to parse config")
+
+	server := cfg.MCPServers["perles-observer"]
+	require.Empty(t, server.Type, "Type should be empty for Cursor")
+	require.Equal(t, "http://localhost:9000/observer", server.URL, "URL mismatch")
+}
+
 func TestGenerateWorkerConfigOpenCode(t *testing.T) {
 	t.Run("returns valid JSON", func(t *testing.T) {
 		configJSON, err := GenerateWorkerConfigOpenCode(9000, "WORKER.1")

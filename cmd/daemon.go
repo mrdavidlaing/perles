@@ -31,6 +31,7 @@ import (
 	_ "github.com/zjrosen/perles/internal/orchestration/client/providers/amp"
 	_ "github.com/zjrosen/perles/internal/orchestration/client/providers/claude"
 	_ "github.com/zjrosen/perles/internal/orchestration/client/providers/codex"
+	_ "github.com/zjrosen/perles/internal/orchestration/client/providers/cursor"
 	_ "github.com/zjrosen/perles/internal/orchestration/client/providers/gemini"
 	_ "github.com/zjrosen/perles/internal/orchestration/client/providers/opencode"
 )

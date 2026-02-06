@@ -54,8 +54,10 @@ debug.log
 # Perles remove apps own perles config
 .perles/
 
-# Docs (top-level only, not nested docs/)
-/docs/
+# Docs (top-level only, allow selected tracked docs)
+/docs/*
+!/docs/CONTROL_PLANE.md
+!/docs/CURSOR_AGENT.md
 .spec/
 
 # Build files
