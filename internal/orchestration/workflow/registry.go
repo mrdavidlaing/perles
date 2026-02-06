@@ -35,16 +35,13 @@ func NewRegistryWithBuiltins() (*Registry, error) {
 	return r, nil
 }
 
-// NewRegistryWithConfig creates a registry with built-in workflows, user workflows,
-// and applies configuration overrides.
+// NewRegistryWithConfig creates a registry with built-in workflows, community workflows,
+// user workflows, and applies configuration overrides.
 //
 // Loading order (later sources can shadow earlier):
 //  1. Built-in workflows (from embedded templates)
-//  2. User workflows (from ~/.perles/workflows/)
-//
-// Config overrides:
-//   - If workflow has enabled=false, it's removed from the registry
-//   - If workflow has name/description overrides, those fields are updated
+//  2. User workflows (from ~/.perles/workflows/, can shadow built-ins)
+//  3. Config overrides (disable or modify any workflow by name)
 func NewRegistryWithConfig(cfg config.OrchestrationConfig) (*Registry, error) {
 	return NewRegistryWithConfigFromDir(cfg, UserWorkflowDir())
 }
@@ -54,7 +51,7 @@ func NewRegistryWithConfig(cfg config.OrchestrationConfig) (*Registry, error) {
 func NewRegistryWithConfigFromDir(cfg config.OrchestrationConfig, userDir string) (*Registry, error) {
 	r := NewRegistry()
 
-	// 1. Load built-in workflows first
+	// Phase 1: Load built-in workflows (baseline, always present)
 	builtins, err := LoadBuiltinWorkflows()
 	if err != nil {
 		return nil, err
@@ -63,7 +60,7 @@ func NewRegistryWithConfigFromDir(cfg config.OrchestrationConfig, userDir string
 		r.Add(wf)
 	}
 
-	// 2. Load user workflows (can shadow built-ins by using same ID)
+	// Phase 2: Load user workflows (highest source precedence, can shadow built-ins)
 	userWorkflows, err := LoadUserWorkflowsFromDir(userDir)
 	if err != nil {
 		return nil, err
@@ -72,7 +69,7 @@ func NewRegistryWithConfigFromDir(cfg config.OrchestrationConfig, userDir string
 		r.Add(wf)
 	}
 
-	// 3. Apply config overrides
+	// Phase 4: Apply config overrides (disable or modify any workflow by name)
 	applyConfigOverrides(r, cfg.Workflows)
 
 	return r, nil

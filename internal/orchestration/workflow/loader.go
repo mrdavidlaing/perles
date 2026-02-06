@@ -105,7 +105,7 @@ func parseWorkflow(content, filename string, source Source) (Workflow, error) {
 }
 
 // processAgentRoles validates and converts agent roles from YAML format.
-// It validates keys against AgentType.IsValid() and applies security restrictions.
+// It validates keys against AgentType.IsValid().
 func processAgentRoles(yamlRoles map[string]agentRoleConfigYAML) (map[string]AgentRoleConfig, error) {
 	result := make(map[string]AgentRoleConfig, len(yamlRoles))
 
@@ -116,17 +116,7 @@ func processAgentRoles(yamlRoles map[string]agentRoleConfigYAML) (map[string]Age
 			return nil, fmt.Errorf("invalid agent_role key %q: must be a valid agent type (implementer, reviewer, researcher, or empty for generic)", key)
 		}
 
-		config := AgentRoleConfig{
-			SystemPromptAppend: yamlConfig.SystemPromptAppend,
-			Constraints:        yamlConfig.Constraints,
-		}
-
-		// SystemPromptOverride only allowed for built-in workflows
-		if yamlConfig.SystemPromptOverride != "" {
-			config.SystemPromptOverride = yamlConfig.SystemPromptOverride
-		}
-
-		result[key] = config
+		result[key] = AgentRoleConfig(yamlConfig)
 	}
 
 	return result, nil

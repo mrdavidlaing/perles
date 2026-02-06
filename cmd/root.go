@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/zjrosen/perles/communityworkflows"
 	"github.com/zjrosen/perles/internal/app"
 	beads "github.com/zjrosen/perles/internal/beads/domain"
 	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
@@ -129,12 +130,22 @@ func initConfig() {
 }
 
 func initServices() {
-	// Initialize registry service with embedded templates and user-defined workflows
+	// Initialize registry service with embedded templates, community, and user-defined workflows
 	// templates.RegistryFS() contains template.yaml, workflow templates, and coordinator instructions
+	// Community workflows are loaded from communityworkflows.RegistryFS(), filtered by config
 	// User workflows are loaded from ~/.perles/workflows/*/template.yaml
+	var communitySource *appreg.CommunitySource
+	if len(cfg.Orchestration.CommunityWorkflows) > 0 {
+		communitySource = &appreg.CommunitySource{
+			FS:         communityworkflows.RegistryFS(),
+			EnabledIDs: cfg.Orchestration.CommunityWorkflows,
+		}
+	}
+
 	var err error
 	registryService, err = appreg.NewRegistryService(
 		templates.RegistryFS(),
+		communitySource,
 		appreg.UserRegistryBaseDir(),
 	)
 	if err != nil {

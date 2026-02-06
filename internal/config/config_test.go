@@ -670,6 +670,52 @@ func TestWorkflowConfig_IsEnabled_False(t *testing.T) {
 	require.False(t, wf.IsEnabled())
 }
 
+// Tests for CommunityWorkflows config field
+
+func TestConfig_CommunityWorkflows_ParsedFromYAML(t *testing.T) {
+	cfg := loadConfigFromYAML(t, `
+orchestration:
+  community_workflows:
+    - "code-review"
+    - "security-audit"
+`)
+	require.Equal(t, []string{"code-review", "security-audit"}, cfg.Orchestration.CommunityWorkflows)
+}
+
+func TestConfig_CommunityWorkflows_EmptyList(t *testing.T) {
+	cfg := loadConfigFromYAML(t, `
+orchestration:
+  community_workflows: []
+`)
+	require.NotNil(t, cfg.Orchestration.CommunityWorkflows)
+	require.Empty(t, cfg.Orchestration.CommunityWorkflows)
+}
+
+func TestConfig_CommunityWorkflows_Omitted(t *testing.T) {
+	cfg := loadConfigFromYAML(t, `
+orchestration:
+  client: "claude"
+`)
+	require.Nil(t, cfg.Orchestration.CommunityWorkflows)
+}
+
+func TestOrchestrationConfig_CommunityWorkflowsField(t *testing.T) {
+	cfg := OrchestrationConfig{
+		CommunityWorkflows: []string{"workflow-a", "workflow-b"},
+	}
+	require.Equal(t, []string{"workflow-a", "workflow-b"}, cfg.CommunityWorkflows)
+}
+
+func TestOrchestrationConfig_CommunityWorkflowsFieldStruct(t *testing.T) {
+	cfgType := reflect.TypeOf(OrchestrationConfig{})
+
+	field, ok := cfgType.FieldByName("CommunityWorkflows")
+	require.True(t, ok, "OrchestrationConfig should have CommunityWorkflows field")
+	require.Equal(t, reflect.Slice, field.Type.Kind(), "CommunityWorkflows should be a slice")
+	require.Equal(t, reflect.String, field.Type.Elem().Kind(), "CommunityWorkflows should be a slice of strings")
+	require.Equal(t, "community_workflows", field.Tag.Get("mapstructure"))
+}
+
 // Tests for VimMode UI config
 
 func TestDefaults_VimModeDisabled(t *testing.T) {

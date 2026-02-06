@@ -374,7 +374,7 @@ func TestHandler_ListTemplates(t *testing.T) {
 		"workflows/test-workflow/task1.md": &fstest.MapFile{Data: []byte("# Task 1")},
 	}
 
-	registryService, err := appreg.NewRegistryService(testFS, "")
+	registryService, err := appreg.NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	mockCP := mocks.NewMockControlPlane(t)

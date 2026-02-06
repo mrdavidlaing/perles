@@ -95,6 +95,7 @@ func TestSource_String(t *testing.T) {
 		expected string
 	}{
 		{SourceBuiltIn, "built-in"},
+		{SourceCommunity, "community"},
 		{SourceUser, "user"},
 		{Source(99), "unknown"}, // Test unknown value
 	}

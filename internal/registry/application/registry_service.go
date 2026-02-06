@@ -45,19 +45,20 @@ type RegistryService struct {
 	regToFS    map[regKey]fs.FS // Per-registration FS tracking for template resolution
 }
 
-// NewRegistryService creates a registry service loading both embedded and
-// user-defined workflows. User workflows can shadow built-in workflows by
-// having the same namespace+key.
+// NewRegistryService creates a registry service loading built-in, community,
+// and user-defined workflows. Each phase can shadow the previous:
+// built-in -> community -> user (user wins).
 //
 // Parameters:
 //   - embeddedFS: The embedded filesystem containing built-in workflows
+//   - communitySource: Community workflow source (nil = no community workflows loaded)
 //   - userBaseDir: The base directory for user workflows (e.g., ~/.perles).
 //     If empty or the directory doesn't exist, only built-in workflows are loaded.
-func NewRegistryService(embeddedFS fs.FS, userBaseDir string) (*RegistryService, error) {
+func NewRegistryService(embeddedFS fs.FS, communitySource *CommunitySource, userBaseDir string) (*RegistryService, error) {
 	reg := registry.NewRegistry()
 	regToFS := make(map[regKey]fs.FS)
 
-	// 1. Load built-in workflows with SourceBuiltIn
+	// Phase 1: Load built-in workflows with SourceBuiltIn
 	builtins, err := LoadRegistryFromYAMLWithSource(embeddedFS, registry.SourceBuiltIn)
 	if err != nil {
 		return nil, fmt.Errorf("load built-in registrations: %w", err)
@@ -67,13 +68,27 @@ func NewRegistryService(embeddedFS fs.FS, userBaseDir string) (*RegistryService,
 		regToFS[regKey{namespace: r.Namespace(), key: r.Key()}] = embeddedFS
 	}
 
+	// Phase 1.5: Load community workflows (if source provided)
+	communityRegs, communityFS, err := LoadCommunityRegistryFromFS(communitySource)
+	if err != nil {
+		return nil, fmt.Errorf("load community registrations: %w", err)
+	}
+	for _, r := range communityRegs {
+		replaced := reg.AddOrReplace(r)
+		if replaced != nil {
+			log.Warn(log.CatConfig, "community workflow shadowing built-in",
+				"namespace", r.Namespace(), "key", r.Key())
+		}
+		regToFS[regKey{namespace: r.Namespace(), key: r.Key()}] = communityFS
+	}
+
 	svc := &RegistryService{
 		registry:   reg,
 		templateFS: embeddedFS,
 		regToFS:    regToFS,
 	}
 
-	// 2. Load user workflows (if directory exists)
+	// Phase 2: Load user workflows (if directory exists)
 	if userBaseDir != "" {
 		userRegs, userFS, err := LoadUserRegistryFromDir(userBaseDir)
 		if err != nil {
@@ -84,7 +99,7 @@ func NewRegistryService(embeddedFS fs.FS, userBaseDir string) (*RegistryService,
 			for _, r := range userRegs {
 				replaced := reg.AddOrReplace(r)
 				if replaced != nil {
-					log.Info(log.CatConfig, "user workflow shadowing built-in",
+					log.Info(log.CatConfig, "user workflow shadowing existing",
 						"namespace", r.Namespace(), "key", r.Key())
 				}
 				regToFS[regKey{namespace: r.Namespace(), key: r.Key()}] = userFS

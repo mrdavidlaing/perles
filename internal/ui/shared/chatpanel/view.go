@@ -414,12 +414,15 @@ func (m Model) renderWorkflowsTab(contentHeight int) string {
 	for i, wf := range workflows {
 		isSelected := i == m.workflowListCursor && m.activeTab == TabWorkflows
 
-		// Source indicator: green for user, blue for built-in
+		// Source indicator: green for user, orange/yellow for community, blue for built-in
 		var indicatorColor lipgloss.TerminalColor
-		if wf.Source == workflow.SourceUser {
+		switch wf.Source {
+		case workflow.SourceUser:
 			indicatorColor = styles.StatusSuccessColor // green
-		} else {
-			indicatorColor = styles.StatusInProgressColor // blue
+		case workflow.SourceCommunity:
+			indicatorColor = styles.StatusWarningColor // orange/yellow
+		default:
+			indicatorColor = styles.StatusInProgressColor // blue (built-in)
 		}
 
 		// Line 1: ● Name

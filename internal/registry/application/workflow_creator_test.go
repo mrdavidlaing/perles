@@ -110,7 +110,7 @@ func TestWorkflowCreator_Create(t *testing.T) {
 			tt.setupMock(mockExecutor)
 
 			// Create service with real registry
-			registrySvc, err := NewRegistryService(templates.RegistryFS(), "")
+			registrySvc, err := NewRegistryService(templates.RegistryFS(), nil, "")
 			require.NoError(t, err)
 
 			creator := NewWorkflowCreator(registrySvc, mockExecutor, config.TemplatesConfig{})
@@ -142,7 +142,7 @@ func TestWorkflowCreator_Create(t *testing.T) {
 }
 
 func TestWorkflowCreator_NewWithConfig(t *testing.T) {
-	registrySvc, err := NewRegistryService(templates.RegistryFS(), "")
+	registrySvc, err := NewRegistryService(templates.RegistryFS(), nil, "")
 	require.NoError(t, err)
 
 	mockExecutor := mocks.NewMockIssueExecutor(t)

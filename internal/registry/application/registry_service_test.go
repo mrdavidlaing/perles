@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/zjrosen/perles/communityworkflows"
 	"github.com/zjrosen/perles/internal/config"
 	"github.com/zjrosen/perles/internal/registry/domain"
 	"github.com/zjrosen/perles/internal/templates"
@@ -518,7 +519,7 @@ func TestRenderTemplate_ConfigEmpty(t *testing.T) {
 }
 
 func TestTemplate_ResearchProposal_ConfigPath(t *testing.T) {
-	svc, err := NewRegistryService(templates.RegistryFS(), "")
+	svc, err := NewRegistryService(templates.RegistryFS(), nil, "")
 	require.NoError(t, err)
 
 	ctx := TemplateContext{
@@ -539,7 +540,7 @@ func TestTemplate_ResearchProposal_ConfigPath(t *testing.T) {
 }
 
 func TestTemplate_ResearchProposal_DefaultPath(t *testing.T) {
-	svc, err := NewRegistryService(templates.RegistryFS(), "")
+	svc, err := NewRegistryService(templates.RegistryFS(), nil, "")
 	require.NoError(t, err)
 
 	ctx := TemplateContext{
@@ -632,7 +633,7 @@ registry:
 		},
 	}
 
-	svc, err := NewRegistryService(testFS, "")
+	svc, err := NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	ctx := TemplateContext{
@@ -677,7 +678,7 @@ registry:
 		},
 	}
 
-	svc, err := NewRegistryService(testFS, "")
+	svc, err := NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	ctx := TemplateContext{
@@ -720,7 +721,7 @@ registry:
 		},
 	}
 
-	svc, err := NewRegistryService(testFS, "")
+	svc, err := NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	ctx := TemplateContext{
@@ -890,7 +891,7 @@ func TestGetSystemPromptTemplate_ReturnsContent(t *testing.T) {
 		"workflows/test-wf/test.md": &fstest.MapFile{Data: []byte("# Test")},
 	}
 
-	svc, err := NewRegistryService(testFS, "")
+	svc, err := NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	// Get the registration from the service
@@ -905,7 +906,7 @@ func TestGetSystemPromptTemplate_ReturnsContent(t *testing.T) {
 
 func TestGetSystemPromptTemplate_ErrorWhenNilRegistration(t *testing.T) {
 	testFS := createTestFS()
-	svc, err := NewRegistryService(testFS, "")
+	svc, err := NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	content, err := svc.GetSystemPromptTemplate(nil)
@@ -916,7 +917,7 @@ func TestGetSystemPromptTemplate_ErrorWhenNilRegistration(t *testing.T) {
 
 func TestGetSystemPromptTemplate_ErrorWhenEmptySystemPrompt(t *testing.T) {
 	testFS := createTestFS()
-	svc, err := NewRegistryService(testFS, "")
+	svc, err := NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	// Create a registration without system prompt
@@ -937,7 +938,7 @@ func TestGetSystemPromptTemplate_ErrorWhenEmptySystemPrompt(t *testing.T) {
 
 func TestGetSystemPromptTemplate_ErrorWhenNotFound(t *testing.T) {
 	testFS := createTestFS()
-	svc, err := NewRegistryService(testFS, "")
+	svc, err := NewRegistryService(testFS, nil, "")
 	require.NoError(t, err)
 
 	// Create a registration with system prompt pointing to nonexistent file
@@ -1002,7 +1003,7 @@ func TestNewRegistryService_LoadsBothSources(t *testing.T) {
 	require.NoError(t, os.WriteFile(userWorkflowsDir+"/user-step1.md", []byte("# User Step 1"), 0644))
 
 	// Create service with both sources
-	svc, err := NewRegistryService(builtinFS, tmpDir)
+	svc, err := NewRegistryService(builtinFS, nil, tmpDir)
 	require.NoError(t, err)
 
 	// Verify both workflows are loaded
@@ -1040,7 +1041,7 @@ func TestNewRegistryService_MissingUserDir(t *testing.T) {
 	}
 
 	// Use a nonexistent directory
-	svc, err := NewRegistryService(builtinFS, "/nonexistent/path")
+	svc, err := NewRegistryService(builtinFS, nil, "/nonexistent/path")
 	require.NoError(t, err)
 
 	// Verify only built-in workflow is loaded
@@ -1072,7 +1073,7 @@ func TestNewRegistryService_EmptyUserDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create service - should succeed with just built-in workflows
-	svc, err := NewRegistryService(builtinFS, tmpDir)
+	svc, err := NewRegistryService(builtinFS, nil, tmpDir)
 	require.NoError(t, err)
 
 	// Verify only built-in workflow is loaded
@@ -1118,7 +1119,7 @@ func TestRegistryService_UserWorkflowSource(t *testing.T) {
 `), 0644))
 	require.NoError(t, os.WriteFile(userWorkflowsDir+"/user-step1.md", []byte("# User Step 1"), 0644))
 
-	svc, err := NewRegistryService(builtinFS, tmpDir)
+	svc, err := NewRegistryService(builtinFS, nil, tmpDir)
 	require.NoError(t, err)
 
 	// Verify user workflow is tagged with SourceUser
@@ -1166,7 +1167,7 @@ func TestRegistryService_ShadowingBehavior(t *testing.T) {
 `), 0644))
 	require.NoError(t, os.WriteFile(userWorkflowsDir+"/user-step.md", []byte("# User Override Content"), 0644))
 
-	svc, err := NewRegistryService(builtinFS, tmpDir)
+	svc, err := NewRegistryService(builtinFS, nil, tmpDir)
 	require.NoError(t, err)
 
 	// Verify only one workflow with this key exists (shadowing occurred)
@@ -1217,7 +1218,7 @@ func TestRegistryService_TemplateResolution(t *testing.T) {
 `), 0644))
 	require.NoError(t, os.WriteFile(userWorkflowsDir+"/user-step1.md", []byte("# User Content"), 0644))
 
-	svc, err := NewRegistryService(builtinFS, tmpDir)
+	svc, err := NewRegistryService(builtinFS, nil, tmpDir)
 	require.NoError(t, err)
 
 	// Test that built-in templates resolve from embedded FS
@@ -1268,7 +1269,7 @@ func TestRegistryService_GetRegistrationFS(t *testing.T) {
 `), 0644))
 	require.NoError(t, os.WriteFile(userWorkflowsDir+"/user-step1.md", []byte("# User Content"), 0644))
 
-	svc, err := NewRegistryService(builtinFS, tmpDir)
+	svc, err := NewRegistryService(builtinFS, nil, tmpDir)
 	require.NoError(t, err)
 
 	// Get registrations
@@ -1326,7 +1327,7 @@ func TestRenderEpicTemplate_BuiltInWorkflow(t *testing.T) {
 		},
 	}
 
-	svc, err := NewRegistryService(builtinFS, "")
+	svc, err := NewRegistryService(builtinFS, nil, "")
 	require.NoError(t, err)
 
 	reg, err := svc.GetByKey("workflow", "builtin-wf")
@@ -1367,7 +1368,7 @@ func TestRenderEpicTemplate_ConfigInjection(t *testing.T) {
 		},
 	}
 
-	svc, err := NewRegistryService(builtinFS, "")
+	svc, err := NewRegistryService(builtinFS, nil, "")
 	require.NoError(t, err)
 
 	reg, err := svc.GetByKey("workflow", "builtin-wf")
@@ -1430,7 +1431,7 @@ func TestRenderEpicTemplate_UserWorkflow(t *testing.T) {
 	require.NoError(t, os.WriteFile(userWorkflowsDir+"/user-epic.md", []byte("# User Epic: {{.Name}}\nCustom user template for {{.Slug}}"), 0644))
 
 	// Create service with both sources
-	svc, err := NewRegistryService(builtinFS, tmpDir)
+	svc, err := NewRegistryService(builtinFS, nil, tmpDir)
 	require.NoError(t, err)
 
 	// Get user workflow
@@ -1468,7 +1469,7 @@ func TestRenderEpicTemplate_NilRegistration(t *testing.T) {
 		"workflows/test/step1.md": &fstest.MapFile{Data: []byte("# Step 1")},
 	}
 
-	svc, err := NewRegistryService(builtinFS, "")
+	svc, err := NewRegistryService(builtinFS, nil, "")
 	require.NoError(t, err)
 
 	ctx := TemplateContext{Slug: "test"}
@@ -1496,7 +1497,7 @@ func TestRenderEpicTemplate_NoTemplate(t *testing.T) {
 		"workflows/test/step1.md": &fstest.MapFile{Data: []byte("# Step 1")},
 	}
 
-	svc, err := NewRegistryService(builtinFS, "")
+	svc, err := NewRegistryService(builtinFS, nil, "")
 	require.NoError(t, err)
 
 	reg, err := svc.GetByKey("workflow", "test")
@@ -1529,7 +1530,7 @@ func TestRenderEpicTemplate_SlugRequired(t *testing.T) {
 		"workflows/test/epic.md":  &fstest.MapFile{Data: []byte("# Epic")},
 	}
 
-	svc, err := NewRegistryService(builtinFS, "")
+	svc, err := NewRegistryService(builtinFS, nil, "")
 	require.NoError(t, err)
 
 	reg, err := svc.GetByKey("workflow", "test")
@@ -1539,4 +1540,308 @@ func TestRenderEpicTemplate_SlugRequired(t *testing.T) {
 
 	_, err = svc.RenderEpicTemplate(reg, ctx)
 	require.ErrorIs(t, err, ErrSlugRequired)
+}
+
+// === Community Loading Tests ===
+
+func TestNewRegistryService_NilCommunitySource(t *testing.T) {
+	// Backward-compatible path: nil community source loads only built-in workflows
+	builtinFS := fstest.MapFS{
+		"workflows/builtin/template.yaml": &fstest.MapFile{
+			Data: []byte(`registry:
+  - namespace: "workflow"
+    key: "builtin-wf"
+    version: "v1"
+    name: "Built-in Workflow"
+    description: "A built-in workflow"
+    nodes:
+      - key: "step1"
+        name: "Step 1"
+        template: "builtin-step1.md"
+`),
+		},
+		"workflows/builtin/builtin-step1.md": &fstest.MapFile{Data: []byte("# Built-in Step 1")},
+	}
+
+	svc, err := NewRegistryService(builtinFS, nil, "")
+	require.NoError(t, err)
+
+	list := svc.List()
+	require.Len(t, list, 1)
+	require.Equal(t, "builtin-wf", list[0].Key())
+	require.Equal(t, registry.SourceBuiltIn, list[0].Source())
+}
+
+func TestNewRegistryService_WithCommunitySource(t *testing.T) {
+	// Community registrations loaded and available via GetByNamespace
+	builtinFS := fstest.MapFS{
+		"workflows/builtin/template.yaml": &fstest.MapFile{
+			Data: []byte(`registry:
+  - namespace: "workflow"
+    key: "builtin-wf"
+    version: "v1"
+    name: "Built-in Workflow"
+    description: "A built-in workflow"
+    nodes:
+      - key: "step1"
+        name: "Step 1"
+        template: "builtin-step1.md"
+`),
+		},
+		"workflows/builtin/builtin-step1.md": &fstest.MapFile{Data: []byte("# Built-in Step 1")},
+	}
+
+	communityFS := fstest.MapFS{
+		"workflows/community-wf/template.yaml": &fstest.MapFile{
+			Data: []byte(`registry:
+  - namespace: "workflow"
+    key: "community-wf"
+    version: "v1"
+    name: "Community Workflow"
+    description: "A community workflow"
+    nodes:
+      - key: "step1"
+        name: "Step 1"
+        template: "community-step1.md"
+`),
+		},
+		"workflows/community-wf/community-step1.md": &fstest.MapFile{Data: []byte("# Community Step 1")},
+	}
+
+	source := &CommunitySource{
+		FS:         communityFS,
+		EnabledIDs: []string{"workflow/community-wf"},
+	}
+
+	svc, err := NewRegistryService(builtinFS, source, "")
+	require.NoError(t, err)
+
+	// Both workflows should be present
+	list := svc.List()
+	require.Len(t, list, 2)
+
+	// Verify community workflow is accessible
+	communityReg, err := svc.GetByKey("workflow", "community-wf")
+	require.NoError(t, err)
+	require.Equal(t, "Community Workflow", communityReg.Name())
+	require.Equal(t, registry.SourceCommunity, communityReg.Source())
+
+	// Verify built-in workflow still accessible
+	builtinReg, err := svc.GetByKey("workflow", "builtin-wf")
+	require.NoError(t, err)
+	require.Equal(t, registry.SourceBuiltIn, builtinReg.Source())
+}
+
+func TestNewRegistryService_CommunityOverridesBuiltIn(t *testing.T) {
+	// Community workflow shadows built-in with same namespace+key
+	builtinFS := fstest.MapFS{
+		"workflows/shadow-target/template.yaml": &fstest.MapFile{
+			Data: []byte(`registry:
+  - namespace: "workflow"
+    key: "shadow-target"
+    version: "v1"
+    name: "Original Built-in"
+    description: "Original workflow to be shadowed"
+    nodes:
+      - key: "step1"
+        name: "Original Step"
+        template: "original-step.md"
+`),
+		},
+		"workflows/shadow-target/original-step.md": &fstest.MapFile{Data: []byte("# Original Content")},
+	}
+
+	communityFS := fstest.MapFS{
+		"workflows/shadow-target/template.yaml": &fstest.MapFile{
+			Data: []byte(`registry:
+  - namespace: "workflow"
+    key: "shadow-target"
+    version: "v1"
+    name: "Community Override"
+    description: "Community workflow that shadows built-in"
+    nodes:
+      - key: "step1"
+        name: "Community Step"
+        template: "community-step.md"
+`),
+		},
+		"workflows/shadow-target/community-step.md": &fstest.MapFile{Data: []byte("# Community Override Content")},
+	}
+
+	source := &CommunitySource{
+		FS:         communityFS,
+		EnabledIDs: []string{"workflow/shadow-target"},
+	}
+
+	svc, err := NewRegistryService(builtinFS, source, "")
+	require.NoError(t, err)
+
+	// Only one workflow with this key (community shadowed built-in)
+	list := svc.List()
+	require.Len(t, list, 1)
+
+	// Verify it's the community version
+	reg, err := svc.GetByKey("workflow", "shadow-target")
+	require.NoError(t, err)
+	require.Equal(t, "Community Override", reg.Name())
+	require.Equal(t, registry.SourceCommunity, reg.Source())
+
+	// Verify template resolves from community FS
+	content, err := svc.GetTemplate("workflow::shadow-target::v1::step1")
+	require.NoError(t, err)
+	require.Contains(t, content, "Community Override Content")
+}
+
+func TestNewRegistryService_UserOverridesCommunity(t *testing.T) {
+	// 3-phase precedence: user > community > built-in
+	builtinFS := fstest.MapFS{
+		"workflows/shadow-target/template.yaml": &fstest.MapFile{
+			Data: []byte(`registry:
+  - namespace: "workflow"
+    key: "shadow-target"
+    version: "v1"
+    name: "Built-in Version"
+    description: "Built-in workflow"
+    nodes:
+      - key: "step1"
+        name: "Step 1"
+        template: "step1.md"
+`),
+		},
+		"workflows/shadow-target/step1.md": &fstest.MapFile{Data: []byte("# Built-in")},
+	}
+
+	communityFS := fstest.MapFS{
+		"workflows/shadow-target/template.yaml": &fstest.MapFile{
+			Data: []byte(`registry:
+  - namespace: "workflow"
+    key: "shadow-target"
+    version: "v1"
+    name: "Community Version"
+    description: "Community workflow"
+    nodes:
+      - key: "step1"
+        name: "Step 1"
+        template: "community-step.md"
+`),
+		},
+		"workflows/shadow-target/community-step.md": &fstest.MapFile{Data: []byte("# Community")},
+	}
+
+	communitySource := &CommunitySource{
+		FS:         communityFS,
+		EnabledIDs: []string{"workflow/shadow-target"},
+	}
+
+	// Create user workflow that shadows both
+	tmpDir := t.TempDir()
+	userWorkflowsDir := tmpDir + "/workflows/shadow-target"
+	require.NoError(t, os.MkdirAll(userWorkflowsDir, 0755))
+
+	require.NoError(t, os.WriteFile(userWorkflowsDir+"/template.yaml", []byte(`registry:
+  - namespace: "workflow"
+    key: "shadow-target"
+    version: "v1"
+    name: "User Version"
+    description: "User workflow wins"
+    nodes:
+      - key: "step1"
+        name: "Step 1"
+        template: "user-step.md"
+`), 0644))
+	require.NoError(t, os.WriteFile(userWorkflowsDir+"/user-step.md", []byte("# User Override Content"), 0644))
+
+	svc, err := NewRegistryService(builtinFS, communitySource, tmpDir)
+	require.NoError(t, err)
+
+	// Only one workflow with this key (user wins)
+	list := svc.List()
+	require.Len(t, list, 1)
+
+	// Verify it's the user version
+	reg, err := svc.GetByKey("workflow", "shadow-target")
+	require.NoError(t, err)
+	require.Equal(t, "User Version", reg.Name())
+	require.Equal(t, registry.SourceUser, reg.Source())
+
+	// Verify template resolves from user FS
+	content, err := svc.GetTemplate("workflow::shadow-target::v1::step1")
+	require.NoError(t, err)
+	require.Contains(t, content, "User Override Content")
+}
+
+// === Integration Tests with Real Embedded FSes ===
+
+func TestJokeContestLoadableWhenEnabled(t *testing.T) {
+	// Integration test: joke-contest workflow is loadable from real community FS when enabled
+	source := &CommunitySource{
+		FS:         communityworkflows.RegistryFS(),
+		EnabledIDs: []string{"workflow/joke-contest"},
+	}
+
+	svc, err := NewRegistryService(templates.RegistryFS(), source, "")
+	require.NoError(t, err)
+
+	// Verify joke-contest is loaded
+	reg, err := svc.GetByKey("workflow", "joke-contest")
+	require.NoError(t, err)
+	require.Equal(t, "Joke Contest", reg.Name())
+	require.Equal(t, registry.SourceCommunity, reg.Source())
+
+	// Verify nodes are loaded (joke-1, joke-2, review, judge)
+	nodes := reg.DAG().Nodes()
+	require.GreaterOrEqual(t, len(nodes), 3, "joke-contest should have at least 3 nodes")
+
+	// Verify the epic template is accessible
+	require.NotEmpty(t, reg.EpicTemplate(), "joke-contest should have an epic_template")
+}
+
+func TestJokeContestNotLoadedWhenDisabled(t *testing.T) {
+	// Integration test: joke-contest workflow is NOT loaded when not in EnabledIDs
+	source := &CommunitySource{
+		FS:         communityworkflows.RegistryFS(),
+		EnabledIDs: []string{}, // Empty = nothing loaded
+	}
+
+	svc, err := NewRegistryService(templates.RegistryFS(), source, "")
+	require.NoError(t, err)
+
+	// joke-contest should not be in the registry
+	_, err = svc.GetByKey("workflow", "joke-contest")
+	require.ErrorIs(t, err, registry.ErrNotFound, "joke-contest should not be loaded when disabled")
+
+	// Verify built-in workflows are still loaded
+	list := svc.List()
+	require.NotEmpty(t, list, "built-in workflows should still be loaded")
+
+	for _, reg := range list {
+		require.Equal(t, registry.SourceBuiltIn, reg.Source(),
+			"all workflows should be built-in when community is disabled")
+	}
+}
+
+func TestCommunityRegistryBuiltinCollision(t *testing.T) {
+	// CI guard: verify community workflow keys don't collide with built-in keys.
+	// This uses real embedded FSes to catch accidental key overlap.
+
+	// Load built-in registrations
+	builtins, err := LoadRegistryFromYAMLWithSource(templates.RegistryFS(), registry.SourceBuiltIn)
+	require.NoError(t, err)
+
+	// Load all community registrations (unfiltered)
+	communityRegs, err := LoadRegistryFromYAMLWithSource(communityworkflows.RegistryFS(), registry.SourceCommunity)
+	require.NoError(t, err)
+
+	// Build a set of built-in keys (namespace/key)
+	builtinKeys := make(map[string]bool, len(builtins))
+	for _, r := range builtins {
+		builtinKeys[r.Namespace()+"/"+r.Key()] = true
+	}
+
+	// Verify no community key collides with a built-in key
+	for _, r := range communityRegs {
+		id := r.Namespace() + "/" + r.Key()
+		require.False(t, builtinKeys[id],
+			"community workflow %q collides with built-in workflow; community workflows must use unique keys", id)
+	}
 }

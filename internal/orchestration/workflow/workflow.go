@@ -24,6 +24,8 @@ type Source int
 const (
 	// SourceBuiltIn indicates a workflow bundled with the application.
 	SourceBuiltIn Source = iota
+	// SourceCommunity indicates a community-contributed workflow.
+	SourceCommunity
 	// SourceUser indicates a workflow from the user's configuration directory.
 	SourceUser
 )
@@ -33,6 +35,8 @@ func (s Source) String() string {
 	switch s {
 	case SourceBuiltIn:
 		return "built-in"
+	case SourceCommunity:
+		return "community"
 	case SourceUser:
 		return "user"
 	default:

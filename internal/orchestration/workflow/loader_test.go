@@ -623,6 +623,35 @@ agent_roles:
 	assert.Equal(t, "Additional text", implConfig.SystemPromptAppend)
 }
 
+func TestProcessAgentRoles_AllowsOverrideForAllSources(t *testing.T) {
+	content := `---
+name: "Override Test"
+description: "Workflow with system_prompt_override"
+agent_roles:
+  reviewer:
+    system_prompt_override: "Custom prompt"
+    system_prompt_append: "Append text"
+    constraints:
+      - "Review constraint"
+---
+
+# Content
+`
+	for _, source := range []Source{SourceBuiltIn, SourceCommunity, SourceUser} {
+		t.Run(source.String(), func(t *testing.T) {
+			wf, err := parseWorkflow(content, "test.md", source)
+			require.NoError(t, err)
+			require.NotNil(t, wf.AgentRoles)
+
+			revConfig := wf.AgentRoles["reviewer"]
+			assert.Equal(t, "Custom prompt", revConfig.SystemPromptOverride,
+				"system_prompt_override should be allowed for %s", source)
+			assert.Equal(t, "Append text", revConfig.SystemPromptAppend)
+			assert.Equal(t, []string{"Review constraint"}, revConfig.Constraints)
+		})
+	}
+}
+
 func TestLoader_ParsesConstraints(t *testing.T) {
 	content := `---
 name: "Test Workflow"

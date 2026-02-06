@@ -568,7 +568,7 @@ func TestApp_WorkflowCreatorReceivesConfig(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Orchestration.Templates = config.TemplatesConfig{DocumentPath: "docs/custom-proposals"}
 
-	registryService, err := appreg.NewRegistryService(createWorkflowCreatorConfigFS("Doc: {{.Config.document_path}}"), "")
+	registryService, err := appreg.NewRegistryService(createWorkflowCreatorConfigFS("Doc: {{.Config.document_path}}"), nil, "")
 	require.NoError(t, err)
 
 	model, err := NewWithConfig(
@@ -592,7 +592,7 @@ func TestApp_EndToEnd_CustomPath(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Orchestration.Templates = config.TemplatesConfig{DocumentPath: "docs/custom-proposals"}
 
-	registryService, err := appreg.NewRegistryService(createWorkflowCreatorConfigFS("Doc: {{.Config.document_path}}/plan.md"), "")
+	registryService, err := appreg.NewRegistryService(createWorkflowCreatorConfigFS("Doc: {{.Config.document_path}}/plan.md"), nil, "")
 	require.NoError(t, err)
 
 	model, err := NewWithConfig(
@@ -635,7 +635,7 @@ func TestApp_EndToEnd_DefaultPath(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Orchestration.Templates = config.TemplatesConfig{}
 
-	registryService, err := appreg.NewRegistryService(createWorkflowCreatorConfigFS("Doc: {{.Config.document_path}}/plan.md"), "")
+	registryService, err := appreg.NewRegistryService(createWorkflowCreatorConfigFS("Doc: {{.Config.document_path}}/plan.md"), nil, "")
 	require.NoError(t, err)
 
 	model, err := NewWithConfig(

@@ -80,7 +80,7 @@ registry:
 func createTestRegistryService(t *testing.T) *appreg.RegistryService {
 	t.Helper()
 	registryFS := createTestRegistryServiceFS()
-	registry, err := appreg.NewRegistryService(registryFS, "")
+	registry, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 	return registry
 }
@@ -508,7 +508,7 @@ registry:
 		},
 		"workflows/go-guidelines/v1-coding.md": &fstest.MapFile{Data: []byte("# Coding Guidelines")},
 	}
-	registryService, err := appreg.NewRegistryService(fs, "")
+	registryService, err := appreg.NewRegistryService(fs, nil, "")
 	require.NoError(t, err)
 
 	options := buildTemplateOptions(registryService)
@@ -1028,7 +1028,7 @@ registry:
 			Data: []byte("# Custom System Prompt\n\nThis is a custom coordinator prompt."),
 		},
 	}
-	registry, err := appreg.NewRegistryService(registryFS, "")
+	registry, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 	return registry
 }
@@ -1076,7 +1076,7 @@ registry:
 	}
 
 	// NewRegistryService should fail because system_prompt template doesn't exist (early validation)
-	_, err := appreg.NewRegistryService(registryFS, "")
+	_, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.Error(t, err, "NewRegistryService should fail when system_prompt template doesn't exist")
 	require.Contains(t, err.Error(), "system_prompt", "error should mention system_prompt")
 	require.Contains(t, err.Error(), "not found", "error should indicate file not found")
@@ -1166,7 +1166,7 @@ registry:
 		"workflows/with-args/v1-task.md": &fstest.MapFile{Data: []byte("# Task: {{.Args.feature_name}}")},
 	}
 
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil, nil, false)
@@ -1221,7 +1221,7 @@ registry:
 		"workflows/with-args/v1-task.md": &fstest.MapFile{Data: []byte("# Task")},
 	}
 
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil, nil, false)
@@ -1266,7 +1266,7 @@ registry:
 		"workflows/with-args/v1-task.md": &fstest.MapFile{Data: []byte("# Task")},
 	}
 
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil, nil, false)
@@ -1317,7 +1317,7 @@ registry:
 		// Default system prompt file is required for workflow registrations
 		"workflows/v1-epic-instructions.md": &fstest.MapFile{Data: []byte("# Default system prompt")},
 	}
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 	return registryService
 }
@@ -1421,7 +1421,7 @@ registry:
 		},
 		"workflows/multi-epic/v1-process.md": &fstest.MapFile{Data: []byte("# Process")},
 	}
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	mockBQL := mocks.NewMockBQLExecutor(t)
@@ -1501,7 +1501,7 @@ registry:
 		},
 		"workflows/with-text/v1-task.md": &fstest.MapFile{Data: []byte("# Task")},
 	}
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil, nil, false)
@@ -1542,7 +1542,7 @@ registry:
 		},
 		"workflows/with-select/v1-task.md": &fstest.MapFile{Data: []byte("# Task")},
 	}
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil, nil, false)
@@ -1579,7 +1579,7 @@ registry:
 		},
 		"workflows/with-textarea/v1-task.md": &fstest.MapFile{Data: []byte("# Task")},
 	}
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil, nil, false)
@@ -1620,7 +1620,7 @@ registry:
 		},
 		"workflows/with-multiselect/v1-task.md": &fstest.MapFile{Data: []byte("# Task")},
 	}
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	modal := NewNewWorkflowModal(registryService, nil, nil, nil, nil, false)
@@ -1693,7 +1693,7 @@ registry:
 		},
 		"workflows/mixed/v1-task.md": &fstest.MapFile{Data: []byte("# Task")},
 	}
-	registryService, err := appreg.NewRegistryService(registryFS, "")
+	registryService, err := appreg.NewRegistryService(registryFS, nil, "")
 	require.NoError(t, err)
 
 	mockBQL := mocks.NewMockBQLExecutor(t)

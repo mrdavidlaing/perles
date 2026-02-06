@@ -20,23 +20,17 @@ func init() {
 }
 
 func runWorkflows(cmd *cobra.Command, args []string) error {
-	// Load workflow registry with both built-in and user workflows
-	registry, err := workflow.NewRegistryWithBuiltins()
+	// Load workflow registry using the unified config-aware pipeline.
+	// This picks up built-in, community (if enabled), and user workflows
+	// with proper precedence and config overrides.
+	registry, err := workflow.NewRegistryWithConfig(cfg.Orchestration)
 	if err != nil {
 		return fmt.Errorf("loading workflows: %w", err)
 	}
 
-	// Also load user workflows
-	userWorkflows, err := workflow.LoadUserWorkflows()
-	if err != nil {
-		return fmt.Errorf("loading user workflows: %w", err)
-	}
-	for _, wf := range userWorkflows {
-		registry.Add(wf)
-	}
-
 	// Get workflows grouped by source
 	builtinWorkflows := registry.ListBySource(workflow.SourceBuiltIn)
+	communityWorkflows := registry.ListBySource(workflow.SourceCommunity)
 	userDefinedWorkflows := registry.ListBySource(workflow.SourceUser)
 
 	// Print built-in workflows
@@ -44,14 +38,21 @@ func runWorkflows(cmd *cobra.Command, args []string) error {
 	if len(builtinWorkflows) == 0 {
 		fmt.Println("  (none)")
 	} else {
-		// Find max name length for alignment
-		maxLen := 0
+		maxLen := maxIDLen(builtinWorkflows)
 		for _, wf := range builtinWorkflows {
-			if len(wf.ID) > maxLen {
-				maxLen = len(wf.ID)
-			}
+			fmt.Printf("  %-*s  %s\n", maxLen, wf.ID, wf.Description)
 		}
-		for _, wf := range builtinWorkflows {
+	}
+
+	fmt.Println()
+
+	// Print community workflows
+	fmt.Println("Community Workflows:")
+	if len(communityWorkflows) == 0 {
+		fmt.Println("  (none enabled — configure in orchestration.community_workflows)")
+	} else {
+		maxLen := maxIDLen(communityWorkflows)
+		for _, wf := range communityWorkflows {
 			fmt.Printf("  %-*s  %s\n", maxLen, wf.ID, wf.Description)
 		}
 	}
@@ -64,13 +65,7 @@ func runWorkflows(cmd *cobra.Command, args []string) error {
 	if len(userDefinedWorkflows) == 0 {
 		fmt.Println("  (none)")
 	} else {
-		// Find max name length for alignment
-		maxLen := 0
-		for _, wf := range userDefinedWorkflows {
-			if len(wf.ID) > maxLen {
-				maxLen = len(wf.ID)
-			}
-		}
+		maxLen := maxIDLen(userDefinedWorkflows)
 		for _, wf := range userDefinedWorkflows {
 			fmt.Printf("  %-*s  %s\n", maxLen, wf.ID, wf.Description)
 		}
@@ -80,4 +75,15 @@ func runWorkflows(cmd *cobra.Command, args []string) error {
 	fmt.Println("Use workflows in orchestration mode with Ctrl+P")
 
 	return nil
+}
+
+// maxIDLen returns the length of the longest workflow ID in the slice.
+func maxIDLen(workflows []workflow.Workflow) int {
+	maxLen := 0
+	for _, wf := range workflows {
+		if len(wf.ID) > maxLen {
+			maxLen = len(wf.ID)
+		}
+	}
+	return maxLen
 }

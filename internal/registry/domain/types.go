@@ -6,6 +6,8 @@ type Source int
 const (
 	// SourceBuiltIn indicates a registration bundled with the application.
 	SourceBuiltIn Source = iota
+	// SourceCommunity indicates a community-contributed registration.
+	SourceCommunity
 	// SourceUser indicates a registration from the user's configuration directory.
 	SourceUser
 )
@@ -15,6 +17,8 @@ func (s Source) String() string {
 	switch s {
 	case SourceBuiltIn:
 		return "built-in"
+	case SourceCommunity:
+		return "community"
 	case SourceUser:
 		return "user"
 	default:

@@ -185,24 +185,25 @@ func DefaultTimeoutsConfig() TimeoutsConfig {
 
 // OrchestrationConfig holds orchestration mode configuration.
 type OrchestrationConfig struct {
-	Client            string               `mapstructure:"client"`             // "claude" (default), "amp", "codex", or "gemini" - backward compat
-	CoordinatorClient string               `mapstructure:"coordinator_client"` // Client for coordinator (overrides Client)
-	WorkerClient      string               `mapstructure:"worker_client"`      // Client for workers (overrides Client)
-	ObserverClient    string               `mapstructure:"observer_client"`    // Client for observer (default: "claude" with haiku model)
-	ObserverEnabled   bool                 `mapstructure:"observer_enabled"`   // Enable observer agent (default: false)
-	APIPort           int                  `mapstructure:"api_port"`           // HTTP API port (0 = auto-assign, default: 0)
-	Claude            ClaudeClientConfig   `mapstructure:"claude"`
-	ClaudeWorker      ClaudeClientConfig   `mapstructure:"claude_worker"`   // Worker-specific Claude config (uses claude config if empty)
-	ClaudeObserver    ClaudeClientConfig   `mapstructure:"claude_observer"` // Observer-specific Claude config (uses claude config if empty)
-	Codex             CodexClientConfig    `mapstructure:"codex"`
-	Amp               AmpClientConfig      `mapstructure:"amp"`
-	Gemini            GeminiClientConfig   `mapstructure:"gemini"`
-	OpenCode          OpenCodeClientConfig `mapstructure:"opencode"`
-	Workflows         []WorkflowConfig     `mapstructure:"workflows"`       // Workflow template configurations
-	Tracing           TracingConfig        `mapstructure:"tracing"`         // Distributed tracing configuration
-	SessionStorage    SessionStorageConfig `mapstructure:"session_storage"` // Session storage location configuration
-	Templates         TemplatesConfig      `mapstructure:"templates"`       // Template rendering variables
-	Timeouts          TimeoutsConfig       `mapstructure:"timeouts"`        // Initialization phase timeout configuration
+	Client             string               `mapstructure:"client"`             // "claude" (default), "amp", "codex", or "gemini" - backward compat
+	CoordinatorClient  string               `mapstructure:"coordinator_client"` // Client for coordinator (overrides Client)
+	WorkerClient       string               `mapstructure:"worker_client"`      // Client for workers (overrides Client)
+	ObserverClient     string               `mapstructure:"observer_client"`    // Client for observer (default: "claude" with haiku model)
+	ObserverEnabled    bool                 `mapstructure:"observer_enabled"`   // Enable observer agent (default: false)
+	APIPort            int                  `mapstructure:"api_port"`           // HTTP API port (0 = auto-assign, default: 0)
+	Claude             ClaudeClientConfig   `mapstructure:"claude"`
+	ClaudeWorker       ClaudeClientConfig   `mapstructure:"claude_worker"`   // Worker-specific Claude config (uses claude config if empty)
+	ClaudeObserver     ClaudeClientConfig   `mapstructure:"claude_observer"` // Observer-specific Claude config (uses claude config if empty)
+	Codex              CodexClientConfig    `mapstructure:"codex"`
+	Amp                AmpClientConfig      `mapstructure:"amp"`
+	Gemini             GeminiClientConfig   `mapstructure:"gemini"`
+	OpenCode           OpenCodeClientConfig `mapstructure:"opencode"`
+	Workflows          []WorkflowConfig     `mapstructure:"workflows"`           // Workflow template configurations
+	CommunityWorkflows []string             `mapstructure:"community_workflows"` // Community workflow IDs to enable
+	Tracing            TracingConfig        `mapstructure:"tracing"`             // Distributed tracing configuration
+	SessionStorage     SessionStorageConfig `mapstructure:"session_storage"`     // Session storage location configuration
+	Templates          TemplatesConfig      `mapstructure:"templates"`           // Template rendering variables
+	Timeouts           TimeoutsConfig       `mapstructure:"timeouts"`            // Initialization phase timeout configuration
 }
 
 // ClaudeClientConfig holds Claude-specific settings.
