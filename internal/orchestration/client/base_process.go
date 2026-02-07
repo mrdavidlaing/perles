@@ -370,6 +370,9 @@ func (bp *BaseProcess) parseOutput() {
 
 		event, err := bp.parseEventFn(line)
 		if err != nil {
+			if errors.Is(err, ErrSkipEvent) {
+				continue
+			}
 			log.Debug(log.CatOrch, "parse error", "subsystem", bp.providerName, "error", err, "line", string(line))
 			continue
 		}

@@ -2,8 +2,14 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 )
+
+// ErrSkipEvent is a sentinel error returned by ParseEvent when an event should
+// be silently skipped (e.g., thinking/reasoning events that carry no user-visible
+// content). BaseProcess checks for this and skips without logging a parse error.
+var ErrSkipEvent = errors.New("skip event")
 
 // EventParser defines the contract for provider-specific event parsing.
 // All providers must implement this interface to ensure consistent behavior.

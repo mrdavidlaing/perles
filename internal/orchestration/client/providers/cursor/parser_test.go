@@ -247,3 +247,146 @@ func TestParser_ParseEvent_IsErrorResult(t *testing.T) {
 	require.Equal(t, "Something went wrong", event.Result)
 	require.True(t, event.IsError())
 }
+
+func TestParser_ParseEvent_ThinkingDelta_Skipped(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"thinking","subtype":"delta","text":"","session_id":"3c5ee206-ba17-4781-927c-3b5a53a4e7a8","timestamp_ms":1770503338548}`
+
+	_, err := p.ParseEvent([]byte(input))
+
+	require.ErrorIs(t, err, client.ErrSkipEvent)
+}
+
+func TestParser_ParseEvent_ThinkingCompleted_Skipped(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"thinking","subtype":"completed","session_id":"174e78e5-d274-4a42-a78d-41740cab171c","timestamp_ms":1770503339073}`
+
+	_, err := p.ParseEvent([]byte(input))
+
+	require.ErrorIs(t, err, client.ErrSkipEvent)
+}
+
+func TestParser_ParseEvent_WhitespaceOnlyAssistant_Skipped(t *testing.T) {
+	p := NewParser()
+
+	// After thinking completes, Cursor often emits assistant messages with only newlines
+	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"\n\n"}]},"session_id":"3c5ee206"}`
+
+	_, err := p.ParseEvent([]byte(input))
+
+	require.ErrorIs(t, err, client.ErrSkipEvent)
+}
+
+func TestParser_ParseEvent_AssistantTextTrimmed(t *testing.T) {
+	p := NewParser()
+
+	// Cursor wraps assistant text in leading/trailing newlines
+	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"\nReading the epic to understand the workflow.\n"}]},"session_id":"174e78e5"}`
+
+	event, err := p.ParseEvent([]byte(input))
+
+	require.NoError(t, err)
+	require.Equal(t, client.EventAssistant, event.Type)
+	require.Equal(t, "Reading the epic to understand the workflow.", event.Message.GetText())
+}
+
+func TestParser_ParseEvent_AssistantWithToolUse_NotSkipped(t *testing.T) {
+	p := NewParser()
+
+	// Even if text blocks are empty, tool_use blocks should preserve the event
+	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"\n"},{"type":"tool_use","id":"tool_1","name":"Bash","input":{"command":"ls"}}]},"session_id":"abc123"}`
+
+	event, err := p.ParseEvent([]byte(input))
+
+	require.NoError(t, err)
+	require.Equal(t, client.EventAssistant, event.Type)
+	require.True(t, event.Message.HasToolUses())
+}
+
+func TestParser_ParseEvent_ToolCallStarted_Shell(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"tool_call","subtype":"started","call_id":"tool_abc123","tool_call":{"shellToolCall":{"args":{"command":"bd show perles-lu5d --json"}}},"session_id":"ses_123"}`
+
+	event, err := p.ParseEvent([]byte(input))
+
+	require.NoError(t, err)
+	require.Equal(t, client.EventToolUse, event.Type)
+	require.Equal(t, "ses_123", event.SessionID)
+	require.NotNil(t, event.Tool)
+	require.Equal(t, "tool_abc123", event.Tool.ID)
+	require.Equal(t, "Bash", event.Tool.Name)
+	// Should also set Message with tool_use content block for V2 handler
+	require.NotNil(t, event.Message)
+	require.True(t, event.Message.HasToolUses())
+	require.Equal(t, "Bash", event.Message.Content[0].Name)
+}
+
+func TestParser_ParseEvent_ToolCallCompleted_Shell(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"tool_call","subtype":"completed","call_id":"tool_abc123","tool_call":{"shellToolCall":{"args":{"command":"echo hello"},"result":{"success":{"stdout":"hello\n","stderr":"","exitCode":0}}}},"session_id":"ses_123"}`
+
+	event, err := p.ParseEvent([]byte(input))
+
+	require.NoError(t, err)
+	require.Equal(t, client.EventToolResult, event.Type)
+	require.NotNil(t, event.Tool)
+	require.Equal(t, "tool_abc123", event.Tool.ID)
+	require.Equal(t, "Bash", event.Tool.Name)
+	require.Equal(t, "hello\n", event.Tool.GetOutput())
+}
+
+func TestParser_ParseEvent_ToolCallStarted_MCP(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"tool_call","subtype":"started","call_id":"tool_mcp_456","tool_call":{"mcpToolCall":{"args":{"name":"perles-orchestrator-spawn_worker","args":{"agent_type":"implementer"},"toolName":"spawn_worker"}}},"session_id":"ses_456"}`
+
+	event, err := p.ParseEvent([]byte(input))
+
+	require.NoError(t, err)
+	require.Equal(t, client.EventToolUse, event.Type)
+	require.NotNil(t, event.Tool)
+	require.Equal(t, "spawn_worker", event.Tool.Name)
+	require.NotNil(t, event.Message)
+	require.Equal(t, "spawn_worker", event.Message.Content[0].Name)
+}
+
+func TestParser_ParseEvent_ToolCallCompleted_MCP(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"tool_call","subtype":"completed","call_id":"tool_mcp_456","tool_call":{"mcpToolCall":{"args":{"name":"perles-orchestrator-spawn_worker","args":{"agent_type":"implementer"},"toolName":"spawn_worker"},"result":{"success":{"content":[{"text":{"text":"Process worker-1 spawned"}}],"isError":false}}}},"session_id":"ses_456"}`
+
+	event, err := p.ParseEvent([]byte(input))
+
+	require.NoError(t, err)
+	require.Equal(t, client.EventToolResult, event.Type)
+	require.NotNil(t, event.Tool)
+	require.Equal(t, "spawn_worker", event.Tool.Name)
+	require.Equal(t, "Process worker-1 spawned", event.Tool.GetOutput())
+}
+
+func TestParser_ParseEvent_ToolCallStarted_Edit(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"tool_call","subtype":"started","call_id":"tool_edit_789","tool_call":{"editToolCall":{"args":{"path":"/tmp/test.md","streamContent":"# Test"}}},"session_id":"ses_789"}`
+
+	event, err := p.ParseEvent([]byte(input))
+
+	require.NoError(t, err)
+	require.Equal(t, client.EventToolUse, event.Type)
+	require.NotNil(t, event.Tool)
+	require.Equal(t, "Edit", event.Tool.Name)
+}
+
+func TestParser_ParseEvent_ToolCallUnknownSubtype_Skipped(t *testing.T) {
+	p := NewParser()
+
+	input := `{"type":"tool_call","subtype":"cancelled","call_id":"tool_xxx","tool_call":{"shellToolCall":{"args":{"command":"test"}}}}`
+
+	_, err := p.ParseEvent([]byte(input))
+
+	require.ErrorIs(t, err, client.ErrSkipEvent)
+}

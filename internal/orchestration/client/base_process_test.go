@@ -1112,6 +1112,54 @@ func (e *errorReader) Close() error {
 	return nil
 }
 
+func TestBaseProcess_parseOutput_SkipsErrSkipEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Three lines: first is skippable, second is valid, third is skippable
+	lines := "skip-me\nkeep-me\nskip-me-too\n"
+	stdout := newMockReadCloser(lines)
+	stderr := newMockReadCloser("")
+
+	parseCalls := 0
+	parseFunc := func(line []byte) (OutputEvent, error) {
+		parseCalls++
+		if string(line) == "keep-me" {
+			return OutputEvent{Type: EventAssistant}, nil
+		}
+		return OutputEvent{}, ErrSkipEvent
+	}
+
+	cmd := exec.Command("echo", "test")
+	bp := NewBaseProcess(ctx, cancel, cmd, stdout, stderr, "/tmp",
+		WithProviderName("test"),
+		WithParseEventFunc(parseFunc))
+
+	bp.wg.Add(1)
+	go bp.parseOutput()
+
+	// Should receive exactly one event (the "keep-me" line)
+	event := <-bp.Events()
+	require.Equal(t, EventAssistant, event.Type)
+
+	// Channel should close with no more events
+	bp.wg.Wait()
+
+	_, ok := <-bp.Events()
+	require.False(t, ok, "events channel should be closed")
+
+	// All three lines should have been parsed
+	require.Equal(t, 3, parseCalls)
+
+	// No errors should have been sent for skipped events
+	select {
+	case err := <-bp.Errors():
+		t.Fatalf("unexpected error: %v", err)
+	default:
+		// Expected: no errors
+	}
+}
+
 func TestErrTimeout(t *testing.T) {
 	require.NotNil(t, ErrTimeout)
 	require.Contains(t, ErrTimeout.Error(), "timed out")

@@ -13,6 +13,17 @@ const (
 	// 200000 is a conservative default. Cursor CLI does not report the actual
 	// context window size, so this value is used for usage percentage estimates.
 	CursorContextWindowSize = 200000
+
+	// eventThinking is the Cursor-specific event type for model reasoning/thinking.
+	// These events have subtypes "delta" (streaming chunks) and "completed".
+	// They contain no user-visible content and are skipped during parsing.
+	eventThinking client.EventType = "thinking"
+
+	// eventToolCall is the Cursor-specific event type for tool invocations.
+	// Unlike Claude's "tool_use" events, Cursor emits "tool_call" with subtypes
+	// "started" and "completed", with a polymorphic tool_call body containing
+	// one of: shellToolCall, mcpToolCall, editToolCall, readToolCall.
+	eventToolCall client.EventType = "tool_call"
 )
 
 // Parser implements client.EventParser for Cursor Agent CLI stream-json events.
@@ -35,6 +46,21 @@ func (p *Parser) ParseEvent(data []byte) (client.OutputEvent, error) {
 	var raw cursorEvent
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return client.OutputEvent{}, err
+	}
+
+	// Skip thinking events entirely. Cursor emits these for model reasoning
+	// (subtypes: "delta" for streaming chunks, "completed" when done).
+	// They contain no user-visible content and would pass through the V2
+	// handler as no-ops, but skipping them avoids unnecessary event processing.
+	if raw.Type == eventThinking {
+		return client.OutputEvent{}, client.ErrSkipEvent
+	}
+
+	// Map Cursor tool_call events to the unified tool_use/tool_result types.
+	// Cursor emits "tool_call" with subtypes "started" and "completed" instead of
+	// Claude's "tool_use" and "tool_result" event types.
+	if raw.Type == eventToolCall && raw.ToolCall != nil {
+		return p.parseToolCallEvent(raw, data)
 	}
 
 	event := client.OutputEvent{
@@ -60,13 +86,27 @@ func (p *Parser) ParseEvent(data []byte) (client.OutputEvent, error) {
 			Model: raw.Message.Model,
 		}
 		for _, block := range raw.Message.Content {
+			text := block.Text
+			// Cursor emits assistant text blocks with leading/trailing whitespace,
+			// especially after thinking events (e.g., "\n\n" or "\nActual text\n").
+			// Trim to prevent empty lines in the TUI output.
+			if block.Type == "text" {
+				text = strings.TrimSpace(text)
+			}
 			event.Message.Content = append(event.Message.Content, client.ContentBlock{
 				Type:  block.Type,
-				Text:  block.Text,
+				Text:  text,
 				ID:    block.ID,
 				Name:  block.Name,
 				Input: block.Input,
 			})
+		}
+
+		// If all text blocks are empty after trimming, skip the entire event.
+		// This filters out whitespace-only assistant messages that Cursor emits
+		// between thinking and substantive output.
+		if event.Type == client.EventAssistant && event.Message.GetText() == "" && !event.Message.HasToolUses() {
+			return client.OutputEvent{}, client.ErrSkipEvent
 		}
 
 		// Detect context exhaustion pattern:
@@ -94,6 +134,61 @@ func (p *Parser) ParseEvent(data []byte) (client.OutputEvent, error) {
 	}
 
 	// Copy raw data for debugging
+	event.Raw = make([]byte, len(data))
+	copy(event.Raw, data)
+
+	return event, nil
+}
+
+// parseToolCallEvent converts Cursor's tool_call events to the unified OutputEvent format.
+// Maps "started" subtype to EventToolUse and "completed" subtype to EventToolResult.
+func (p *Parser) parseToolCallEvent(raw cursorEvent, data []byte) (client.OutputEvent, error) {
+	tc := raw.ToolCall
+	toolName := tc.toolName()
+
+	event := client.OutputEvent{
+		SessionID: raw.SessionID,
+	}
+
+	switch raw.SubType {
+	case "started":
+		// Map to tool_use event that the V2 handler understands.
+		// The V2 process handler checks event.Message for tool_use content blocks,
+		// so we wrap the tool info in a Message to match the expected structure.
+		event.Type = client.EventToolUse
+		event.Tool = &client.ToolContent{
+			ID:    raw.CallID,
+			Name:  toolName,
+			Input: tc.toolInput(),
+		}
+		event.Message = &client.MessageContent{
+			Role: "assistant",
+			Content: []client.ContentBlock{
+				{
+					Type:  "tool_use",
+					ID:    raw.CallID,
+					Name:  toolName,
+					Input: tc.toolInput(),
+				},
+			},
+		}
+
+	case "completed":
+		// Map to tool_result event
+		event.Type = client.EventToolResult
+		output := tc.toolOutput()
+		event.Tool = &client.ToolContent{
+			ID:     raw.CallID,
+			Name:   toolName,
+			Output: output,
+			Input:  tc.toolInput(),
+		}
+
+	default:
+		// Unknown subtype, skip
+		return client.OutputEvent{}, client.ErrSkipEvent
+	}
+
 	event.Raw = make([]byte, len(data))
 	copy(event.Raw, data)
 
