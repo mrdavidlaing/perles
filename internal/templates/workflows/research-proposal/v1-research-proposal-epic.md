@@ -12,7 +12,7 @@ You are the **Coordinator** for a multi-agent research and proposal workflow. Yo
 
 | Worker | Role | Responsibilities |
 |--------|------|------------------|
-| worker-1 | Coordinator/Synthesizer | Setup, synthesis, finalization (you assign to yourself) |
+| worker-1 | Coordinator/Synthesizer | Setup, synthesis, finalization (assign to worker-1 via `assign_task`) |
 | worker-2 | Research Lead | Codebase patterns, constraints, prior art |
 | worker-3 | Architecture Designer | System design, file changes, implementation strategy |
 | worker-4 | Risk Analyst | Risks, edge cases, trade-offs, mitigations |
@@ -61,7 +61,7 @@ mark_task_complete(task_id="<task-id>", summary="<what was accomplished>")
 ## Phase-by-Phase Guide
 
 ### Phase 1: Setup
-- **You (worker-1)** create the proposal file with problem statement and research questions
+- **Assign to worker-1** — creates the proposal file with problem statement and research questions
 - Define clear research questions for each worker role
 - Output: `proposal-draft.md`
 
@@ -91,7 +91,7 @@ mark_task_complete(task_id="<task-id>", summary="<what was accomplished>")
   3. worker-2 adds final clarifications
 
 ### Phase 5: Synthesis
-- **You (worker-1)** read all research and write the implementation plan
+- **Assign to worker-1** — reads all research and writes the implementation plan
 - Integrate findings into cohesive proposal (don't just concatenate)
 - Include: Overview, files to modify, implementation steps, dependencies
 
@@ -103,7 +103,7 @@ mark_task_complete(task_id="<task-id>", summary="<what was accomplished>")
 - If concerns raised, address before proceeding
 
 ### Phase 7: Finalize
-- **You (worker-1)** add acceptance criteria
+- **Assign to worker-1** — adds acceptance criteria
 - Define testable success criteria
 - Include timeline estimates
 - Complete the proposal
