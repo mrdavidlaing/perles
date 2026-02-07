@@ -3,6 +3,7 @@ package cursor
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 )
@@ -10,7 +11,7 @@ import (
 // mcpFileConfig mirrors the mcp.MCPConfig structure for reading/writing .cursor/mcp.json.
 // We use a local type to avoid import cycles with the mcp package.
 type mcpFileConfig struct {
-	MCPServers map[string]json.RawMessage `json:"mcpServers"`
+	MCPServers map[string]json.RawMessage `json:"mcpServers"` //nolint:tagliatelle // Cursor's mcp.json uses camelCase
 }
 
 // writeMCPConfigFile writes the MCP server configuration to .cursor/mcp.json
@@ -33,7 +34,7 @@ func writeMCPConfigFile(workDir, mcpConfigJSON string) error {
 
 	// Read existing config if it exists, so we can merge
 	existing := mcpFileConfig{MCPServers: make(map[string]json.RawMessage)}
-	if data, err := os.ReadFile(mcpPath); err == nil {
+	if data, err := os.ReadFile(mcpPath); err == nil { //nolint:gosec // G304: mcpPath is constructed from trusted workDir parameter
 		// File exists — parse it for merging
 		if err := json.Unmarshal(data, &existing); err != nil {
 			// Existing file is malformed; overwrite it
@@ -42,12 +43,10 @@ func writeMCPConfigFile(workDir, mcpConfigJSON string) error {
 	}
 
 	// Merge: add/overwrite our server entries into the existing config
-	for name, serverCfg := range incoming.MCPServers {
-		existing.MCPServers[name] = serverCfg
-	}
+	maps.Copy(existing.MCPServers, incoming.MCPServers)
 
 	// Write the merged config
-	if err := os.MkdirAll(cursorDir, 0o755); err != nil {
+	if err := os.MkdirAll(cursorDir, 0o750); err != nil {
 		return fmt.Errorf("creating .cursor directory: %w", err)
 	}
 
@@ -56,7 +55,7 @@ func writeMCPConfigFile(workDir, mcpConfigJSON string) error {
 		return fmt.Errorf("marshaling merged MCP config: %w", err)
 	}
 
-	if err := os.WriteFile(mcpPath, data, 0o644); err != nil {
+	if err := os.WriteFile(mcpPath, data, 0o600); err != nil {
 		return fmt.Errorf("writing .cursor/mcp.json: %w", err)
 	}
 
