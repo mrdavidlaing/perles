@@ -10,6 +10,7 @@ import (
 
 	beads "github.com/zjrosen/perles/internal/beads/domain"
 	"github.com/zjrosen/perles/internal/mocks"
+	"github.com/zjrosen/perles/internal/orchestration/events"
 	"github.com/zjrosen/perles/internal/orchestration/v2/command"
 	"github.com/zjrosen/perles/internal/orchestration/v2/repository"
 )
@@ -98,11 +99,24 @@ func TestMarkTaskCompleteHandler_DeletesTaskFromRepository(t *testing.T) {
 	}
 	require.NoError(t, taskRepo.Save(task))
 
+	// Create process repo with the implementer worker
+	processRepo := repository.NewMemoryProcessRepository()
+	awaitingReview := events.ProcessPhaseAwaitingReview
+	worker := &repository.Process{
+		ID:     "worker-1",
+		Role:   repository.RoleWorker,
+		Status: repository.StatusReady,
+		Phase:  &awaitingReview,
+		TaskID: "perles-abc1.2",
+	}
+	require.NoError(t, processRepo.Save(worker))
+
 	// Verify task exists before handler
 	_, err := taskRepo.Get("perles-abc1.2")
 	require.NoError(t, err, "task should exist before handle")
 
-	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo)
+	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo,
+		WithMarkTaskCompleteProcessRepo(processRepo))
 
 	cmd := command.NewMarkTaskCompleteCommand(command.SourceMCPTool, "perles-abc1.2")
 	result, err := handler.Handle(context.Background(), cmd)
@@ -113,6 +127,14 @@ func TestMarkTaskCompleteHandler_DeletesTaskFromRepository(t *testing.T) {
 	// Verify task was deleted
 	_, err = taskRepo.Get("perles-abc1.2")
 	require.ErrorIs(t, err, repository.ErrTaskNotFound, "task should be deleted after handle")
+
+	// Verify implementer was reset to idle
+	updated, err := processRepo.Get("worker-1")
+	require.NoError(t, err)
+	require.NotNil(t, updated.Phase)
+	require.Equal(t, events.ProcessPhaseIdle, *updated.Phase)
+	require.Equal(t, repository.StatusReady, updated.Status)
+	require.Empty(t, updated.TaskID, "TaskID should be cleared")
 }
 
 func TestMarkTaskCompleteHandler_SucceedsWhenTaskNotInRepo(t *testing.T) {
@@ -151,6 +173,248 @@ func TestMarkTaskCompleteHandler_WorksWithNilTaskRepo(t *testing.T) {
 	completeResult, ok := result.Data.(*MarkTaskCompleteResult)
 	require.True(t, ok, "expected MarkTaskCompleteResult, got: %T", result.Data)
 	require.Equal(t, "perles-abc1.2", completeResult.TaskID)
+}
+
+func TestMarkTaskCompleteHandler_ResetsImplementerAndReviewer(t *testing.T) {
+	bdExecutor := mocks.NewMockIssueExecutor(t)
+	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
+
+	// Create task with both implementer and reviewer
+	taskRepo := repository.NewMemoryTaskRepository()
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Reviewer:    "worker-2",
+		Status:      repository.TaskInReview,
+	}
+	require.NoError(t, taskRepo.Save(task))
+
+	// Create processes for both workers in non-idle states
+	processRepo := repository.NewMemoryProcessRepository()
+	awaitingReview := events.ProcessPhaseAwaitingReview
+	reviewing := events.ProcessPhaseReviewing
+	worker1 := &repository.Process{
+		ID:     "worker-1",
+		Role:   repository.RoleWorker,
+		Status: repository.StatusReady,
+		Phase:  &awaitingReview,
+		TaskID: "perles-abc1.2",
+	}
+	worker2 := &repository.Process{
+		ID:     "worker-2",
+		Role:   repository.RoleWorker,
+		Status: repository.StatusWorking,
+		Phase:  &reviewing,
+		TaskID: "perles-abc1.2",
+	}
+	require.NoError(t, processRepo.Save(worker1))
+	require.NoError(t, processRepo.Save(worker2))
+
+	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo,
+		WithMarkTaskCompleteProcessRepo(processRepo))
+
+	cmd := command.NewMarkTaskCompleteCommand(command.SourceMCPTool, "perles-abc1.2")
+	result, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	// Verify both workers were reset to idle
+	for _, workerID := range []string{"worker-1", "worker-2"} {
+		updated, err := processRepo.Get(workerID)
+		require.NoError(t, err, "worker %s should exist", workerID)
+		require.NotNil(t, updated.Phase, "worker %s phase should not be nil", workerID)
+		require.Equal(t, events.ProcessPhaseIdle, *updated.Phase, "worker %s should be idle", workerID)
+		require.Equal(t, repository.StatusReady, updated.Status, "worker %s should be ready", workerID)
+		require.Empty(t, updated.TaskID, "worker %s TaskID should be cleared", workerID)
+	}
+
+	// Verify events were emitted for both workers
+	require.NotNil(t, result.Events)
+	require.Len(t, result.Events, 2, "should emit status change events for both workers")
+}
+
+func TestMarkTaskCompleteHandler_EmitsEventsForResetWorkers(t *testing.T) {
+	bdExecutor := mocks.NewMockIssueExecutor(t)
+	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
+
+	taskRepo := repository.NewMemoryTaskRepository()
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Status:      repository.TaskImplementing,
+	}
+	require.NoError(t, taskRepo.Save(task))
+
+	processRepo := repository.NewMemoryProcessRepository()
+	implementing := events.ProcessPhaseImplementing
+	worker := &repository.Process{
+		ID:     "worker-1",
+		Role:   repository.RoleWorker,
+		Status: repository.StatusWorking,
+		Phase:  &implementing,
+		TaskID: "perles-abc1.2",
+	}
+	require.NoError(t, processRepo.Save(worker))
+
+	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo,
+		WithMarkTaskCompleteProcessRepo(processRepo))
+
+	cmd := command.NewMarkTaskCompleteCommand(command.SourceMCPTool, "perles-abc1.2")
+	result, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.Len(t, result.Events, 1)
+
+	// Verify the event is a ProcessStatusChange with idle phase
+	event, ok := result.Events[0].(events.ProcessEvent)
+	require.True(t, ok, "expected ProcessEvent, got %T", result.Events[0])
+	require.Equal(t, events.ProcessStatusChange, event.Type)
+	require.Equal(t, "worker-1", event.ProcessID)
+	require.Equal(t, events.ProcessStatusReady, event.Status)
+	require.NotNil(t, event.Phase)
+	require.Equal(t, events.ProcessPhaseIdle, *event.Phase)
+}
+
+func TestMarkTaskCompleteHandler_SkipsRetiredProcess(t *testing.T) {
+	bdExecutor := mocks.NewMockIssueExecutor(t)
+	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
+
+	taskRepo := repository.NewMemoryTaskRepository()
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Status:      repository.TaskImplementing,
+	}
+	require.NoError(t, taskRepo.Save(task))
+
+	// Worker is already retired
+	processRepo := repository.NewMemoryProcessRepository()
+	worker := &repository.Process{
+		ID:     "worker-1",
+		Role:   repository.RoleWorker,
+		Status: repository.StatusRetired,
+		TaskID: "perles-abc1.2",
+	}
+	require.NoError(t, processRepo.Save(worker))
+
+	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo,
+		WithMarkTaskCompleteProcessRepo(processRepo))
+
+	cmd := command.NewMarkTaskCompleteCommand(command.SourceMCPTool, "perles-abc1.2")
+	result, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	// Verify retired worker was NOT modified
+	updated, err := processRepo.Get("worker-1")
+	require.NoError(t, err)
+	require.Equal(t, repository.StatusRetired, updated.Status, "retired worker should not be changed")
+}
+
+func TestMarkTaskCompleteHandler_GracefulWithMissingProcess(t *testing.T) {
+	bdExecutor := mocks.NewMockIssueExecutor(t)
+	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
+
+	taskRepo := repository.NewMemoryTaskRepository()
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-99", // This worker doesn't exist in processRepo
+		Status:      repository.TaskImplementing,
+	}
+	require.NoError(t, taskRepo.Save(task))
+
+	// Empty process repo - worker-99 doesn't exist
+	processRepo := repository.NewMemoryProcessRepository()
+
+	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo,
+		WithMarkTaskCompleteProcessRepo(processRepo))
+
+	cmd := command.NewMarkTaskCompleteCommand(command.SourceMCPTool, "perles-abc1.2")
+	result, err := handler.Handle(context.Background(), cmd)
+
+	// Should succeed gracefully even though process doesn't exist
+	require.NoError(t, err)
+	require.True(t, result.Success)
+}
+
+func TestMarkTaskCompleteHandler_SkipsAlreadyIdleProcess(t *testing.T) {
+	bdExecutor := mocks.NewMockIssueExecutor(t)
+	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
+
+	taskRepo := repository.NewMemoryTaskRepository()
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Status:      repository.TaskImplementing,
+	}
+	require.NoError(t, taskRepo.Save(task))
+
+	// Worker is already idle/ready with no task
+	processRepo := repository.NewMemoryProcessRepository()
+	idle := events.ProcessPhaseIdle
+	worker := &repository.Process{
+		ID:     "worker-1",
+		Role:   repository.RoleWorker,
+		Status: repository.StatusReady,
+		Phase:  &idle,
+		TaskID: "",
+	}
+	require.NoError(t, processRepo.Save(worker))
+
+	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo,
+		WithMarkTaskCompleteProcessRepo(processRepo))
+
+	cmd := command.NewMarkTaskCompleteCommand(command.SourceMCPTool, "perles-abc1.2")
+	result, err := handler.Handle(context.Background(), cmd)
+
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	// No events should be emitted - worker was already idle
+	require.Empty(t, result.Events, "no events should be emitted for already-idle worker")
+
+	// Worker should still be idle/ready
+	updated, err := processRepo.Get("worker-1")
+	require.NoError(t, err)
+	require.Equal(t, repository.StatusReady, updated.Status)
+	require.Equal(t, events.ProcessPhaseIdle, *updated.Phase)
+}
+
+func TestMarkTaskCompleteHandler_WorksWithNilProcessRepo(t *testing.T) {
+	bdExecutor := mocks.NewMockIssueExecutor(t)
+	bdExecutor.EXPECT().UpdateStatus("perles-abc1.2", beads.StatusClosed).Return(nil)
+	bdExecutor.EXPECT().AddComment("perles-abc1.2", "coordinator", "Task completed").Return(nil)
+
+	// Task repo has a task but no processRepo provided (backward compatibility)
+	taskRepo := repository.NewMemoryTaskRepository()
+	task := &repository.TaskAssignment{
+		TaskID:      "perles-abc1.2",
+		Implementer: "worker-1",
+		Status:      repository.TaskImplementing,
+	}
+	require.NoError(t, taskRepo.Save(task))
+
+	// No options - processRepo is nil
+	handler := NewMarkTaskCompleteHandler(bdExecutor, taskRepo)
+
+	cmd := command.NewMarkTaskCompleteCommand(command.SourceMCPTool, "perles-abc1.2")
+	result, err := handler.Handle(context.Background(), cmd)
+
+	// Should succeed without process reset (backward compatible)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	// Task should still be deleted
+	_, err = taskRepo.Get("perles-abc1.2")
+	require.ErrorIs(t, err, repository.ErrTaskNotFound)
 }
 
 // ===========================================================================
