@@ -262,91 +262,141 @@ func (s *defaultSupervisor) AllocateResources(ctx context.Context, inst *Workflo
 		if sess != nil {
 			_ = sess.Close(session.StatusFailed)
 		}
-		// Clean up worktree if it was created
-		if worktreePath != "" && gitExec != nil {
+		// Clean up worktree only if we created it (WorktreeModeNew).
+		// Never remove user-owned worktrees (WorktreeModeExisting).
+		if inst.WorktreeMode == WorktreeModeNew && worktreePath != "" && gitExec != nil {
 			_ = gitExec.RemoveWorktree(worktreePath)
 		}
 		cancel()
 	}
 
-	// Step 0: Create worktree if enabled (fail fast - before any other resources)
-	// For cold resume, skip worktree creation if WorktreePath is already set and exists.
-	if inst.WorktreeEnabled && s.gitExecutorFactory != nil {
-		// Check if worktree already exists (cold resume case)
-		worktreeExists := false
-		if inst.WorktreePath != "" {
-			if info, err := os.Stat(inst.WorktreePath); err == nil && info.IsDir() {
-				worktreeExists = true
-				log.Debug(log.CatOrch, "Using existing worktree for cold resume", "subsystem", "supervisor",
-					"workflowID", inst.ID, "path", inst.WorktreePath, "branch", inst.WorktreeBranch)
+	// Step 0: Handle worktree mode (fail fast - before any other resources)
+	// Backward compatibility: if WorktreeMode is not set but WorktreeEnabled is true,
+	// treat it as WorktreeModeNew. This handles instances created before WorktreeMode
+	// was introduced. Once all callers set WorktreeMode, this normalization can be removed.
+	if inst.WorktreeMode == WorktreeModeNone && inst.WorktreeEnabled {
+		inst.WorktreeMode = WorktreeModeNew
+	}
+
+	switch inst.WorktreeMode {
+	case WorktreeModeExisting:
+		// Validate worktree path is set
+		if inst.WorktreePath == "" {
+			cancel()
+			return fmt.Errorf("existing worktree mode requires WorktreePath to be set")
+		}
+
+		// Validate path exists on disk
+		info, err := os.Stat(inst.WorktreePath)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("existing worktree path %q not found: %w", inst.WorktreePath, err)
+		}
+		if !info.IsDir() {
+			cancel()
+			return fmt.Errorf("existing worktree path %q is not a directory", inst.WorktreePath)
+		}
+
+		// Set WorkDir to the existing worktree path
+		inst.WorkDir = inst.WorktreePath
+
+		// Check for uncommitted changes (warning only, do not block)
+		if s.gitExecutorFactory != nil {
+			gitExec = s.gitExecutorFactory(inst.WorktreePath)
+			hasUncommitted, err := gitExec.HasUncommittedChanges()
+			if err != nil {
+				log.Warn(log.CatOrch, "Failed to check uncommitted changes in existing worktree",
+					"subsystem", "supervisor", "workflowID", inst.ID, "path", inst.WorktreePath, "error", err)
+			} else if hasUncommitted {
+				log.Warn(log.CatOrch, "Existing worktree has uncommitted changes",
+					"subsystem", "supervisor", "workflowID", inst.ID, "path", inst.WorktreePath)
 			}
 		}
 
-		if !worktreeExists {
-			// Determine the work directory to use for git operations
-			workDir := inst.WorkDir
-			if workDir == "" {
-				if wd, err := os.Getwd(); err == nil {
-					workDir = wd
+		log.Debug(log.CatOrch, "Using existing worktree", "subsystem", "supervisor",
+			"workflowID", inst.ID, "path", inst.WorktreePath)
+
+	case WorktreeModeNew:
+		if s.gitExecutorFactory != nil {
+			// Check if worktree already exists (cold resume case)
+			worktreeExists := false
+			if inst.WorktreePath != "" {
+				if info, err := os.Stat(inst.WorktreePath); err == nil && info.IsDir() {
+					worktreeExists = true
+					log.Debug(log.CatOrch, "Using existing worktree for cold resume", "subsystem", "supervisor",
+						"workflowID", inst.ID, "path", inst.WorktreePath, "branch", inst.WorktreeBranch)
 				}
 			}
 
-			// Create GitExecutor for the work directory
-			gitExec = s.gitExecutorFactory(workDir)
-
-			// Prune stale worktree references
-			_ = gitExec.PruneWorktrees() // Best-effort, don't fail on prune errors
-
-			// Determine worktree path
-			path, err := gitExec.DetermineWorktreePath(inst.ID.String())
-			if err != nil {
-				cancel()
-				return fmt.Errorf("determining worktree path: %w", err)
-			}
-
-			// Generate branch name: use custom if provided, otherwise auto-generate
-			branchName := inst.WorktreeBranchName
-			if branchName == "" {
-				// Auto-generate branch name using first 8 chars of workflow ID
-				shortID := inst.ID.String()
-				if len(shortID) > 8 {
-					shortID = shortID[:8]
+			if !worktreeExists {
+				// Determine the work directory to use for git operations
+				workDir := inst.WorkDir
+				if workDir == "" {
+					if wd, err := os.Getwd(); err == nil {
+						workDir = wd
+					}
 				}
-				branchName = fmt.Sprintf("perles-workflow-%s", shortID)
-			}
 
-			// Create worktree with timeout context
-			worktreeCtx, worktreeCancel := context.WithTimeout(ctx, s.worktreeTimeout)
-			err = gitExec.CreateWorktreeWithContext(worktreeCtx, path, branchName, inst.WorktreeBaseBranch)
-			worktreeCancel()
+				// Create GitExecutor for the work directory
+				gitExec = s.gitExecutorFactory(workDir)
 
-			if err != nil {
-				cancel()
-				log.ErrorErr(log.CatOrch, "failed to create worktree", err, "subsystem", "supervisor",
+				// Prune stale worktree references
+				_ = gitExec.PruneWorktrees() // Best-effort, don't fail on prune errors
+
+				// Determine worktree path
+				path, err := gitExec.DetermineWorktreePath(inst.ID.String())
+				if err != nil {
+					cancel()
+					return fmt.Errorf("determining worktree path: %w", err)
+				}
+
+				// Generate branch name: use custom if provided, otherwise auto-generate
+				branchName := inst.WorktreeBranchName
+				if branchName == "" {
+					// Auto-generate branch name using first 8 chars of workflow ID
+					shortID := inst.ID.String()
+					if len(shortID) > 8 {
+						shortID = shortID[:8]
+					}
+					branchName = fmt.Sprintf("perles-workflow-%s", shortID)
+				}
+
+				// Create worktree with timeout context
+				worktreeCtx, worktreeCancel := context.WithTimeout(ctx, s.worktreeTimeout)
+				err = gitExec.CreateWorktreeWithContext(worktreeCtx, path, branchName, inst.WorktreeBaseBranch)
+				worktreeCancel()
+
+				if err != nil {
+					cancel()
+					log.ErrorErr(log.CatOrch, "failed to create worktree", err, "subsystem", "supervisor",
+						"workflowID", inst.ID, "path", path, "branch", branchName)
+
+					// Wrap known error types for user-friendly messages
+					if errors.Is(err, domaingit.ErrBranchAlreadyCheckedOut) {
+						return fmt.Errorf("creating worktree: branch '%s' is already checked out in another worktree: %w", branchName, err)
+					}
+					if errors.Is(err, domaingit.ErrPathAlreadyExists) {
+						return fmt.Errorf("creating worktree: path '%s' already exists: %w", path, err)
+					}
+					if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, domaingit.ErrWorktreeTimeout) {
+						return fmt.Errorf("creating worktree: operation timed out after %v: %w", s.worktreeTimeout, err)
+					}
+					return fmt.Errorf("creating worktree: %w", err)
+				}
+
+				// Update instance fields with worktree information
+				worktreePath = path // Track for cleanup on subsequent failure
+				inst.WorktreePath = path
+				inst.WorktreeBranch = branchName
+				inst.WorkDir = path // Override WorkDir to use the worktree path
+
+				log.Debug(log.CatOrch, "Worktree created", "subsystem", "supervisor",
 					"workflowID", inst.ID, "path", path, "branch", branchName)
-
-				// Wrap known error types for user-friendly messages
-				if errors.Is(err, domaingit.ErrBranchAlreadyCheckedOut) {
-					return fmt.Errorf("creating worktree: branch '%s' is already checked out in another worktree: %w", branchName, err)
-				}
-				if errors.Is(err, domaingit.ErrPathAlreadyExists) {
-					return fmt.Errorf("creating worktree: path '%s' already exists: %w", path, err)
-				}
-				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, domaingit.ErrWorktreeTimeout) {
-					return fmt.Errorf("creating worktree: operation timed out after %v: %w", s.worktreeTimeout, err)
-				}
-				return fmt.Errorf("creating worktree: %w", err)
 			}
-
-			// Update instance fields with worktree information
-			worktreePath = path // Track for cleanup on subsequent failure
-			inst.WorktreePath = path
-			inst.WorktreeBranch = branchName
-			inst.WorkDir = path // Override WorkDir to use the worktree path
-
-			log.Debug(log.CatOrch, "Worktree created", "subsystem", "supervisor",
-				"workflowID", inst.ID, "path", path, "branch", branchName)
 		}
+
+	default:
+		// WorktreeModeNone or any unrecognized value: skip worktree handling
 	}
 
 	// Step 1: Create TCP listener for MCP HTTP server (OS assigns available port)

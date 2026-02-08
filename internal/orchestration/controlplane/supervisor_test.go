@@ -979,6 +979,7 @@ func newTestSpecWithWorktree(name, baseBranch, customBranch string) *WorkflowSpe
 		TemplateID:         "test-template",
 		InitialPrompt:      "Test goal",
 		Name:               name,
+		WorktreeMode:       WorktreeModeNew,
 		WorktreeEnabled:    true,
 		WorktreeBaseBranch: baseBranch,
 		WorktreeBranchName: customBranch,
@@ -2094,6 +2095,385 @@ func TestSupervisor_RestoreFabricState_NilFabricService(t *testing.T) {
 
 	// The caller checks for nil FabricService before calling restoreFabricState,
 	// so this test just confirms no panic when infrastructure lacks FabricService
+}
+
+// === Unit Tests: WorktreeMode Switch in AllocateResources ===
+
+func TestSupervisor_AllocateResources_ExistingMode_ValidPath_SetsWorkDir(t *testing.T) {
+	mockGitExecutor := mocks.NewMockGitExecutor(t)
+	mockProvider := mocks.NewMockAgentProvider(t)
+	mockFactory := &mockInfrastructureFactory{}
+
+	cfg := SupervisorConfig{
+		AgentProviders: client.AgentProviders{
+			client.RoleCoordinator: mockProvider,
+		},
+		ListenerFactory:       &mockListenerFactory{},
+		InfrastructureFactory: mockFactory,
+		SessionFactory:        session.NewFactory(session.FactoryConfig{BaseDir: t.TempDir()}),
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
+			return mockGitExecutor
+		},
+	}
+
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	// Create a real temp directory to serve as existing worktree
+	existingWorktreePath := t.TempDir()
+
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test goal",
+		Name:          "existing-worktree-test",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  existingWorktreePath,
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+	cleanupSessionOnTestEnd(t, inst)
+
+	// Mock HasUncommittedChanges - no dirty state
+	mockGitExecutor.EXPECT().HasUncommittedChanges().Return(false, nil)
+
+	// Setup mock infrastructure
+	infra := createMinimalInfrastructure(t)
+	mockFactory.On("Create", mock.AnythingOfType("v2.InfrastructureConfig")).Return(infra, nil)
+	setupAgentProviderMock(t, mockProvider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go infra.Core.Processor.Run(ctx)
+	require.NoError(t, infra.Core.Processor.WaitForReady(ctx))
+
+	err = supervisor.AllocateResources(ctx, inst)
+
+	require.NoError(t, err)
+	require.Equal(t, existingWorktreePath, inst.WorkDir, "WorkDir should be set to existing worktree path")
+	require.Equal(t, existingWorktreePath, inst.WorktreePath, "WorktreePath should be preserved")
+}
+
+func TestSupervisor_AllocateResources_ExistingMode_NonExistentPath_ReturnsError(t *testing.T) {
+	cfg, _, _ := newTestSupervisorConfig(t)
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test goal",
+		Name:          "nonexistent-worktree-test",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  "/tmp/does-not-exist-anywhere-" + NewWorkflowID().String(),
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+
+	err = supervisor.AllocateResources(context.Background(), inst)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+	require.Contains(t, err.Error(), "existing worktree path")
+	require.Equal(t, WorkflowPending, inst.State) // Should stay in Pending
+}
+
+func TestSupervisor_AllocateResources_ExistingMode_EmptyPath_ReturnsError(t *testing.T) {
+	cfg, _, _ := newTestSupervisorConfig(t)
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test goal",
+		Name:          "empty-path-test",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  "", // Empty path
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+
+	err = supervisor.AllocateResources(context.Background(), inst)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires WorktreePath to be set")
+	require.Equal(t, WorkflowPending, inst.State)
+}
+
+func TestSupervisor_AllocateResources_ExistingMode_DirtyWorktree_LogsWarningButSucceeds(t *testing.T) {
+	mockGitExecutor := mocks.NewMockGitExecutor(t)
+	mockProvider := mocks.NewMockAgentProvider(t)
+	mockFactory := &mockInfrastructureFactory{}
+
+	cfg := SupervisorConfig{
+		AgentProviders: client.AgentProviders{
+			client.RoleCoordinator: mockProvider,
+		},
+		ListenerFactory:       &mockListenerFactory{},
+		InfrastructureFactory: mockFactory,
+		SessionFactory:        session.NewFactory(session.FactoryConfig{BaseDir: t.TempDir()}),
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
+			return mockGitExecutor
+		},
+	}
+
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	// Create a real temp directory to serve as existing worktree
+	existingWorktreePath := t.TempDir()
+
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test goal",
+		Name:          "dirty-worktree-test",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  existingWorktreePath,
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+	cleanupSessionOnTestEnd(t, inst)
+
+	// Mock HasUncommittedChanges - worktree IS dirty
+	mockGitExecutor.EXPECT().HasUncommittedChanges().Return(true, nil)
+
+	// Setup mock infrastructure
+	infra := createMinimalInfrastructure(t)
+	mockFactory.On("Create", mock.AnythingOfType("v2.InfrastructureConfig")).Return(infra, nil)
+	setupAgentProviderMock(t, mockProvider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go infra.Core.Processor.Run(ctx)
+	require.NoError(t, infra.Core.Processor.WaitForReady(ctx))
+
+	// Should succeed despite dirty worktree (warning only, does not block)
+	err = supervisor.AllocateResources(ctx, inst)
+
+	require.NoError(t, err, "Dirty worktree should log warning but not return error")
+	require.Equal(t, existingWorktreePath, inst.WorkDir)
+}
+
+func TestSupervisor_AllocateResources_NewMode_BehavesIdenticallyToLegacy(t *testing.T) {
+	mockGitExecutor := mocks.NewMockGitExecutor(t)
+	mockProvider := mocks.NewMockAgentProvider(t)
+	mockFactory := &mockInfrastructureFactory{}
+
+	cfg := SupervisorConfig{
+		AgentProviders: client.AgentProviders{
+			client.RoleCoordinator: mockProvider,
+		},
+		ListenerFactory:       &mockListenerFactory{},
+		InfrastructureFactory: mockFactory,
+		SessionFactory:        session.NewFactory(session.FactoryConfig{BaseDir: t.TempDir()}),
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
+			return mockGitExecutor
+		},
+	}
+
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	// Use WorktreeModeNew (the new field, not legacy WorktreeEnabled)
+	spec := &WorkflowSpec{
+		TemplateID:         "test-template",
+		InitialPrompt:      "Test goal",
+		Name:               "new-mode-test",
+		WorktreeMode:       WorktreeModeNew,
+		WorktreeBaseBranch: "main",
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+	cleanupSessionOnTestEnd(t, inst)
+
+	workflowID := inst.ID.String()
+	expectedPath := "/tmp/worktrees/" + workflowID
+	expectedBranch := "perles-workflow-" + workflowID[:8]
+
+	// Setup mock expectations for worktree creation (same as legacy path)
+	mockGitExecutor.EXPECT().PruneWorktrees().Return(nil)
+	mockGitExecutor.EXPECT().DetermineWorktreePath(workflowID).Return(expectedPath, nil)
+	mockGitExecutor.EXPECT().CreateWorktreeWithContext(
+		mock.Anything, expectedPath, expectedBranch, "main",
+	).Return(nil)
+
+	// Setup mock infrastructure
+	infra := createMinimalInfrastructure(t)
+	mockFactory.On("Create", mock.AnythingOfType("v2.InfrastructureConfig")).Return(infra, nil)
+	setupAgentProviderMock(t, mockProvider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go infra.Core.Processor.Run(ctx)
+	require.NoError(t, infra.Core.Processor.WaitForReady(ctx))
+
+	err = supervisor.AllocateResources(ctx, inst)
+
+	require.NoError(t, err)
+	require.Equal(t, expectedPath, inst.WorktreePath, "WorktreePath should be set")
+	require.Equal(t, expectedBranch, inst.WorktreeBranch, "WorktreeBranch should be set")
+	require.Equal(t, expectedPath, inst.WorkDir, "WorkDir should be overridden to worktree path")
+	require.True(t, inst.WorktreeEnabled, "WorktreeEnabled should be true (derived from WorktreeModeNew)")
+}
+
+func TestSupervisor_AllocateResources_NoneMode_SkipsWorktreeHandling(t *testing.T) {
+	mockProvider := mocks.NewMockAgentProvider(t)
+	mockFactory := &mockInfrastructureFactory{}
+
+	factoryCalled := false
+	cfg := SupervisorConfig{
+		AgentProviders: client.AgentProviders{
+			client.RoleCoordinator: mockProvider,
+		},
+		ListenerFactory:       &mockListenerFactory{},
+		InfrastructureFactory: mockFactory,
+		SessionFactory:        session.NewFactory(session.FactoryConfig{BaseDir: t.TempDir()}),
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
+			factoryCalled = true
+			return mocks.NewMockGitExecutor(t)
+		},
+	}
+
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	// Explicitly set WorktreeModeNone
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test goal",
+		Name:          "none-mode-test",
+		WorktreeMode:  WorktreeModeNone,
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+	cleanupSessionOnTestEnd(t, inst)
+
+	require.False(t, inst.WorktreeEnabled, "WorktreeEnabled should be false for WorktreeModeNone")
+
+	// Setup mock infrastructure
+	infra := createMinimalInfrastructure(t)
+	mockFactory.On("Create", mock.AnythingOfType("v2.InfrastructureConfig")).Return(infra, nil)
+	setupAgentProviderMock(t, mockProvider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go infra.Core.Processor.Run(ctx)
+	require.NoError(t, infra.Core.Processor.WaitForReady(ctx))
+
+	err = supervisor.AllocateResources(ctx, inst)
+
+	require.NoError(t, err)
+	require.Empty(t, inst.WorktreePath, "WorktreePath should be empty")
+	require.Empty(t, inst.WorktreeBranch, "WorktreeBranch should be empty")
+	require.False(t, factoryCalled, "GitExecutorFactory should NOT be called for WorktreeModeNone")
+}
+
+func TestSupervisor_AllocateResources_CleanupClosure_DoesNotRemoveExistingWorktree(t *testing.T) {
+	mockGitExecutor := mocks.NewMockGitExecutor(t)
+	mockProvider := mocks.NewMockAgentProvider(t)
+	mockFactory := &mockInfrastructureFactory{}
+
+	cfg := SupervisorConfig{
+		AgentProviders: client.AgentProviders{
+			client.RoleCoordinator: mockProvider,
+		},
+		ListenerFactory:       &mockListenerFactory{},
+		InfrastructureFactory: mockFactory,
+		SessionFactory:        session.NewFactory(session.FactoryConfig{BaseDir: t.TempDir()}),
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
+			return mockGitExecutor
+		},
+	}
+
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	// Create a real temp directory to serve as existing worktree
+	existingWorktreePath := t.TempDir()
+
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test goal",
+		Name:          "cleanup-existing-test",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  existingWorktreePath,
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+	cleanupSessionOnTestEnd(t, inst)
+
+	// Mock HasUncommittedChanges (for existing worktree validation)
+	mockGitExecutor.EXPECT().HasUncommittedChanges().Return(false, nil)
+
+	// Make infrastructure creation fail to trigger cleanup closure
+	infrastructureErr := errors.New("infrastructure creation failed")
+	mockFactory.On("Create", mock.AnythingOfType("v2.InfrastructureConfig")).Return(nil, infrastructureErr)
+
+	// IMPORTANT: RemoveWorktree should NOT be called for existing worktrees.
+	// mockGitExecutor.EXPECT().RemoveWorktree(...) is intentionally NOT set.
+	// If it were called, the mock would fail with an unexpected call.
+
+	err = supervisor.AllocateResources(context.Background(), inst)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "creating infrastructure")
+	// Verify RemoveWorktree was never called (existing worktrees must not be removed)
+	mockGitExecutor.AssertNotCalled(t, "RemoveWorktree", mock.Anything)
+}
+
+func TestSupervisor_AllocateResources_CleanupClosure_RemovesNewWorktree(t *testing.T) {
+	mockGitExecutor := mocks.NewMockGitExecutor(t)
+	mockProvider := mocks.NewMockAgentProvider(t)
+	mockFactory := &mockInfrastructureFactory{}
+
+	cfg := SupervisorConfig{
+		AgentProviders: client.AgentProviders{
+			client.RoleCoordinator: mockProvider,
+		},
+		ListenerFactory:       &mockListenerFactory{},
+		InfrastructureFactory: mockFactory,
+		SessionFactory:        session.NewFactory(session.FactoryConfig{BaseDir: t.TempDir()}),
+		GitExecutorFactory: func(workDir string) appgit.GitExecutor {
+			return mockGitExecutor
+		},
+	}
+
+	supervisor, err := NewSupervisor(cfg)
+	require.NoError(t, err)
+
+	spec := &WorkflowSpec{
+		TemplateID:         "test-template",
+		InitialPrompt:      "Test goal",
+		Name:               "cleanup-new-test",
+		WorktreeMode:       WorktreeModeNew,
+		WorktreeBaseBranch: "main",
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+	cleanupSessionOnTestEnd(t, inst)
+
+	workflowID := inst.ID.String()
+	worktreePath := "/tmp/worktrees/" + workflowID
+	expectedBranch := "perles-workflow-" + workflowID[:8]
+
+	// Setup mock expectations for successful worktree creation
+	mockGitExecutor.EXPECT().PruneWorktrees().Return(nil)
+	mockGitExecutor.EXPECT().DetermineWorktreePath(workflowID).Return(worktreePath, nil)
+	mockGitExecutor.EXPECT().CreateWorktreeWithContext(
+		mock.Anything, worktreePath, expectedBranch, "main",
+	).Return(nil)
+
+	// Setup RemoveWorktree expectation - should be called during cleanup for new worktrees
+	mockGitExecutor.EXPECT().RemoveWorktree(worktreePath).Return(nil)
+
+	// Make infrastructure creation fail to trigger cleanup closure
+	infrastructureErr := errors.New("infrastructure creation failed")
+	mockFactory.On("Create", mock.AnythingOfType("v2.InfrastructureConfig")).Return(nil, infrastructureErr)
+
+	err = supervisor.AllocateResources(context.Background(), inst)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "creating infrastructure")
+	require.Equal(t, WorkflowPending, inst.State)
+	// RemoveWorktree assertion is automatically verified by mockery
 }
 
 // createMinimalInfrastructureWithFabric creates infrastructure including FabricService.

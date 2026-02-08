@@ -10,8 +10,8 @@ import (
 )
 
 // sessionColumns is the list of columns to select for session queries.
-const sessionColumns = `id, guid, project, name, state, template_id, epic_id, work_dir, labels, 
-	worktree_enabled, worktree_base_branch, worktree_branch_name, worktree_path, worktree_branch, session_dir,
+const sessionColumns = `id, guid, project, name, state, template_id, epic_id, work_dir, labels,
+	worktree_enabled, worktree_mode, worktree_base_branch, worktree_branch_name, worktree_path, worktree_branch, session_dir,
 	owner_created_pid, owner_current_pid, tokens_used, active_workers, last_heartbeat_at, last_progress_at,
 	created_at, started_at, paused_at, completed_at, updated_at, archived_at, deleted_at`
 
@@ -34,7 +34,7 @@ func scanSession(scanner interface{ Scan(...any) error }) (*SessionModel, error)
 	err := scanner.Scan(
 		&model.ID, &model.GUID, &model.Project, &model.Name, &model.State,
 		&model.TemplateID, &model.EpicID, &model.WorkDir, &model.Labels,
-		&model.WorktreeEnabled, &model.WorktreeBaseBranch, &model.WorktreeBranchName,
+		&model.WorktreeEnabled, &model.WorktreeMode, &model.WorktreeBaseBranch, &model.WorktreeBranchName,
 		&model.WorktreePath, &model.WorktreeBranch, &model.SessionDir,
 		&model.OwnerCreatedPID, &model.OwnerCurrentPID,
 		&model.TokensUsed, &model.ActiveWorkers,
@@ -56,13 +56,13 @@ func (r *sessionRepository) Save(session *domain.Session) error {
 		result, err := r.db.Exec(
 			`INSERT INTO sessions (
 				guid, project, name, state, template_id, epic_id, work_dir, labels,
-				worktree_enabled, worktree_base_branch, worktree_branch_name, worktree_path, worktree_branch, session_dir,
+				worktree_enabled, worktree_mode, worktree_base_branch, worktree_branch_name, worktree_path, worktree_branch, session_dir,
 				owner_created_pid, owner_current_pid, tokens_used, active_workers, last_heartbeat_at, last_progress_at,
 				created_at, started_at, paused_at, completed_at, updated_at, archived_at, deleted_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			model.GUID, model.Project, model.Name, model.State, model.TemplateID, model.EpicID,
 			model.WorkDir, model.Labels,
-			model.WorktreeEnabled, model.WorktreeBaseBranch, model.WorktreeBranchName,
+			model.WorktreeEnabled, model.WorktreeMode, model.WorktreeBaseBranch, model.WorktreeBranchName,
 			model.WorktreePath, model.WorktreeBranch, model.SessionDir,
 			model.OwnerCreatedPID, model.OwnerCurrentPID,
 			model.TokensUsed, model.ActiveWorkers, model.LastHeartbeatAt, model.LastProgressAt,
@@ -81,15 +81,15 @@ func (r *sessionRepository) Save(session *domain.Session) error {
 
 	// Update existing session
 	_, err := r.db.Exec(
-		`UPDATE sessions SET 
+		`UPDATE sessions SET
 			name = ?, state = ?, template_id = ?, epic_id = ?, work_dir = ?, labels = ?,
-			worktree_enabled = ?, worktree_base_branch = ?, worktree_branch_name = ?, worktree_path = ?, worktree_branch = ?, session_dir = ?,
-			owner_created_pid = ?, owner_current_pid = ?, tokens_used = ?, active_workers = ?, 
+			worktree_enabled = ?, worktree_mode = ?, worktree_base_branch = ?, worktree_branch_name = ?, worktree_path = ?, worktree_branch = ?, session_dir = ?,
+			owner_created_pid = ?, owner_current_pid = ?, tokens_used = ?, active_workers = ?,
 			last_heartbeat_at = ?, last_progress_at = ?,
 			started_at = ?, paused_at = ?, completed_at = ?, updated_at = ?, archived_at = ?, deleted_at = ?
 		WHERE id = ?`,
 		model.Name, model.State, model.TemplateID, model.EpicID, model.WorkDir, model.Labels,
-		model.WorktreeEnabled, model.WorktreeBaseBranch, model.WorktreeBranchName, model.WorktreePath, model.WorktreeBranch, model.SessionDir,
+		model.WorktreeEnabled, model.WorktreeMode, model.WorktreeBaseBranch, model.WorktreeBranchName, model.WorktreePath, model.WorktreeBranch, model.SessionDir,
 		model.OwnerCreatedPID, model.OwnerCurrentPID, model.TokensUsed, model.ActiveWorkers,
 		model.LastHeartbeatAt, model.LastProgressAt,
 		model.StartedAt, model.PausedAt, model.CompletedAt, model.UpdatedAt, model.ArchivedAt, model.DeletedAt,

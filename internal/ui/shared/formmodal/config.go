@@ -216,11 +216,11 @@ type FieldConfig struct {
 	// is hidden and skipped during navigation. Hidden fields retain their values
 	// but are not included in the submitted values.
 	//
-	// Example - show "base_branch" only when "use_worktree" is "true":
+	// Example - show "base_branch" only when "worktree_mode" is "new":
 	//
 	//	VisibleWhen: func(values map[string]any) bool {
-	//	    v, _ := values["use_worktree"].(string)
-	//	    return v == "true"
+	//	    v, _ := values["worktree_mode"].(string)
+	//	    return v == "new"
 	//	}
 	VisibleWhen func(values map[string]any) bool
 

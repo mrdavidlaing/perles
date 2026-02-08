@@ -65,6 +65,7 @@ type Session struct {
 
 	// Worktree configuration (requested settings)
 	worktreeEnabled    bool
+	worktreeMode       string
 	worktreeBaseBranch string
 	worktreeBranchName string
 
@@ -113,6 +114,7 @@ func NewSession(guid, project string, state SessionState) *Session {
 		workDir:            "",
 		labels:             nil,
 		worktreeEnabled:    false,
+		worktreeMode:       "",
 		worktreeBaseBranch: "",
 		worktreeBranchName: "",
 		worktreePath:       "",
@@ -143,6 +145,7 @@ func ReconstituteSession(
 	templateID, epicID, workDir string,
 	labels map[string]string,
 	worktreeEnabled bool,
+	worktreeMode string,
 	worktreeBaseBranch, worktreeBranchName string,
 	worktreePath, worktreeBranch string,
 	sessionDir string,
@@ -166,6 +169,7 @@ func ReconstituteSession(
 		workDir:            workDir,
 		labels:             labels,
 		worktreeEnabled:    worktreeEnabled,
+		worktreeMode:       worktreeMode,
 		worktreeBaseBranch: worktreeBaseBranch,
 		worktreeBranchName: worktreeBranchName,
 		worktreePath:       worktreePath,
@@ -231,6 +235,11 @@ func (s *Session) Labels() map[string]string {
 // WorktreeEnabled returns whether a git worktree was requested for this session.
 func (s *Session) WorktreeEnabled() bool {
 	return s.worktreeEnabled
+}
+
+// WorktreeMode returns the worktree mode for this session (e.g. "", "new", "existing").
+func (s *Session) WorktreeMode() string {
+	return s.worktreeMode
 }
 
 // WorktreeBaseBranch returns the branch the worktree was based on.
@@ -402,6 +411,12 @@ func (s *Session) SetLabels(labels map[string]string) {
 // SetWorktreeEnabled sets whether a git worktree was requested for this session.
 func (s *Session) SetWorktreeEnabled(enabled bool) {
 	s.worktreeEnabled = enabled
+	s.updatedAt = time.Now()
+}
+
+// SetWorktreeMode sets the worktree mode for this session (e.g. "", "new", "existing").
+func (s *Session) SetWorktreeMode(mode string) {
+	s.worktreeMode = mode
 	s.updatedAt = time.Now()
 }
 

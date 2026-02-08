@@ -110,6 +110,7 @@ func TestReconstituteSession(t *testing.T) {
 		"/path/to/workdir",
 		nil,
 		false,
+		"", // worktreeMode
 		"", "",
 		"/path/to/worktree",
 		"feature/branch",
@@ -170,6 +171,7 @@ func TestReconstituteSession_NilDeletedAt(t *testing.T) {
 		"", "", "",
 		nil,
 		false,
+		"", // worktreeMode
 		"", "",
 		"", "",
 		"", // sessionDir
@@ -278,7 +280,8 @@ func TestSession_IsDeleted(t *testing.T) {
 		deletedAt := time.Now()
 		session := ReconstituteSession(
 			1, "guid", "project", "", SessionStateCompleted, "", "", "",
-			nil, false, "", "", "", "",
+			nil, false, "",
+			"", "", "", "",
 			"", // sessionDir
 			nil, nil, 0, 0, nil, nil,
 			time.Now(), nil, nil, nil, time.Now(), nil, &deletedAt,
@@ -314,6 +317,7 @@ func TestSession_Getters(t *testing.T) {
 		"/work/dir",
 		nil,
 		false,
+		"", // worktreeMode
 		"", "",
 		"/worktree/path",
 		"main",
@@ -346,6 +350,59 @@ func TestSession_Getters(t *testing.T) {
 	require.Equal(t, updatedAt, session.UpdatedAt())
 	require.Nil(t, session.DeletedAt())
 	require.False(t, session.IsDeleted())
+}
+
+func TestSession_WorktreeMode_RoundTrip(t *testing.T) {
+	createdAt := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	updatedAt := time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
+
+	session := ReconstituteSession(
+		1, "guid", "project", "", SessionStateRunning, "", "", "",
+		nil, true, "new",
+		"main", "feature/test",
+		"/worktree/path", "feature/test",
+		"", // sessionDir
+		nil, nil, 0, 0, nil, nil,
+		createdAt, nil, nil, nil, updatedAt, nil, nil,
+	)
+
+	require.Equal(t, "new", session.WorktreeMode())
+	require.True(t, session.WorktreeEnabled())
+}
+
+func TestSession_WorktreeMode_EmptyStringDefault(t *testing.T) {
+	session := NewSession("guid", "project", SessionStatePending)
+	require.Equal(t, "", session.WorktreeMode(), "new session should have empty string worktreeMode")
+}
+
+func TestSession_SetWorktreeMode(t *testing.T) {
+	session := NewSession("guid", "project", SessionStatePending)
+	require.Equal(t, "", session.WorktreeMode())
+
+	session.SetWorktreeMode("existing")
+	require.Equal(t, "existing", session.WorktreeMode())
+
+	session.SetWorktreeMode("")
+	require.Equal(t, "", session.WorktreeMode())
+}
+
+func TestSession_WorktreeEnabled_BackwardCompat(t *testing.T) {
+	// Old sessions have worktreeEnabled=true but worktreeMode=""
+	createdAt := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	updatedAt := time.Date(2026, 1, 15, 14, 30, 0, 0, time.UTC)
+
+	session := ReconstituteSession(
+		1, "guid", "project", "", SessionStateRunning, "", "", "",
+		nil, true, "", // worktreeEnabled=true, worktreeMode=""
+		"main", "feature/test",
+		"/worktree/path", "feature/test",
+		"", // sessionDir
+		nil, nil, 0, 0, nil, nil,
+		createdAt, nil, nil, nil, updatedAt, nil, nil,
+	)
+
+	require.True(t, session.WorktreeEnabled(), "worktreeEnabled should be true")
+	require.Equal(t, "", session.WorktreeMode(), "worktreeMode should be empty for old sessions")
 }
 
 func TestSessionState_Constants(t *testing.T) {

@@ -129,6 +129,19 @@ func (s WorkflowState) ValidTargets() []WorkflowState {
 	return targets
 }
 
+// WorktreeMode specifies how worktree isolation is configured for a workflow.
+// The zero value (empty string) means no worktree.
+type WorktreeMode string
+
+const (
+	// WorktreeModeNone means no worktree isolation (the default zero value).
+	WorktreeModeNone WorktreeMode = ""
+	// WorktreeModeNew means a new worktree will be created for this workflow.
+	WorktreeModeNew WorktreeMode = "new"
+	// WorktreeModeExisting means the workflow uses a pre-existing worktree.
+	WorktreeModeExisting WorktreeMode = "existing"
+)
+
 // WorkflowSpec defines parameters for creating a new workflow instance.
 // It captures all the information needed to initialize and start a workflow.
 type WorkflowSpec struct {
@@ -158,7 +171,16 @@ type WorkflowSpec struct {
 
 	// WorktreeEnabled indicates whether to create a git worktree for this workflow.
 	// When enabled, the workflow runs in an isolated worktree directory.
+	// Derived from WorktreeMode: true when WorktreeMode is New or Existing.
 	WorktreeEnabled bool
+
+	// WorktreeMode specifies the worktree isolation strategy for this workflow.
+	// See WorktreeModeNone, WorktreeModeNew, WorktreeModeExisting.
+	WorktreeMode WorktreeMode
+
+	// WorktreePath is the absolute path to a pre-existing worktree.
+	// Only used when WorktreeMode is WorktreeModeExisting.
+	WorktreePath string
 
 	// WorktreeBaseBranch is the branch to base the worktree on (e.g., "main", "develop").
 	// Required when WorktreeEnabled is true.
@@ -196,9 +218,10 @@ type WorkflowInstance struct {
 	EpicID        string // Beads epic ID associated with this workflow (optional)
 
 	// Worktree configuration (from WorkflowSpec)
-	WorktreeEnabled    bool   // Whether worktree was requested
-	WorktreeBaseBranch string // Branch to base worktree on
-	WorktreeBranchName string // Custom branch name (may be empty)
+	WorktreeEnabled    bool         // Whether worktree was requested (derived from WorktreeMode)
+	WorktreeMode       WorktreeMode // Worktree isolation strategy (none, new, existing)
+	WorktreeBaseBranch string       // Branch to base worktree on
+	WorktreeBranchName string       // Custom branch name (may be empty)
 
 	// Worktree state (set by Supervisor.AllocateResources() when worktree is created)
 	WorktreePath   string // Path to created worktree (empty if not using worktree)
@@ -266,6 +289,15 @@ func NewWorkflowInstance(spec *WorkflowSpec) (*WorkflowInstance, error) {
 	labels := make(map[string]string, len(spec.Labels))
 	maps.Copy(labels, spec.Labels)
 
+	// Derive WorktreeEnabled from WorktreeMode using explicit conditional.
+	// When WorktreeMode is set (non-zero), it drives WorktreeEnabled.
+	// When WorktreeMode is not set (zero value), fall back to spec.WorktreeEnabled
+	// for backward compatibility with existing code that hasn't adopted WorktreeMode yet.
+	worktreeEnabled := spec.WorktreeEnabled
+	if spec.WorktreeMode == WorktreeModeNew || spec.WorktreeMode == WorktreeModeExisting {
+		worktreeEnabled = true
+	}
+
 	inst := &WorkflowInstance{
 		ID:            NewWorkflowID(),
 		TemplateID:    spec.TemplateID,
@@ -274,13 +306,20 @@ func NewWorkflowInstance(spec *WorkflowSpec) (*WorkflowInstance, error) {
 		InitialPrompt: spec.InitialPrompt,
 		EpicID:        spec.EpicID,
 		// Worktree configuration from spec
-		WorktreeEnabled:    spec.WorktreeEnabled,
+		WorktreeEnabled:    worktreeEnabled,
+		WorktreeMode:       spec.WorktreeMode,
 		WorktreeBaseBranch: spec.WorktreeBaseBranch,
 		WorktreeBranchName: spec.WorktreeBranchName,
 		State:              WorkflowPending,
 		Labels:             labels,
 		CreatedAt:          now,
 		UpdatedAt:          now,
+	}
+
+	// For existing worktree mode, copy the worktree path and pre-set WorkDir
+	if spec.WorktreeMode == WorktreeModeExisting {
+		inst.WorktreePath = spec.WorktreePath
+		inst.WorkDir = spec.WorktreePath
 	}
 
 	return inst, nil

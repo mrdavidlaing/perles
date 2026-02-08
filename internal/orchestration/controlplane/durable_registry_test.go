@@ -472,6 +472,123 @@ func TestDurableRegistry_Archive_NotFound(t *testing.T) {
 	require.Contains(t, err.Error(), "not found")
 }
 
+func TestDurableRegistry_WorktreeMode_SaveDirection(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	registry := NewDurableRegistry("test-project", db.SessionRepository())
+
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test prompt",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  "/tmp/existing-worktree",
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+
+	err = registry.Put(inst)
+	require.NoError(t, err)
+
+	// Verify the session in the database has the correct WorktreeMode
+	session, err := db.SessionRepository().FindByGUID("test-project", string(inst.ID))
+	require.NoError(t, err)
+	require.Equal(t, "existing", session.WorktreeMode())
+	require.Equal(t, "/tmp/existing-worktree", session.WorktreePath())
+}
+
+func TestDurableRegistry_WorktreeMode_LoadDirection(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	registry := NewDurableRegistry("test-project", db.SessionRepository())
+
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test prompt",
+		WorktreeMode:  WorktreeModeNew,
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+
+	err = registry.Put(inst)
+	require.NoError(t, err)
+
+	// Detach runtime so Get loads from SQLite
+	registry.DetachRuntime(inst.ID)
+
+	retrieved, found := registry.Get(inst.ID)
+	require.True(t, found)
+	require.Equal(t, WorktreeModeNew, retrieved.WorktreeMode)
+}
+
+func TestDurableRegistry_WorktreeMode_RoundTrip_AllModes(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	registry := NewDurableRegistry("test-project", db.SessionRepository())
+
+	modes := []struct {
+		mode         WorktreeMode
+		worktreePath string
+	}{
+		{WorktreeModeNone, ""},
+		{WorktreeModeNew, ""},
+		{WorktreeModeExisting, "/tmp/my-worktree"},
+	}
+
+	for _, tc := range modes {
+		t.Run(string(tc.mode)+"_mode", func(t *testing.T) {
+			spec := &WorkflowSpec{
+				TemplateID:    "test-template",
+				InitialPrompt: "Test prompt",
+				WorktreeMode:  tc.mode,
+				WorktreePath:  tc.worktreePath,
+			}
+			inst, err := NewWorkflowInstance(spec)
+			require.NoError(t, err)
+
+			err = registry.Put(inst)
+			require.NoError(t, err)
+
+			// Detach runtime so Get loads from SQLite (round-trip through persistence)
+			registry.DetachRuntime(inst.ID)
+
+			retrieved, found := registry.Get(inst.ID)
+			require.True(t, found)
+			require.Equal(t, tc.mode, retrieved.WorktreeMode, "WorktreeMode should round-trip through save→load")
+			require.Equal(t, tc.worktreePath, retrieved.WorktreePath, "WorktreePath should round-trip through save→load")
+		})
+	}
+}
+
+func TestDurableRegistry_WorktreeMode_EmptyWorktreeMode_OldSession(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	registry := NewDurableRegistry("test-project", db.SessionRepository())
+
+	// Create a workflow without setting WorktreeMode (simulates old session)
+	spec := &WorkflowSpec{
+		TemplateID:    "test-template",
+		InitialPrompt: "Test prompt",
+	}
+	inst, err := NewWorkflowInstance(spec)
+	require.NoError(t, err)
+
+	err = registry.Put(inst)
+	require.NoError(t, err)
+
+	// Detach runtime so Get loads from SQLite
+	registry.DetachRuntime(inst.ID)
+
+	retrieved, found := registry.Get(inst.ID)
+	require.True(t, found)
+	// Empty worktreeMode from old sessions should map to WorktreeModeNone (which is "")
+	require.Equal(t, WorktreeModeNone, retrieved.WorktreeMode,
+		"empty worktreeMode from old sessions should produce WorktreeModeNone")
+}
+
 // setupTestDB creates a test database with migrations applied.
 func setupTestDB(t *testing.T) (*sqlite.DB, func()) {
 	t.Helper()

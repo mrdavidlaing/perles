@@ -334,6 +334,7 @@ func (r *DurableRegistry) updateSessionFromWorkflow(session *domain.Session, ins
 	session.SetWorkDir(inst.WorkDir)
 	session.SetLabels(inst.Labels)
 	session.SetWorktreeEnabled(inst.WorktreeEnabled)
+	session.SetWorktreeMode(string(inst.WorktreeMode))
 	session.SetWorktreeBaseBranch(inst.WorktreeBaseBranch)
 	session.SetWorktreeBranchName(inst.WorktreeBranchName)
 	session.SetWorktreePath(inst.WorktreePath)
@@ -369,6 +370,7 @@ func (r *DurableRegistry) sessionToWorkflow(session *domain.Session) *WorkflowIn
 		WorkDir:            session.WorkDir(),
 		EpicID:             session.EpicID(),
 		WorktreeEnabled:    session.WorktreeEnabled(),
+		WorktreeMode:       WorktreeMode(session.WorktreeMode()),
 		WorktreeBaseBranch: session.WorktreeBaseBranch(),
 		WorktreeBranchName: session.WorktreeBranchName(),
 		WorktreePath:       session.WorktreePath(),

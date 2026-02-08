@@ -327,7 +327,8 @@ func TestSessionRepository_ListWithFilter_OrderByCreatedAtDesc(t *testing.T) {
 	// Create sessions with explicitly different timestamps (Unix seconds)
 	baseTime := time.Now()
 	s1 := domain.ReconstituteSession(0, "guid-1", "project-a", "", domain.SessionStateCompleted, "", "", "",
-		nil, false, "", "", "", "",
+		nil, false, "",
+		"", "", "", "",
 		"", // sessionDir
 		nil, nil, 0, 0, nil, nil,
 		baseTime.Add(-3*time.Second), nil, nil, nil, baseTime.Add(-3*time.Second), nil, nil)
@@ -335,7 +336,8 @@ func TestSessionRepository_ListWithFilter_OrderByCreatedAtDesc(t *testing.T) {
 	require.NoError(t, err)
 
 	s2 := domain.ReconstituteSession(0, "guid-2", "project-a", "", domain.SessionStateCompleted, "", "", "",
-		nil, false, "", "", "", "",
+		nil, false, "",
+		"", "", "", "",
 		"", // sessionDir
 		nil, nil, 0, 0, nil, nil,
 		baseTime.Add(-2*time.Second), nil, nil, nil, baseTime.Add(-2*time.Second), nil, nil)
@@ -343,7 +345,8 @@ func TestSessionRepository_ListWithFilter_OrderByCreatedAtDesc(t *testing.T) {
 	require.NoError(t, err)
 
 	s3 := domain.ReconstituteSession(0, "guid-3", "project-a", "", domain.SessionStateCompleted, "", "", "",
-		nil, false, "", "", "", "",
+		nil, false, "",
+		"", "", "", "",
 		"", // sessionDir
 		nil, nil, 0, 0, nil, nil,
 		baseTime.Add(-1*time.Second), nil, nil, nil, baseTime.Add(-1*time.Second), nil, nil)
@@ -525,6 +528,7 @@ func TestSessionModel_RoundTrip(t *testing.T) {
 		"/work/dir",
 		nil,
 		false,
+		"", // worktreeMode
 		"", "",
 		"/worktree/path",
 		"feature/branch",
@@ -614,6 +618,7 @@ func TestSessionModel_RoundTrip_NilDeletedAt(t *testing.T) {
 		"", "", "",
 		nil,
 		false,
+		"", // worktreeMode
 		"", "",
 		"", "",
 		"", // sessionDir
@@ -658,4 +663,120 @@ func TestSessionModel_RoundTrip_NilDeletedAt(t *testing.T) {
 	require.False(t, restored.IsArchived())
 	require.Nil(t, restored.DeletedAt())
 	require.False(t, restored.IsDeleted())
+}
+
+// TestSessionModel_RoundTrip_WorktreeMode verifies WorktreeMode round-trips through model mapping.
+func TestSessionModel_RoundTrip_WorktreeMode(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	original := domain.ReconstituteSession(
+		789, "test-guid", "test-project", "", domain.SessionStateRunning, "", "", "",
+		nil, true, "new",
+		"main", "feature/test",
+		"/worktree/path", "feature/test",
+		"", // sessionDir
+		nil, nil, 0, 0, nil, nil,
+		now, nil, nil, nil, now, nil, nil,
+	)
+
+	model := toSessionModel(original)
+	require.Equal(t, "new", model.WorktreeMode)
+
+	restored := model.toDomain()
+	require.Equal(t, "new", restored.WorktreeMode())
+	require.True(t, restored.WorktreeEnabled())
+}
+
+// TestSessionModel_RoundTrip_WorktreeMode_Empty verifies empty WorktreeMode round-trips correctly.
+func TestSessionModel_RoundTrip_WorktreeMode_Empty(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	original := domain.ReconstituteSession(
+		790, "test-guid", "test-project", "", domain.SessionStateRunning, "", "", "",
+		nil, false, "",
+		"", "", "", "",
+		"", // sessionDir
+		nil, nil, 0, 0, nil, nil,
+		now, nil, nil, nil, now, nil, nil,
+	)
+
+	model := toSessionModel(original)
+	require.Equal(t, "", model.WorktreeMode)
+
+	restored := model.toDomain()
+	require.Equal(t, "", restored.WorktreeMode())
+}
+
+// TestSessionRepository_Save_WorktreeMode_RoundTrip verifies WorktreeMode persists through SQLite.
+func TestSessionRepository_Save_WorktreeMode_RoundTrip(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	session := domain.NewSession("guid-wt", "project-a", domain.SessionStateRunning)
+	session.SetWorktreeMode("existing")
+	session.SetWorktreeEnabled(true)
+
+	err := repo.Save(session)
+	require.NoError(t, err)
+
+	found, err := repo.FindByID(session.ID())
+	require.NoError(t, err)
+	require.Equal(t, "existing", found.WorktreeMode())
+	require.True(t, found.WorktreeEnabled())
+}
+
+// TestSessionRepository_Save_WorktreeMode_Empty verifies empty string persists correctly.
+func TestSessionRepository_Save_WorktreeMode_Empty(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	session := domain.NewSession("guid-wt-empty", "project-a", domain.SessionStateRunning)
+	// Don't set worktreeMode — should default to empty string
+
+	err := repo.Save(session)
+	require.NoError(t, err)
+
+	found, err := repo.FindByID(session.ID())
+	require.NoError(t, err)
+	require.Equal(t, "", found.WorktreeMode(), "default worktreeMode should be empty string")
+}
+
+// TestSessionRepository_Save_WorktreeMode_BackwardCompat verifies old sessions with
+// worktreeEnabled=true and worktreeMode="" work correctly (backward compatibility).
+func TestSessionRepository_Save_WorktreeMode_BackwardCompat(t *testing.T) {
+	repo := setupTestRepo(t)
+
+	session := domain.NewSession("guid-compat", "project-a", domain.SessionStateRunning)
+	session.SetWorktreeEnabled(true)
+	// worktreeMode left as "" to simulate old session
+
+	err := repo.Save(session)
+	require.NoError(t, err)
+
+	found, err := repo.FindByID(session.ID())
+	require.NoError(t, err)
+	require.True(t, found.WorktreeEnabled(), "worktreeEnabled should be true")
+	require.Equal(t, "", found.WorktreeMode(), "worktreeMode should be empty for old-style sessions")
+}
+
+// TestSessionRepository_SchemaMigration_DefaultWorktreeMode verifies that the schema
+// migration adds the worktree_mode column with empty string default.
+func TestSessionRepository_SchemaMigration_DefaultWorktreeMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	db, err := NewDB(dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Insert a row using raw SQL without specifying worktree_mode
+	// This simulates an existing row that predates the migration
+	_, err = db.conn.Exec(
+		`INSERT INTO sessions (guid, project, state, worktree_enabled, tokens_used, active_workers, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"old-guid", "old-project", "running", 1, 0, 0, time.Now().Unix(), time.Now().Unix(),
+	)
+	require.NoError(t, err)
+
+	// Query through the repository to verify the default
+	found, err := db.SessionRepository().FindByGUID("old-project", "old-guid")
+	require.NoError(t, err)
+	require.Equal(t, "", found.WorktreeMode(), "worktree_mode should default to empty string for existing rows")
+	require.True(t, found.WorktreeEnabled(), "worktreeEnabled should be true")
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ type NewWorkflowModal struct {
 	workflowCreator *appreg.WorkflowCreator
 	bqlExecutor     bql.BQLExecutor // BQL executor for epic search fields
 	worktreeEnabled bool            // track if worktree options are available
+	workDir         string          // application root directory (for filtering worktrees)
 	vimEnabled      bool            // whether vim mode is enabled for textarea fields
 
 	// templateArgs maps template key → slice of arguments for that template.
@@ -73,6 +75,7 @@ type CancelNewWorkflowMsg struct{}
 // registryService is optional - if nil, template listing returns empty options.
 // bqlExecutor is optional - if nil, epic search fields will not execute queries.
 // vimEnabled controls whether vim mode is used for textarea fields (from user config).
+// workDir is the application root directory, used to filter the main working tree from worktree options.
 func NewNewWorkflowModal(
 	registryService *appreg.RegistryService,
 	cp controlplane.ControlPlane,
@@ -80,6 +83,7 @@ func NewNewWorkflowModal(
 	workflowCreator *appreg.WorkflowCreator,
 	bqlExecutor bql.BQLExecutor,
 	vimEnabled bool,
+	workDir string,
 ) *NewWorkflowModal {
 	m := &NewWorkflowModal{
 		registryService: registryService,
@@ -88,6 +92,7 @@ func NewNewWorkflowModal(
 		workflowCreator: workflowCreator,
 		bqlExecutor:     bqlExecutor,
 		vimEnabled:      vimEnabled,
+		workDir:         workDir,
 		templateArgs:    make(map[string][]*registry.Argument),
 	}
 
@@ -97,6 +102,9 @@ func NewNewWorkflowModal(
 	// Build branch options from git executor (if available)
 	branchOptions, worktreeAvailable := buildBranchOptions(gitExecutor)
 	m.worktreeEnabled = worktreeAvailable
+
+	// Build worktree options from git executor (if available)
+	worktreeOptions := buildWorktreeOptions(gitExecutor, workDir)
 
 	// Build form fields
 	fields := []formmodal.FieldConfig{
@@ -124,22 +132,37 @@ func NewNewWorkflowModal(
 
 	// Add worktree fields if git support is available
 	if worktreeAvailable {
-		// Helper to check if worktree is enabled
-		worktreeEnabled := func(values map[string]any) bool {
-			v, _ := values["use_worktree"].(string)
-			return v == "true"
+		// Helper closures for conditional visibility
+		newWorktreeMode := func(values map[string]any) bool {
+			v, _ := values["worktree_mode"].(string)
+			return v == "new"
+		}
+		existingWorktreeMode := func(values map[string]any) bool {
+			v, _ := values["worktree_mode"].(string)
+			return v == "existing"
 		}
 
 		worktreeFields := []formmodal.FieldConfig{
 			{
-				Key:   "use_worktree",
-				Type:  formmodal.FieldTypeToggle,
+				Key:   "worktree_mode",
+				Type:  formmodal.FieldTypeSelect,
 				Label: "Git Worktree",
 				Hint:  "optional",
 				Options: []formmodal.ListOption{
-					{Label: "No", Value: "false", Selected: true},
-					{Label: "Yes", Value: "true"},
+					{Label: "No Worktree", Subtext: "Run in the current directory", Value: "none", Selected: true},
+					{Label: "Existing Worktree", Subtext: "Use a worktree you already created", Value: "existing"},
+					{Label: "New Worktree", Subtext: "Create a new worktree with a fresh branch", Value: "new"},
 				},
+			},
+			{
+				Key:               "existing_worktree",
+				Type:              formmodal.FieldTypeSearchSelect,
+				Label:             "Select Worktree",
+				Hint:              "required",
+				Options:           worktreeOptions,
+				SearchPlaceholder: "Search worktrees...",
+				MaxVisibleItems:   5,
+				VisibleWhen:       existingWorktreeMode,
 			},
 			{
 				Key:               "base_branch",
@@ -149,7 +172,7 @@ func NewNewWorkflowModal(
 				Options:           branchOptions,
 				SearchPlaceholder: "Search branches...",
 				MaxVisibleItems:   5,
-				VisibleWhen:       worktreeEnabled,
+				VisibleWhen:       newWorktreeMode,
 			},
 			{
 				Key:         "custom_branch",
@@ -157,7 +180,7 @@ func NewNewWorkflowModal(
 				Label:       "Branch Name",
 				Hint:        "optional - auto-generated if empty",
 				Placeholder: "perles-workflow-abc123",
-				VisibleWhen: worktreeEnabled,
+				VisibleWhen: newWorktreeMode,
 			},
 		}
 		fields = append(fields, worktreeFields...)
@@ -282,6 +305,46 @@ func buildBranchOptions(gitExecutor appgit.GitExecutor) ([]formmodal.ListOption,
 	return options, true
 }
 
+// buildWorktreeOptions converts git worktrees to list options for the existing worktree picker.
+// The main working tree is filtered out by comparing wt.Path == workDir.
+// Returns empty slice (not nil) if no worktrees are available.
+func buildWorktreeOptions(gitExecutor appgit.GitExecutor, workDir string) []formmodal.ListOption {
+	if gitExecutor == nil {
+		return []formmodal.ListOption{}
+	}
+
+	worktrees, err := gitExecutor.ListWorktrees()
+	if err != nil {
+		return []formmodal.ListOption{}
+	}
+
+	var options []formmodal.ListOption
+	for _, wt := range worktrees {
+		// Filter out the main working tree
+		if wt.Path == workDir {
+			continue
+		}
+
+		// Use branch as label, fall back to path basename for detached HEAD
+		label := wt.Branch
+		if label == "" {
+			label = filepath.Base(wt.Path)
+		}
+
+		options = append(options, formmodal.ListOption{
+			Label:    label,
+			Subtext:  wt.Path,
+			Value:    wt.Path,
+			Selected: len(options) == 0, // Select first option by default
+		})
+	}
+
+	if options == nil {
+		return []formmodal.ListOption{}
+	}
+	return options
+}
+
 // buildSelectOptions converts argument options to formmodal ListOptions.
 // If defaultValue matches an option, that option is marked as selected.
 func buildSelectOptions(options []string, defaultValue string) []formmodal.ListOption {
@@ -356,14 +419,38 @@ func (m *NewWorkflowModal) validate(values map[string]any) error {
 		}
 	}
 
-	// Validate worktree fields if worktree is enabled
+	// Validate worktree fields based on selected mode
 	if m.worktreeEnabled {
-		useWorktree, _ := values["use_worktree"].(string)
-		if useWorktree == "true" {
-			// Base branch is required when worktree is enabled
+		worktreeMode, _ := values["worktree_mode"].(string)
+		switch worktreeMode {
+		case "existing":
+			// Require worktree selection
+			existingWorktree, _ := values["existing_worktree"].(string)
+			if existingWorktree == "" {
+				return errors.New("worktree selection is required when using an existing worktree")
+			}
+
+			// Check concurrent usage: reject if another running/paused workflow uses the same path
+			if m.controlPlane != nil {
+				workflows, err := m.controlPlane.List(context.Background(), controlplane.ListQuery{})
+				if err == nil {
+					cleanSelected := filepath.Clean(existingWorktree)
+					for _, wf := range workflows {
+						if wf.State != controlplane.WorkflowRunning && wf.State != controlplane.WorkflowPaused {
+							continue
+						}
+						if filepath.Clean(wf.WorktreePath) == cleanSelected {
+							return fmt.Errorf("worktree already in use by workflow %q", wf.Name)
+						}
+					}
+				}
+			}
+
+		case "new":
+			// Base branch is required when creating a new worktree
 			baseBranch, _ := values["base_branch"].(string)
 			if baseBranch == "" {
-				return errors.New("base branch is required when worktree is enabled")
+				return errors.New("base branch is required when creating a new worktree")
 			}
 
 			// Validate custom branch name if provided
@@ -442,13 +529,22 @@ func (m *NewWorkflowModal) createWorkflowAsync(values map[string]any) tea.Cmd {
 			EpicID:        epicID,
 		}
 
-		// Set worktree fields if worktree options are available
+		// Set worktree fields based on selected mode
 		if m.worktreeEnabled {
-			useWorktree, _ := values["use_worktree"].(string)
-			if useWorktree == "true" {
+			worktreeMode, _ := values["worktree_mode"].(string)
+			switch worktreeMode {
+			case "existing":
+				spec.WorktreeMode = controlplane.WorktreeModeExisting
+				spec.WorktreePath, _ = values["existing_worktree"].(string)
 				spec.WorktreeEnabled = true
+			case "new":
+				spec.WorktreeMode = controlplane.WorktreeModeNew
 				spec.WorktreeBaseBranch, _ = values["base_branch"].(string)
 				spec.WorktreeBranchName, _ = values["custom_branch"].(string)
+				spec.WorktreeEnabled = true
+			default:
+				// "none" or empty — no worktree
+				spec.WorktreeMode = controlplane.WorktreeModeNone
 			}
 		}
 

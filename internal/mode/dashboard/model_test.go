@@ -1547,11 +1547,14 @@ func TestModel_PassesGitExecutorToNewWorkflowModal(t *testing.T) {
 	close(eventCh)
 	mockCP.On("Subscribe", mock.Anything).Return((<-chan controlplane.ControlPlaneEvent)(eventCh), func() {}).Maybe()
 
-	// Create a mock git executor that returns branches
+	// Create a mock git executor that returns branches and worktrees
 	mockGitExecutor := mocks.NewMockGitExecutor(t)
 	mockGitExecutor.EXPECT().ListBranches().Return([]domaingit.BranchInfo{
 		{Name: "main", IsCurrent: true},
 		{Name: "develop", IsCurrent: false},
+	}, nil).Maybe()
+	mockGitExecutor.EXPECT().ListWorktrees().Return([]domaingit.WorktreeInfo{
+		{Path: "/test/workdir", Branch: "main"},
 	}, nil).Maybe()
 
 	factoryCalled := false

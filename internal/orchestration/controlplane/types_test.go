@@ -495,6 +495,7 @@ func TestWorkflowSpec_WorktreeFields(t *testing.T) {
 		TemplateID:         "cook.md",
 		InitialPrompt:      "Implement feature X",
 		Name:               "Feature X",
+		WorktreeMode:       WorktreeModeNew,
 		WorktreeEnabled:    true,
 		WorktreeBaseBranch: "main",
 		WorktreeBranchName: "feature/my-branch",
@@ -502,6 +503,7 @@ func TestWorkflowSpec_WorktreeFields(t *testing.T) {
 
 	// Verify fields are stored correctly
 	require.True(t, spec.WorktreeEnabled)
+	require.Equal(t, WorktreeModeNew, spec.WorktreeMode)
 	require.Equal(t, "main", spec.WorktreeBaseBranch)
 	require.Equal(t, "feature/my-branch", spec.WorktreeBranchName)
 
@@ -532,6 +534,7 @@ func TestNewWorkflowInstance_PreservesWorktreeFields(t *testing.T) {
 	spec := &WorkflowSpec{
 		TemplateID:         "cook.md",
 		InitialPrompt:      "Implement feature X",
+		WorktreeMode:       WorktreeModeNew,
 		WorktreeEnabled:    true,
 		WorktreeBaseBranch: "develop",
 		WorktreeBranchName: "feature/custom-branch",
@@ -544,6 +547,7 @@ func TestNewWorkflowInstance_PreservesWorktreeFields(t *testing.T) {
 
 	// Verify worktree configuration is preserved
 	require.True(t, inst.WorktreeEnabled)
+	require.Equal(t, WorktreeModeNew, inst.WorktreeMode)
 	require.Equal(t, "develop", inst.WorktreeBaseBranch)
 	require.Equal(t, "feature/custom-branch", inst.WorktreeBranchName)
 
@@ -570,6 +574,106 @@ func TestNewWorkflowInstance_PreservesWorktreeDisabled(t *testing.T) {
 	require.Empty(t, inst.WorktreeBranchName)
 	require.Empty(t, inst.WorktreePath)
 	require.Empty(t, inst.WorktreeBranch)
+}
+
+// === WorktreeMode Tests ===
+
+func TestWorktreeMode_ZeroValueIsNone(t *testing.T) {
+	var m WorktreeMode
+	require.Equal(t, WorktreeModeNone, m)
+	require.Equal(t, WorktreeMode(""), m)
+}
+
+func TestNewWorkflowInstance_WorktreeModeNone(t *testing.T) {
+	spec := &WorkflowSpec{
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
+		WorktreeMode:  WorktreeModeNone,
+	}
+
+	inst, err := NewWorkflowInstance(spec)
+
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+
+	// WorktreeEnabled must be false when mode is None
+	require.False(t, inst.WorktreeEnabled)
+	require.Equal(t, WorktreeModeNone, inst.WorktreeMode)
+	// WorktreePath must not be set
+	require.Empty(t, inst.WorktreePath)
+	// WorkDir should remain as spec's WorkDir (empty in this case)
+	require.Empty(t, inst.WorkDir)
+}
+
+func TestNewWorkflowInstance_WorktreeModeNew(t *testing.T) {
+	spec := &WorkflowSpec{
+		TemplateID:         "cook.md",
+		InitialPrompt:      "Implement feature X",
+		WorktreeMode:       WorktreeModeNew,
+		WorktreeBaseBranch: "main",
+		WorktreeBranchName: "feature/new-branch",
+	}
+
+	inst, err := NewWorkflowInstance(spec)
+
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+
+	// WorktreeEnabled must be true when mode is New
+	require.True(t, inst.WorktreeEnabled)
+	require.Equal(t, WorktreeModeNew, inst.WorktreeMode)
+	require.Equal(t, "main", inst.WorktreeBaseBranch)
+	require.Equal(t, "feature/new-branch", inst.WorktreeBranchName)
+	// WorkDir must NOT be pre-set (supervisor allocates it later)
+	require.Empty(t, inst.WorkDir)
+	// WorktreePath must not be pre-set (supervisor sets it after creating worktree)
+	require.Empty(t, inst.WorktreePath)
+}
+
+func TestNewWorkflowInstance_WorktreeModeExisting(t *testing.T) {
+	spec := &WorkflowSpec{
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  "/home/user/projects/my-worktree",
+	}
+
+	inst, err := NewWorkflowInstance(spec)
+
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+
+	// WorktreeEnabled must be true when mode is Existing
+	require.True(t, inst.WorktreeEnabled)
+	require.Equal(t, WorktreeModeExisting, inst.WorktreeMode)
+	// WorktreePath must be copied from spec
+	require.Equal(t, "/home/user/projects/my-worktree", inst.WorktreePath)
+	// WorkDir must be pre-set to the existing worktree path
+	require.Equal(t, "/home/user/projects/my-worktree", inst.WorkDir)
+}
+
+func TestNewWorkflowInstance_WorktreeModeExisting_EmptyPath(t *testing.T) {
+	// Edge case: existing mode with no path specified.
+	// The instance is created but WorkDir/WorktreePath will be empty.
+	// Validation of path existence happens later in Supervisor.AllocateResources().
+	spec := &WorkflowSpec{
+		TemplateID:    "cook.md",
+		InitialPrompt: "Implement feature X",
+		WorktreeMode:  WorktreeModeExisting,
+		WorktreePath:  "",
+	}
+
+	inst, err := NewWorkflowInstance(spec)
+
+	require.NoError(t, err)
+	require.NotNil(t, inst)
+
+	// WorktreeEnabled is still true (mode is Existing)
+	require.True(t, inst.WorktreeEnabled)
+	require.Equal(t, WorktreeModeExisting, inst.WorktreeMode)
+	// Both paths are empty since spec.WorktreePath was empty
+	require.Empty(t, inst.WorktreePath)
+	require.Empty(t, inst.WorkDir)
 }
 
 // === WorkflowSpec EpicID Tests ===

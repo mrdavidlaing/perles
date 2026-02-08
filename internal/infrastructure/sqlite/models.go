@@ -22,6 +22,7 @@ type SessionModel struct {
 
 	// Worktree configuration
 	WorktreeEnabled    bool
+	WorktreeMode       string
 	WorktreeBaseBranch *string // nullable
 	WorktreeBranchName *string // nullable
 
@@ -62,6 +63,7 @@ func toSessionModel(s *domain.Session) *SessionModel {
 		Project:         s.Project(),
 		State:           string(s.State()),
 		WorktreeEnabled: s.WorktreeEnabled(),
+		WorktreeMode:    s.WorktreeMode(),
 		TokensUsed:      s.TokensUsed(),
 		ActiveWorkers:   s.ActiveWorkers(),
 		CreatedAt:       s.CreatedAt().Unix(),
@@ -241,6 +243,7 @@ func (m *SessionModel) toDomain() *domain.Session {
 		workDir,
 		labels,
 		m.WorktreeEnabled,
+		m.WorktreeMode,
 		worktreeBaseBranch,
 		worktreeBranchName,
 		worktreePath,
