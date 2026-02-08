@@ -308,6 +308,65 @@ func GenerateObserverConfigOpenCode(port int) (string, error) {
 	return string(data), nil
 }
 
+// GenerateCoordinatorConfigCursor creates an MCP config for Cursor CLI.
+// Cursor expects {"mcpServers": {"name": {"url": "..."}}} in .cursor/mcp.json.
+// Unlike Claude, Cursor does not use a "type" field — just the URL.
+func GenerateCoordinatorConfigCursor(port int) (string, error) {
+	config := MCPConfig{
+		MCPServers: map[string]MCPServerConfig{
+			"perles-orchestrator": {
+				URL: fmt.Sprintf("http://localhost:%d/mcp", port),
+			},
+		},
+	}
+
+	data, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// GenerateWorkerConfigCursor creates an MCP config for a Cursor CLI worker.
+// Uses a unique server name per worker (e.g., "perles-worker-1") because all
+// workers share the same .cursor/mcp.json file in the work directory.
+func GenerateWorkerConfigCursor(port int, workerID string) (string, error) {
+	serverName := fmt.Sprintf("perles-%s", workerID)
+	config := MCPConfig{
+		MCPServers: map[string]MCPServerConfig{
+			serverName: {
+				URL: fmt.Sprintf("http://localhost:%d/worker/%s", port, workerID),
+			},
+		},
+	}
+
+	data, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// GenerateObserverConfigCursor creates an MCP config for the Cursor CLI observer.
+func GenerateObserverConfigCursor(port int) (string, error) {
+	config := MCPConfig{
+		MCPServers: map[string]MCPServerConfig{
+			"perles-observer": {
+				URL: fmt.Sprintf("http://localhost:%d/observer", port),
+			},
+		},
+	}
+
+	data, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return string(data), nil
+}
+
 // ConfigToFlag formats the config as a command line flag value.
 // Returns the string suitable for: claude --mcp-config '<result>'
 func ConfigToFlag(configJSON string) string {

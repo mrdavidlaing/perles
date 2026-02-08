@@ -69,6 +69,9 @@ const (
 
 	// ExtOpenCodeModel specifies the OpenCode model (string: "opencode/glm-4.7-free").
 	ExtOpenCodeModel = "opencode.model"
+
+	// ExtCursorModel specifies the Cursor model (string: "composer-1").
+	ExtCursorModel = "cursor.model"
 )
 
 // ClaudeModel returns the Claude model from Extensions, or "opus" as default.
@@ -158,6 +161,18 @@ func (c *Config) OpenCodeModel() string {
 	}
 
 	return "anthropic/claude-opus-4-5"
+}
+
+// CursorModel returns the Cursor model from Extensions, or "" as default (uses Cursor's default).
+func (c *Config) CursorModel() string {
+	if c.Extensions == nil {
+		return ""
+	}
+	if v, ok := c.Extensions[ExtCursorModel].(string); ok && v != "" {
+		return v
+	}
+
+	return ""
 }
 
 // SetExtension sets a provider-specific extension value.

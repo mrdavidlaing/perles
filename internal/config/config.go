@@ -185,25 +185,26 @@ func DefaultTimeoutsConfig() TimeoutsConfig {
 
 // OrchestrationConfig holds orchestration mode configuration.
 type OrchestrationConfig struct {
-	Client             string               `mapstructure:"client"`             // "claude" (default), "amp", "codex", or "gemini" - backward compat
-	CoordinatorClient  string               `mapstructure:"coordinator_client"` // Client for coordinator (overrides Client)
-	WorkerClient       string               `mapstructure:"worker_client"`      // Client for workers (overrides Client)
-	ObserverClient     string               `mapstructure:"observer_client"`    // Client for observer (default: "claude" with haiku model)
-	ObserverEnabled    bool                 `mapstructure:"observer_enabled"`   // Enable observer agent (default: false)
-	APIPort            int                  `mapstructure:"api_port"`           // HTTP API port (0 = auto-assign, default: 0)
-	Claude             ClaudeClientConfig   `mapstructure:"claude"`
-	ClaudeWorker       ClaudeClientConfig   `mapstructure:"claude_worker"`   // Worker-specific Claude config (uses claude config if empty)
-	ClaudeObserver     ClaudeClientConfig   `mapstructure:"claude_observer"` // Observer-specific Claude config (uses claude config if empty)
-	Codex              CodexClientConfig    `mapstructure:"codex"`
-	Amp                AmpClientConfig      `mapstructure:"amp"`
-	Gemini             GeminiClientConfig   `mapstructure:"gemini"`
-	OpenCode           OpenCodeClientConfig `mapstructure:"opencode"`
-	Workflows          []WorkflowConfig     `mapstructure:"workflows"`           // Workflow template configurations
+	Client            string               `mapstructure:"client"`             // "claude" (default), "amp", "codex", or "gemini" - backward compat
+	CoordinatorClient string               `mapstructure:"coordinator_client"` // Client for coordinator (overrides Client)
+	WorkerClient      string               `mapstructure:"worker_client"`      // Client for workers (overrides Client)
+	ObserverClient    string               `mapstructure:"observer_client"`    // Client for observer (default: "claude" with haiku model)
+	ObserverEnabled   bool                 `mapstructure:"observer_enabled"`   // Enable observer agent (default: false)
+	APIPort           int                  `mapstructure:"api_port"`           // HTTP API port (0 = auto-assign, default: 0)
+	Claude            ClaudeClientConfig   `mapstructure:"claude"`
+	ClaudeWorker      ClaudeClientConfig   `mapstructure:"claude_worker"`   // Worker-specific Claude config (uses claude config if empty)
+	ClaudeObserver    ClaudeClientConfig   `mapstructure:"claude_observer"` // Observer-specific Claude config (uses claude config if empty)
+	Codex             CodexClientConfig    `mapstructure:"codex"`
+	Amp               AmpClientConfig      `mapstructure:"amp"`
+	Gemini            GeminiClientConfig   `mapstructure:"gemini"`
+	OpenCode          OpenCodeClientConfig `mapstructure:"opencode"`
+	Cursor            CursorClientConfig   `mapstructure:"cursor"`
+	Workflows         []WorkflowConfig     `mapstructure:"workflows"`       // Workflow template configurations
 	CommunityWorkflows []string             `mapstructure:"community_workflows"` // Community workflow IDs to enable
-	Tracing            TracingConfig        `mapstructure:"tracing"`             // Distributed tracing configuration
-	SessionStorage     SessionStorageConfig `mapstructure:"session_storage"`     // Session storage location configuration
-	Templates          TemplatesConfig      `mapstructure:"templates"`           // Template rendering variables
-	Timeouts           TimeoutsConfig       `mapstructure:"timeouts"`            // Initialization phase timeout configuration
+	Tracing           TracingConfig        `mapstructure:"tracing"`         // Distributed tracing configuration
+	SessionStorage    SessionStorageConfig `mapstructure:"session_storage"` // Session storage location configuration
+	Templates         TemplatesConfig      `mapstructure:"templates"`       // Template rendering variables
+	Timeouts          TimeoutsConfig       `mapstructure:"timeouts"`        // Initialization phase timeout configuration
 }
 
 // ClaudeClientConfig holds Claude-specific settings.
@@ -231,6 +232,11 @@ type GeminiClientConfig struct {
 // OpenCodeClientConfig holds OpenCode-specific settings.
 type OpenCodeClientConfig struct {
 	Model string `mapstructure:"model"` // anthropic/claude-opus-4-5 (default)
+}
+
+// CursorClientConfig holds Cursor-specific settings.
+type CursorClientConfig struct {
+	Model string `mapstructure:"model"` // Model selection (uses Cursor's default if empty)
 }
 
 // CoordinatorClientType returns the client type for the coordinator.
@@ -326,6 +332,10 @@ func (o OrchestrationConfig) extensionsForObserver(clientType client.ClientType)
 		if o.OpenCode.Model != "" {
 			extensions[client.ExtOpenCodeModel] = o.OpenCode.Model
 		}
+	case client.ClientCursor:
+		if o.Cursor.Model != "" {
+			extensions[client.ExtCursorModel] = o.Cursor.Model
+		}
 	}
 
 	return extensions
@@ -373,6 +383,10 @@ func (o OrchestrationConfig) extensionsForClient(clientType client.ClientType, i
 	case client.ClientOpenCode:
 		if o.OpenCode.Model != "" {
 			extensions[client.ExtOpenCodeModel] = o.OpenCode.Model
+		}
+	case client.ClientCursor:
+		if o.Cursor.Model != "" {
+			extensions[client.ExtCursorModel] = o.Cursor.Model
 		}
 	}
 
@@ -561,7 +575,7 @@ func ValidateViews(views []ViewConfig) error {
 // ValidateOrchestration checks orchestration configuration for errors.
 // Returns nil if the configuration is valid (empty values use defaults).
 // allowedClients is the list of valid AI client types for orchestration.
-var allowedClients = []string{"claude", "amp", "codex", "gemini", "opencode"}
+var allowedClients = []string{"claude", "amp", "codex", "gemini", "opencode", "cursor"}
 
 // isAllowedClient checks if the given client type is in the allowed list.
 func isAllowedClient(c string) bool {
@@ -1122,10 +1136,10 @@ views:
 # Orchestration mode settings
 # Configure which AI client to use when entering orchestration mode
 orchestration:
-  # AI client provider for the coordinator: "claude" (default), "amp", "codex", "opencode", or "opencode"
+  # AI client provider for the coordinator: "claude" (default), "amp", "codex", "opencode", or "cursor"
   coordinator_client: claude
 
-  # AI client provider for the workers: "claude" (default), "amp", "codex", "opencode", or "opencode"
+  # AI client provider for the workers: "claude" (default), "amp", "codex", "opencode", or "cursor"
   worker_client: claude
 
   # Claude-specific settings (only used when client: claude)
@@ -1144,6 +1158,10 @@ orchestration:
   # OpenCode-specific settings (only used when client: opencode)
   opencode:
     model: anthropic/claude-opus-4-5  # anthropic/claude-opus-4-5 (default)
+
+  # Cursor-specific settings (only used when client: cursor)
+  # cursor:
+  #   model: composer-1  # Model selection (uses Cursor's default if empty)
 
   # Workflow templates (Ctrl+P to open picker in orchestration mode)
   # User workflows are loaded from ~/.perles/workflows/*.md

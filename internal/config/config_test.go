@@ -449,7 +449,7 @@ func TestValidateOrchestration_ValidAmpModes(t *testing.T) {
 }
 
 func TestValidateOrchestration_ValidCoordinatorClient(t *testing.T) {
-	clients := []string{"claude", "amp", "codex", "gemini", "opencode"}
+	clients := []string{"claude", "amp", "codex", "gemini", "opencode", "cursor"}
 	for _, c := range clients {
 		t.Run(c, func(t *testing.T) {
 			cfg := OrchestrationConfig{CoordinatorClient: c}
@@ -468,7 +468,7 @@ func TestValidateOrchestration_InvalidCoordinatorClient(t *testing.T) {
 }
 
 func TestValidateOrchestration_ValidWorkerClient(t *testing.T) {
-	clients := []string{"claude", "amp", "codex", "gemini", "opencode"}
+	clients := []string{"claude", "amp", "codex", "gemini", "opencode", "cursor"}
 	for _, c := range clients {
 		t.Run(c, func(t *testing.T) {
 			cfg := OrchestrationConfig{WorkerClient: c}
@@ -487,7 +487,7 @@ func TestValidateOrchestration_InvalidWorkerClient(t *testing.T) {
 }
 
 func TestValidateOrchestration_ValidObserverClient(t *testing.T) {
-	clients := []string{"claude", "amp", "codex", "gemini", "opencode"}
+	clients := []string{"claude", "amp", "codex", "gemini", "opencode", "cursor"}
 	for _, c := range clients {
 		t.Run(c, func(t *testing.T) {
 			cfg := OrchestrationConfig{ObserverClient: c}
@@ -1867,7 +1867,7 @@ func TestCoordinatorClientType_CoordinatorClientOverridesClient(t *testing.T) {
 }
 
 func TestCoordinatorClientType_AllClients(t *testing.T) {
-	clients := []string{"claude", "amp", "codex", "gemini", "opencode"}
+	clients := []string{"claude", "amp", "codex", "gemini", "opencode", "cursor"}
 	for _, c := range clients {
 		t.Run(c, func(t *testing.T) {
 			cfg := OrchestrationConfig{CoordinatorClient: c}
@@ -1899,7 +1899,7 @@ func TestWorkerClientType_WorkerClientOverridesClient(t *testing.T) {
 }
 
 func TestWorkerClientType_AllClients(t *testing.T) {
-	clients := []string{"claude", "amp", "codex", "gemini", "opencode"}
+	clients := []string{"claude", "amp", "codex", "gemini", "opencode", "cursor"}
 	for _, c := range clients {
 		t.Run(c, func(t *testing.T) {
 			cfg := OrchestrationConfig{WorkerClient: c}
@@ -2725,7 +2725,7 @@ func TestObserverClientType_Override(t *testing.T) {
 }
 
 func TestObserverClientType_AllClients(t *testing.T) {
-	clients := []string{"claude", "amp", "codex", "gemini", "opencode"}
+	clients := []string{"claude", "amp", "codex", "gemini", "opencode", "cursor"}
 	for _, c := range clients {
 		t.Run(c, func(t *testing.T) {
 			cfg := OrchestrationConfig{ObserverClient: c}

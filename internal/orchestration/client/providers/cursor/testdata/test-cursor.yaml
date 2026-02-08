@@ -1,0 +1,7 @@
+orchestration:
+  coordinator_client: cursor
+  worker_client: cursor
+  observer_enabled: true
+  observer_client: cursor
+  cursor:
+    model: composer-1
